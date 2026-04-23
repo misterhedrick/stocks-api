@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 # Get the directory where the script is actually located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -21,5 +21,4 @@ if [ ! -f ".env" ]; then
 fi
 
 echo "Starting stocks-api locally..."
-# Use python -m uvicorn to ensure the current directory is added to the PYTHONPATH
-python -m uvicorn app.main:app --reload
+exec bash ./start.sh --reload

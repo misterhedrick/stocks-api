@@ -1,0 +1,110 @@
+You are helping me build a single-user Python stock options trading API.
+
+Project name:
+stocks-api
+
+Primary goals:
+- Build a FastAPI backend for a single user
+- Use Alpaca for broker access and options market data
+- Start with paper trading first
+- Be designed so it can later support live trading
+- Use Postgres as durable state
+- Keep the architecture simple, practical, and production-minded
+
+Repo:
+https://github.com/misterhedrick/stocks-api.git
+
+Hosted URL:
+https://stocks-api-z11i.onrender.com/
+
+Core architecture decisions:
+- Framework: FastAPI
+- Database: Postgres
+- Broker/data source: Alpaca
+- Hosting: Render
+- Auth: single admin bearer token / API token from environment variables
+- Deployment style: free-first now, but paid-ready later
+- Execution model: trades should flow through previewed order_intents before execution
+- Source of truth for orders, fills, and positions: Alpaca
+- Longer term, execution and reconciliation should move to cron/worker-style jobs
+
+Planned scheduled jobs:
+1. Market-hours job every 5 minutes
+   - scan for signals
+   - follow up on orders
+   - reconcile broker state
+
+2. Daily maintenance job
+   - pre-market tasks
+   - end-of-day tasks
+
+Important product rules:
+- Single user only
+- Keep security simple but real
+- Do not overengineer auth or multi-tenant logic
+- Paper trading is the current target
+- Live trading comes later, so structure code with that future in mind
+- Prefer clear modules, explicit schemas, and durable database records over clever shortcuts
+
+Current database concepts:
+- strategies
+- signals
+- order_intents
+- broker_orders
+- fills
+- position_snapshots
+- job_runs
+- audit_logs
+
+AI review layer planned for later:
+After trades close, I want the system to store enough context for offline AI review so AI can suggest strategy improvements.
+Additional planned tables:
+- trade_cases
+- ai_trade_reviews
+- strategy_change_suggestions
+
+Rules for AI review:
+- AI can review completed trades and suggest changes
+- AI must not auto-change live trading logic
+- We also want to eventually capture rejected trades/signals for comparison analysis
+
+How I want you to work:
+- First, inspect the repo and infer the current project state from the existing code
+- Prefer working with the code that already exists rather than reinventing the project
+- When suggesting changes, anchor them to the current repo structure
+- Be explicit about what is already implemented, what is stubbed, and what is missing
+- Prefer small, safe, reviewable steps
+- Keep Windows local development in mind
+- Keep Bash-friendly local commands in mind because I may run things from Git Bash on Windows
+- Avoid unnecessary abstractions
+- Do not introduce services or infra I do not need yet
+- Keep the app easy to run locally
+
+What I need from you:
+1. Summarize the current repo structure and purpose of each important file/folder
+2. Identify what is already working
+3. Identify what is broken, incomplete, or placeholder-level
+4. Propose the next best implementation steps in priority order
+5. For code changes, make them minimally invasive and consistent with the current architecture
+6. When editing code, explain why each change matters
+7. Prefer practical progress over theoretical redesigns
+
+Coding preferences:
+- Clear Python
+- Typed where reasonable
+- Pydantic schemas where appropriate
+- SQLAlchemy/Alembic style patterns if the repo already uses them
+- Environment-variable driven configuration
+- Predictable API routes
+- Clean separation between API, broker integration, persistence, and domain logic
+
+Local dev expectations:
+- The project should run locally on my Windows PC
+- Commands should be easy to copy/paste
+- Startup should eventually be scriptable with a simple local run script
+
+When you respond:
+- Start by telling me what the repo currently does
+- Then list the most important gaps
+- Then recommend the next concrete coding step
+- If you generate code, make it directly usable in this repo
