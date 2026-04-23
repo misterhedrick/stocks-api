@@ -25,3 +25,5 @@ services:
         sync: false
       - key: ALPACA_PAPER
         value: true
+      - key: AUTO_MIGRATE_ON_STARTUP
+        value: true

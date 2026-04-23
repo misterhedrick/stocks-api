@@ -80,3 +80,4 @@ Set these environment variables in Render:
 - `ADMIN_API_TOKEN`
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
+- `AUTO_MIGRATE_ON_STARTUP=true`
