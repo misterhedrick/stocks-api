@@ -20,5 +20,8 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
+echo "Applying database migrations..."
+python -m alembic upgrade head
+
 echo "Starting stocks-api locally..."
 exec bash ./start.sh --reload

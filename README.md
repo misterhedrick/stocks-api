@@ -29,7 +29,7 @@ cp env.example .env
 Health endpoints:
 - `/health`
 - `/api/v1/health`
-- `/api/v1/ready` requires `Authorization: Bearer <ADMIN_API_TOKEN>` and checks database connectivity.
+- `/api/v1/ready` requires `Authorization: Bearer <ADMIN_API_TOKEN>` and checks database connectivity plus required tables.
 
 Both local run scripts apply `alembic` migrations before starting `uvicorn`.
 
@@ -73,7 +73,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents \
 
 ## Render
 
-Render startup now runs `python -m alembic upgrade head` before launching the app via [start.sh](/c:/Users/Miste/OneDrive/Documents/dev/stocks-api/start.sh).
+Render startup now relies on the FastAPI startup hook to auto-run migrations when `AUTO_MIGRATE_ON_STARTUP=true` or the app environment is `production`/`staging`.
 
 Set these environment variables in Render:
 - `DATABASE_URL`

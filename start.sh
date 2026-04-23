@@ -9,8 +9,5 @@ cd "$SCRIPT_DIR"
 echo "Checking database connection..."
 python -m app.db.check_database
 
-echo "Applying database migrations..."
-python -m alembic upgrade head
-
 echo "Starting stocks-api..."
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" "$@"
