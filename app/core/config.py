@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
     alpaca_paper: bool = True
+    auto_migrate_on_startup: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AUTO_MIGRATE_ON_STARTUP",
+            "APP_AUTO_MIGRATE_ON_STARTUP",
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -46,6 +53,12 @@ class Settings(BaseSettings):
         if self.database_url.startswith("postgresql://"):
             return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
         return self.database_url
+
+    @property
+    def should_auto_migrate_on_startup(self) -> bool:
+        if self.auto_migrate_on_startup is not None:
+            return self.auto_migrate_on_startup
+        return self.environment.strip().lower() in {"production", "staging"}
 
 
 settings = Settings()
