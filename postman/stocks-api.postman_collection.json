@@ -1,0 +1,255 @@
+{
+  "info": {
+    "_postman_id": "c33a068e-4384-4ef4-a2bd-57cbca5095db",
+    "name": "stocks-api",
+    "description": "Single-user FastAPI trading API collection for health, readiness, and preview-only order intents.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Root",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/"
+      },
+      "response": []
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Health returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Health payload is ok\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"ok\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "API Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"API health returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"API health payload is ok\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"ok\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Ready",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/ready"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Ready returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Readiness payload shows database ready\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"ready\");",
+              "  pm.expect(body.database).to.eql(\"ok\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Create Order Intent",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"underlying_symbol\": \"SPY\",\n  \"option_symbol\": \"SPY260417C00500000\",\n  \"side\": \"buy\",\n  \"quantity\": 1,\n  \"order_type\": \"limit\",\n  \"limit_price\": \"1.25\",\n  \"time_in_force\": \"day\",\n  \"rationale\": \"Manual preview only; does not place an Alpaca order.\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/order-intents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Order intent returns 201\", function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Order intent payload is previewed\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"id\");",
+              "  pm.expect(body.status).to.eql(\"previewed\");",
+              "  pm.collectionVariables.set(\"last_order_intent_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "List Order Intents",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/order-intents"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"List order intents returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"List order intents returns an array\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "List Previewed Order Intents",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/order-intents?status=previewed"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"List previewed order intents returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Previewed filter returns an array\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://stocks-api-z11i.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "admin_api_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "last_order_intent_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
