@@ -1,3 +1,1 @@
-from app.api.routes.health import router as health_router
-
-__all__ = ["health_router"]
+# Empty init file to make this directory a Python package
