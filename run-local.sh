@@ -2,9 +2,10 @@
 
 set -e
 
-PROJECT_DIR="/c/Users/Miste/OneDrive/Documents/dev/stocks-api"
+# Get the directory where the script is actually located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-cd "$PROJECT_DIR"
+cd "$SCRIPT_DIR"
 
 if [ ! -d ".venv" ]; then
   echo "Virtual environment not found. Create it first with:"
@@ -20,4 +21,5 @@ if [ ! -f ".env" ]; then
 fi
 
 echo "Starting stocks-api locally..."
-uvicorn app.main:app --reload
+# Use python -m uvicorn to ensure the current directory is added to the PYTHONPATH
+python -m uvicorn app.main:app --reload
