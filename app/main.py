@@ -1,10 +1,26 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.routes.health import router as health_router
 from app.api.routes.order_intents import router as order_intents_router
 from app.core.config import settings
+from app.db.migrations import upgrade_database_to_head
 
-app = FastAPI(title=settings.app_name)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if settings.should_auto_migrate_on_startup:
+        logger.info("Auto-migrating database during startup")
+        upgrade_database_to_head()
+
+    yield
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 
 @app.get("/")

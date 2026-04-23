@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import require_admin
-from app.db.session import check_database_connection
+from app.db.session import (
+    DatabaseSchemaNotReadyError,
+    check_database_connection,
+    check_database_schema,
+)
 
 router = APIRouter(tags=["health"])
 
@@ -16,10 +20,11 @@ def health_check() -> dict[str, str]:
 def readiness_check() -> dict[str, str]:
     try:
         check_database_connection()
-    except SQLAlchemyError as exc:
+        check_database_schema()
+    except (SQLAlchemyError, DatabaseSchemaNotReadyError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database is not ready",
+            detail="Database schema is not ready",
         ) from exc
 
     return {"status": "ready", "database": "ok"}
