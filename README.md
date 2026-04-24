@@ -30,6 +30,7 @@ Health endpoints:
 - `/health`
 - `/api/v1/health`
 - `/api/v1/ready` requires `Authorization: Bearer <ADMIN_API_TOKEN>` and checks database connectivity plus required tables.
+- `/api/v1/jobs/reconcile-broker` requires `Authorization: Bearer <ADMIN_API_TOKEN>` and syncs recent Alpaca orders, fill activities, and current positions into local durable tables.
 
 Both local run scripts apply `alembic` migrations before starting `uvicorn`.
 
@@ -79,6 +80,19 @@ Submit a previewed order intent to Alpaca paper trading:
 curl -X POST http://127.0.0.1:8000/api/v1/order-intents/<order_intent_id>/submit \
   -H "Authorization: Bearer change-me"
 ```
+
+Manually reconcile broker state from Alpaca:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100" \
+  -H "Authorization: Bearer change-me"
+```
+
+The reconciliation job:
+- upserts recent Alpaca orders into `broker_orders`
+- inserts new Alpaca fill activities into `fills`
+- snapshots current Alpaca positions into `position_snapshots`
+- records success or failure in `job_runs`
 
 ## Render
 

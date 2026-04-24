@@ -1,15 +1,7 @@
-You are helping me build a single-user Python stock options trading API.
+You are helping me build a single-user Python stock/options trading API.
 
 Project name:
 stocks-api
-
-Primary goals:
-- Build a FastAPI backend for a single user
-- Use Alpaca for broker access and options market data
-- Start with paper trading first
-- Be designed so it can later support live trading
-- Use Postgres as durable state
-- Keep the architecture simple, practical, and production-minded
 
 Repo:
 https://github.com/misterhedrick/stocks-api.git
@@ -17,36 +9,140 @@ https://github.com/misterhedrick/stocks-api.git
 Hosted URL:
 https://stocks-api-z11i.onrender.com/
 
+Current local workspace:
+c:\Users\Miste\OneDrive\Documents\dev\stocks-api
+
+Last repo/app scope review:
+2026-04-24
+
+High-level project goal:
+- Build a FastAPI backend for one user.
+- Use Alpaca for broker access and options market data.
+- Start with paper trading first.
+- Keep the design live-trading-ready, but do not optimize for live trading yet.
+- Use Postgres as durable state.
+- Keep the architecture simple, practical, and production-minded.
+
 Core architecture decisions:
-- Framework: FastAPI
-- Database: Postgres
-- Broker/data source: Alpaca
-- Hosting: Render
-- Auth: single admin bearer token / API token from environment variables
-- Deployment style: free-first now, but paid-ready later
-- Execution model: trades should flow through previewed order_intents before execution
-- Source of truth for orders, fills, and positions: Alpaca
-- Longer term, execution and reconciliation should move to cron/worker-style jobs
+- Framework: FastAPI.
+- Database: Postgres.
+- ORM/migrations: SQLAlchemy 2.x and Alembic.
+- Broker/data source: Alpaca.
+- Hosting: Render.
+- Auth: single admin bearer token/API token from environment variables.
+- Deployment style: free-first now, but paid-ready later.
+- Execution model: trades should flow through previewed order_intents before execution.
+- Source of truth for orders, fills, and positions: Alpaca.
+- Longer term, execution and reconciliation should move to cron/worker-style jobs.
 
-Planned scheduled jobs:
-1. Market-hours job every 5 minutes
-   - scan for signals
-   - follow up on orders
-   - reconcile broker state
+Current deployed state:
+- Render public app is live at https://stocks-api-z11i.onrender.com/.
+- Confirmed public endpoints on 2026-04-24:
+  - GET / returns {"message":"stocks-api is running"}.
+  - GET /health returns {"status":"ok"}.
+  - GET /api/v1/health returns {"status":"ok"}.
+  - GET /api/v1/order-intents returns 401 without bearer auth, as expected.
+  - GET /openapi.json is exposed and shows current FastAPI routes.
+- The private Render dashboard requires a logged-in browser/session, so Codex cannot inspect private service settings directly.
+- render.yaml is the best local source of deployment intent.
+- Render service config in render.yaml:
+  - service type: web
+  - name: stocks-api
+  - env: python
+  - plan: free
+  - buildCommand: pip install -r requirements.txt
+  - startCommand: bash ./start.sh
+  - healthCheckPath: /health
+  - expected env vars: DATABASE_URL, ADMIN_API_TOKEN, ALPACA_API_KEY, ALPACA_API_SECRET
+  - APP_ENV=production
+  - AUTO_MIGRATE_ON_STARTUP=true
+  - ALPACA_PAPER=true
 
-2. Daily maintenance job
-   - pre-market tasks
-   - end-of-day tasks
+Important local/network note:
+- On Windows, curl/PowerShell may fail against Render with certificate revocation errors.
+- Working deployed checks used:
+  curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/health
+- Do not treat the initial revocation-check failure as an app outage.
 
-Important product rules:
-- Single user only
-- Keep security simple but real
-- Do not overengineer auth or multi-tenant logic
-- Paper trading is the current target
-- Live trading comes later, so structure code with that future in mind
-- Prefer clear modules, explicit schemas, and durable database records over clever shortcuts
+Current repo structure and purpose:
+- README.md
+  - Local setup, Render notes, health/readiness examples, order intent examples.
+- ai_refresh.txt
+  - This handoff file. Keep it updated when project scope changes.
+- env.example
+  - Environment variable template.
+- requirements.txt
+  - Runtime dependencies: FastAPI, Uvicorn, SQLAlchemy, Alembic, Pydantic, httpx, psycopg.
+- runtime.txt
+  - Python runtime for hosting.
+- render.yaml
+  - Render service blueprint.
+- start.sh
+  - Render/Linux startup script. Checks database connectivity, then starts uvicorn.
+- run-local.ps1
+  - Windows PowerShell local startup script. Activates .venv, checks DB, applies migrations, starts uvicorn.
+- run-local.sh
+  - Git Bash local startup script. Activates .venv, applies migrations, starts start.sh with --reload.
+- postman/
+  - Postman collection/environment for root, health, ready, create/list/submit order intent.
+- alembic/
+  - Alembic migration setup and initial trading tables migration.
+- app/main.py
+  - FastAPI app entrypoint.
+  - Adds root and /health.
+  - Includes /api/v1 health and order-intents routers.
+  - Runs Alembic migrations on startup if settings.should_auto_migrate_on_startup is true.
+- app/core/config.py
+  - Pydantic settings loaded from env/.env.
+  - Normalizes Render postgres:// URLs to postgresql+psycopg://.
+  - Picks Alpaca paper/live base URL from ALPACA_PAPER.
+  - Determines startup auto-migration behavior.
+- app/core/security.py
+  - Single admin bearer token dependency.
+- app/db/base.py
+  - SQLAlchemy DeclarativeBase.
+- app/db/models.py
+  - SQLAlchemy models for current trading persistence.
+- app/db/session.py
+  - SQLAlchemy engine/session setup.
+  - DB connection check and schema readiness check.
+- app/db/migrations.py
+  - Programmatic Alembic upgrade helper used by FastAPI startup.
+- app/db/check_database.py
+  - CLI database connectivity check used by startup scripts.
+- app/api/routes/health.py
+  - GET /api/v1/health, public.
+  - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
+- app/api/routes/order_intents.py
+  - POST /api/v1/order-intents, bearer-protected.
+  - GET /api/v1/order-intents, bearer-protected.
+  - POST /api/v1/order-intents/{id}/submit, bearer-protected.
+- app/api/routes/jobs.py
+  - POST /api/v1/jobs/reconcile-broker, bearer-protected.
+  - Manually reconciles Alpaca broker state into local durable tables.
+- app/schemas/order_intents.py
+  - Pydantic request/response schemas for order intents and broker order submission.
+  - Enforces limit_price rules and currently only supports time_in_force="day".
+- app/schemas/jobs.py
+  - Pydantic response schemas for job runs and broker reconciliation.
+- app/services/order_intents.py
+  - Domain/service logic to submit a previewed order intent through Alpaca.
+  - Creates broker_orders and updates order_intents.
+  - Marks order_intents rejected when Alpaca rejects.
+- app/services/broker_reconciliation.py
+  - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
+  - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
+- app/integrations/alpaca.py
+  - Thin httpx-based Alpaca Trading API integration.
+  - Currently supports POST /v2/orders for order intent submission.
+  - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
+  - Converts Alpaca responses into Pydantic models.
+- tests/test_order_intent_submission.py
+  - unittest coverage for order submission service behavior and schema validation.
+- tests/test_broker_reconciliation.py
+  - unittest coverage for broker reconciliation success/failure behavior using fake Alpaca clients.
 
-Current database concepts:
+Current database tables implemented:
 - strategies
 - signals
 - order_intents
@@ -56,55 +152,171 @@ Current database concepts:
 - job_runs
 - audit_logs
 
+Current behavior implemented:
+- Root endpoint.
+- Public health endpoints.
+- Auth-protected readiness endpoint that checks DB connectivity and required tables.
+- Single admin bearer-token auth.
+- Environment-driven settings.
+- Render-compatible Postgres URL handling.
+- Auto migrations at startup for production/staging or AUTO_MIGRATE_ON_STARTUP=true.
+- Initial trading database schema.
+- Create previewed order intent.
+- List order intents, optionally filtered by status.
+- Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
+- Store returned Alpaca order as broker_orders.
+- Update order_intent status/submitted_at after submission.
+- Mark order_intent rejected and save rejection reason if Alpaca rejects.
+- Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
+- Reconciliation upserts recent orders into broker_orders.
+- Reconciliation inserts new fill activities into fills.
+- Reconciliation snapshots current positions into position_snapshots.
+- Reconciliation records success/failure metadata in job_runs.
+- Basic tests for order submission success/rejection and order intent schema rules.
+- Basic tests for reconciliation success/failure service behavior.
+- Postman collection for smoke testing deployed/local API.
+
+Current important limitations/gaps:
+- No strategy CRUD/API yet.
+- No signal ingestion API yet.
+- No scanner/signal-generation logic yet.
+- No options-chain or quote-based preview logic yet.
+- order_intents are "previewed" records, but preview content is client-provided only.
+- No validation that strategy_id or signal_id exists when creating an order_intent.
+- No formal status enum/state machine yet; statuses are plain strings.
+- No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
+- Broker reconciliation exists only as a protected manual endpoint; it is not scheduled yet.
+- Reconciliation fetch limits are simple query params; no pagination loop yet.
+- No scheduled jobs are implemented yet.
+- No audit_logs writes yet.
+- No AI review tables yet.
+- No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
+- No local Docker Compose/Postgres helper yet.
+- No integration tests against a real database yet.
+- No tests for FastAPI route auth or readiness behavior yet.
+
+Planned scheduled jobs:
+1. Market-hours job every 5 minutes:
+   - scan for signals
+   - follow up on orders
+   - reconcile broker state
+
+2. Daily maintenance job:
+   - pre-market tasks
+   - end-of-day tasks
+   - snapshot positions
+   - eventually prepare closed trade cases for AI review
+
 AI review layer planned for later:
-After trades close, I want the system to store enough context for offline AI review so AI can suggest strategy improvements.
-Additional planned tables:
-- trade_cases
-- ai_trade_reviews
-- strategy_change_suggestions
+- After trades close, store enough context for offline AI review so AI can suggest strategy improvements.
+- Additional planned tables:
+  - trade_cases
+  - ai_trade_reviews
+  - strategy_change_suggestions
+- AI rules:
+  - AI can review completed trades and suggest changes.
+  - AI must not auto-change live trading logic.
+  - Eventually capture rejected trades/signals for comparison analysis.
 
-Rules for AI review:
-- AI can review completed trades and suggest changes
-- AI must not auto-change live trading logic
-- We also want to eventually capture rejected trades/signals for comparison analysis
+Recommended next concrete implementation step:
+- Add audit_logs writes for sensitive actions:
+   - order_intent created
+   - order_intent submitted
+   - Alpaca rejection
+   - reconciliation job run
+- Why this is the best next step:
+  - broker reconciliation now records job_runs, but user-facing/broker-touching actions still do not leave an audit trail.
+  - audit_logs are already in the schema, so this is a small, useful durability improvement.
+  - it makes later automation safer and easier to inspect.
 
-How I want you to work:
-- First, inspect the repo and infer the current project state from the existing code
-- Prefer working with the code that already exists rather than reinventing the project
-- When suggesting changes, anchor them to the current repo structure
-- Be explicit about what is already implemented, what is stubbed, and what is missing
-- Prefer small, safe, reviewable steps
-- Keep Windows local development in mind
-- Keep Bash-friendly local commands in mind because I may run things from Git Bash on Windows
-- Avoid unnecessary abstractions
-- Do not introduce services or infra I do not need yet
-- Keep the app easy to run locally
+Likely next steps after audit logging:
+1. Add strategy CRUD:
+   - create/list/update active status
+   - keep config JSON simple
+2. Add signal ingestion:
+   - create/list signals
+   - allow rejected signals for later analysis
+3. Add real preview generation:
+   - quote/option market data
+   - estimated cost/risk metadata
+   - basic buying-power/sizing checks if available
+4. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
+5. Add AI review tables only after closed-trade capture exists.
 
-What I need from you:
-1. Summarize the current repo structure and purpose of each important file/folder
-2. Identify what is already working
-3. Identify what is broken, incomplete, or placeholder-level
-4. Propose the next best implementation steps in priority order
-5. For code changes, make them minimally invasive and consistent with the current architecture
-6. When editing code, explain why each change matters
-7. Prefer practical progress over theoretical redesigns
+Important product rules:
+- Single user only.
+- Keep security simple but real.
+- Do not overengineer auth or multi-tenant logic.
+- Paper trading is the current target.
+- Live trading comes later, so structure code with that future in mind.
+- Prefer clear modules, explicit schemas, and durable database records over clever shortcuts.
+- Source of truth for broker order/fill/position state should remain Alpaca.
+- Local DB should be durable state/cache/history, not an invented broker truth.
+
+How I want Codex to work:
+- First inspect the repo and infer the current project state from existing code.
+- Prefer working with the code that already exists rather than reinventing the project.
+- Anchor suggestions to the current repo structure.
+- Be explicit about what is already implemented, what is stubbed, and what is missing.
+- Prefer small, safe, reviewable steps.
+- Keep Windows local development in mind.
+- Keep Bash-friendly local commands in mind because I may run things from Git Bash on Windows.
+- Avoid unnecessary abstractions.
+- Do not introduce services or infra I do not need yet.
+- Keep the app easy to run locally.
+- If asked to make code changes, make them minimally invasive and consistent with current architecture.
+- When editing code, explain why each change matters.
+- Prefer practical progress over theoretical redesigns.
 
 Coding preferences:
-- Clear Python
-- Typed where reasonable
-- Pydantic schemas where appropriate
-- SQLAlchemy/Alembic style patterns if the repo already uses them
-- Environment-variable driven configuration
-- Predictable API routes
-- Clean separation between API, broker integration, persistence, and domain logic
+- Clear Python.
+- Typed where reasonable.
+- Pydantic schemas where appropriate.
+- SQLAlchemy/Alembic style patterns already used in the repo.
+- Environment-variable driven configuration.
+- Predictable API routes.
+- Clean separation between API routes, broker integration, persistence, and domain logic.
+- Avoid clever abstractions until repetition/risk justifies them.
 
 Local dev expectations:
-- The project should run locally on my Windows PC
-- Commands should be easy to copy/paste
-- Startup should eventually be scriptable with a simple local run script
+- The project should run locally on Windows.
+- Commands should be easy to copy/paste.
+- Support both PowerShell and Git Bash workflows.
+- Startup should remain scriptable with simple local run scripts.
 
-When you respond:
-- Start by telling me what the repo currently does
-- Then list the most important gaps
-- Then recommend the next concrete coding step
-- If you generate code, make it directly usable in this repo
+Useful local commands:
+- PowerShell setup:
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  python -m pip install --upgrade pip
+  pip install -r requirements.txt
+  Copy-Item env.example .env
+  .\run-local.ps1
+
+- Git Bash setup:
+  python -m venv .venv
+  source .venv/Scripts/activate
+  python -m pip install --upgrade pip
+  pip install -r requirements.txt
+  cp env.example .env
+  ./run-local.sh
+
+- Run migrations:
+  python -m alembic upgrade head
+
+- Run current tests:
+  .\.venv\Scripts\python.exe -m unittest discover -s tests
+
+- Manual broker reconciliation:
+  curl -X POST "http://127.0.0.1:8000/api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100" -H "Authorization: Bearer change-me"
+
+- Deployed smoke checks:
+  curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/
+  curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/health
+  curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/api/v1/health
+
+When Codex responds after reading this:
+- Start by telling me what the repo currently does.
+- Then list the most important gaps.
+- Then recommend the next concrete coding step.
+- If generating code, make it directly usable in this repo.

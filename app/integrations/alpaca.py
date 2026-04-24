@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from app.core.config import settings
 from app.db.models import OrderIntent
@@ -42,6 +42,28 @@ class AlpacaSubmittedOrder(BaseModel):
     filled_at: datetime | None = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class AlpacaPosition(BaseModel):
+    symbol: str
+    qty: Decimal
+    market_value: Decimal | None = None
+    cost_basis: Decimal | None = None
+    unrealized_pl: Decimal | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class AlpacaFillActivity(BaseModel):
+    id: str
+    order_id: str | None = None
+    symbol: str
+    side: str
+    qty: Decimal
+    price: Decimal
+    transaction_time: datetime = Field(alias="transaction_time")
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 @dataclass(slots=True)
@@ -106,7 +128,7 @@ class AlpacaTradingClient:
                 f"Unable to reach Alpaca Trading API: {exc}"
             ) from exc
 
-        raw_response = self._parse_json_response(response)
+        raw_response = self._parse_dict_response(response)
 
         if response.status_code in {400, 403, 422}:
             raise AlpacaOrderRejectedError(
@@ -125,18 +147,113 @@ class AlpacaTradingClient:
             raw_response=raw_response,
         )
 
-    def _parse_json_response(self, response: httpx.Response) -> dict[str, Any]:
-        try:
-            payload = response.json()
-        except ValueError:
-            return {"message": response.text.strip() or "Empty response from Alpaca"}
+    def list_orders(
+        self,
+        *,
+        status: str = "all",
+        limit: int = 100,
+        direction: str = "desc",
+    ) -> list[tuple[AlpacaSubmittedOrder, dict[str, Any]]]:
+        payload = self._get_json(
+            "/v2/orders",
+            params={
+                "status": status,
+                "limit": str(limit),
+                "direction": direction,
+                "nested": "false",
+            },
+        )
+        if not isinstance(payload, list):
+            raise AlpacaTradingError("Unexpected Alpaca orders response")
 
+        return [
+            (AlpacaSubmittedOrder.model_validate(item), item)
+            for item in payload
+            if isinstance(item, dict)
+        ]
+
+    def list_positions(self) -> list[tuple[AlpacaPosition, dict[str, Any]]]:
+        payload = self._get_json("/v2/positions")
+        if not isinstance(payload, list):
+            raise AlpacaTradingError("Unexpected Alpaca positions response")
+
+        return [
+            (AlpacaPosition.model_validate(item), item)
+            for item in payload
+            if isinstance(item, dict)
+        ]
+
+    def list_fill_activities(
+        self,
+        *,
+        page_size: int = 100,
+        direction: str = "desc",
+    ) -> list[tuple[AlpacaFillActivity, dict[str, Any]]]:
+        payload = self._get_json(
+            "/v2/account/activities/FILL",
+            params={
+                "page_size": str(page_size),
+                "direction": direction,
+            },
+        )
+        if not isinstance(payload, list):
+            raise AlpacaTradingError("Unexpected Alpaca fill activities response")
+
+        return [
+            (AlpacaFillActivity.model_validate(item), item)
+            for item in payload
+            if isinstance(item, dict)
+        ]
+
+    def _get_json(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Any:
+        try:
+            with httpx.Client(
+                base_url=self._base_url,
+                timeout=self._timeout_seconds,
+                headers={
+                    "APCA-API-KEY-ID": self._api_key,
+                    "APCA-API-SECRET-KEY": self._api_secret,
+                },
+            ) as client:
+                response = client.get(path, params=params)
+        except httpx.HTTPError as exc:
+            raise AlpacaTradingError(
+                f"Unable to reach Alpaca Trading API: {exc}"
+            ) from exc
+
+        raw_response = self._parse_any_response(response)
+
+        if response.is_error:
+            raise AlpacaTradingError(
+                self._extract_error_detail(raw_response),
+                status_code=response.status_code,
+            )
+
+        return raw_response
+
+    def _parse_dict_response(self, response: httpx.Response) -> dict[str, Any]:
+        payload = self._parse_any_response(response)
         if isinstance(payload, dict):
             return payload
 
         return {"message": str(payload)}
 
-    def _extract_error_detail(self, payload: dict[str, Any]) -> str:
+    def _parse_any_response(self, response: httpx.Response) -> Any:
+        try:
+            payload = response.json()
+        except ValueError:
+            return {"message": response.text.strip() or "Empty response from Alpaca"}
+        return payload
+
+    def _extract_error_detail(self, payload: Any) -> str:
+        if not isinstance(payload, dict):
+            return "Alpaca rejected the request"
+
         for key in ("message", "detail", "error"):
             value = payload.get(key)
             if isinstance(value, str) and value.strip():

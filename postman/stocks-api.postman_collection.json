@@ -108,6 +108,44 @@
       "response": []
     },
     {
+      "name": "Reconcile Broker",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Reconcile broker returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Reconcile broker records a job run\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.job_run.job_name).to.eql(\"reconcile_broker\");",
+              "  pm.expect(body.job_run.status).to.eql(\"succeeded\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Create Order Intent",
       "request": {
         "auth": {
