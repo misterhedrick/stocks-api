@@ -71,6 +71,15 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents \
   }'
 ```
 
+Option order intents currently support Alpaca's `day` time-in-force only.
+
+Submit a previewed order intent to Alpaca paper trading:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/order-intents/<order_intent_id>/submit \
+  -H "Authorization: Bearer change-me"
+```
+
 ## Render
 
 Render startup now relies on the FastAPI startup hook to auto-run migrations when `AUTO_MIGRATE_ON_STARTUP=true` or the app environment is `production`/`staging`.

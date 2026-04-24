@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
     alpaca_paper: bool = True
+    alpaca_request_timeout_seconds: int = 10
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -59,6 +60,12 @@ class Settings(BaseSettings):
         if self.auto_migrate_on_startup is not None:
             return self.auto_migrate_on_startup
         return self.environment.strip().lower() in {"production", "staging"}
+
+    @property
+    def alpaca_trading_base_url(self) -> str:
+        if self.alpaca_paper:
+            return "https://paper-api.alpaca.markets"
+        return "https://api.alpaca.markets"
 
 
 settings = Settings()

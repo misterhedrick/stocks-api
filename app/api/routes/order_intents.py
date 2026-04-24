@@ -1,13 +1,29 @@
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
 from app.db.models import OrderIntent
 from app.db.session import get_db
-from app.schemas.order_intents import OrderIntentCreate, OrderIntentRead
+from app.integrations.alpaca import (
+    AlpacaOrderRejectedError,
+    AlpacaTradingConfigurationError,
+    AlpacaTradingError,
+)
+from app.schemas.order_intents import (
+    BrokerOrderRead,
+    OrderIntentCreate,
+    OrderIntentRead,
+    OrderIntentSubmissionRead,
+)
+from app.services.order_intents import (
+    OrderIntentNotFoundError,
+    OrderIntentStateError,
+    submit_order_intent,
+)
 
 router = APIRouter(
     prefix="/order-intents",
@@ -40,3 +56,46 @@ def list_order_intents(
         statement = statement.where(OrderIntent.status == status_filter)
 
     return list(db.scalars(statement))
+
+
+@router.post(
+    "/{order_intent_id}/submit",
+    response_model=OrderIntentSubmissionRead,
+    status_code=status.HTTP_200_OK,
+)
+def submit_order_intent_route(
+    order_intent_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> OrderIntentSubmissionRead:
+    try:
+        order_intent, broker_order = submit_order_intent(db, order_intent_id)
+    except OrderIntentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except OrderIntentStateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only previewed order intents can be submitted. Current status: {exc.current_status}",
+        ) from exc
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaOrderRejectedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.detail,
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return OrderIntentSubmissionRead(
+        order_intent=OrderIntentRead.model_validate(order_intent),
+        broker_order=BrokerOrderRead.model_validate(broker_order),
+    )

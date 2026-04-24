@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c33a068e-4384-4ef4-a2bd-57cbca5095db",
     "name": "stocks-api",
-    "description": "Single-user FastAPI trading API collection for health, readiness, and preview-only order intents.",
+    "description": "Single-user FastAPI trading API collection for health, readiness, preview-only order intents, and paper order submission.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -153,6 +153,44 @@
               "  pm.expect(body).to.have.property(\"id\");",
               "  pm.expect(body.status).to.eql(\"previewed\");",
               "  pm.collectionVariables.set(\"last_order_intent_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Submit Order Intent",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/order-intents/{{last_order_intent_id}}/submit"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Submit order intent returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Submit order intent returns broker order payload\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.order_intent.status).to.not.eql(\"previewed\");",
+              "  pm.expect(body.broker_order).to.have.property(\"alpaca_order_id\");",
               "});"
             ]
           }
