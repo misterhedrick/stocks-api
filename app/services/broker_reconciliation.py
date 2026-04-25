@@ -13,6 +13,7 @@ from app.integrations.alpaca import (
     AlpacaSubmittedOrder,
     AlpacaTradingClient,
 )
+from app.services.audit_logs import record_audit_log
 
 
 @dataclass(slots=True)
@@ -84,6 +85,14 @@ def reconcile_broker_state(
         job_run.error = None
 
         db.add(job_run)
+        record_audit_log(
+            db,
+            event_type="broker_reconciliation.succeeded",
+            entity_type="job_run",
+            entity_id=job_run.id,
+            message="Broker reconciliation succeeded",
+            payload=details,
+        )
         db.commit()
         db.refresh(job_run)
 
@@ -104,6 +113,14 @@ def reconcile_broker_state(
         job_run.details = {}
         job_run.error = f"{exc.__class__.__name__}: {exc}"
         db.add(job_run)
+        record_audit_log(
+            db,
+            event_type="broker_reconciliation.failed",
+            entity_type="job_run",
+            entity_id=job_run.id,
+            message="Broker reconciliation failed",
+            payload={"error": job_run.error},
+        )
         db.commit()
         db.refresh(job_run)
         raise

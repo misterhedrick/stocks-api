@@ -4,7 +4,7 @@ import unittest
 import uuid
 from types import SimpleNamespace
 
-from app.db.models import BrokerOrder, Fill, JobRun, PositionSnapshot
+from app.db.models import AuditLog, BrokerOrder, Fill, JobRun, PositionSnapshot
 from app.integrations.alpaca import (
     AlpacaFillActivity,
     AlpacaPosition,
@@ -146,6 +146,10 @@ class BrokerReconciliationTests(unittest.TestCase):
         self.assertIn(BrokerOrder, added_types)
         self.assertIn(Fill, added_types)
         self.assertIn(PositionSnapshot, added_types)
+        self.assertIn(AuditLog, added_types)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "broker_reconciliation.succeeded")
+        self.assertEqual(audit_logs[-1].payload["orders_seen"], 1)
 
     def test_reconcile_broker_state_records_failed_job_run(self) -> None:
         db = FakeReconciliationSession()
@@ -161,6 +165,9 @@ class BrokerReconciliationTests(unittest.TestCase):
         job_runs = [item for item in db.added if isinstance(item, JobRun)]
         self.assertEqual(job_runs[-1].status, "failed")
         self.assertIn("AlpacaTradingError", job_runs[-1].error)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "broker_reconciliation.failed")
+        self.assertIn("AlpacaTradingError", audit_logs[-1].payload["error"])
 
 
 if __name__ == "__main__":

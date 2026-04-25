@@ -132,6 +132,8 @@ Current repo structure and purpose:
 - app/services/broker_reconciliation.py
   - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
   - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
+- app/services/audit_logs.py
+  - Small helper for writing audit_logs records consistently.
 - app/integrations/alpaca.py
   - Thin httpx-based Alpaca Trading API integration.
   - Currently supports POST /v2/orders for order intent submission.
@@ -172,8 +174,15 @@ Current behavior implemented:
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
 - Reconciliation records success/failure metadata in job_runs.
+- Audit logs are written for:
+  - order_intent.created
+  - order_intent.submitted
+  - order_intent.rejected
+  - broker_reconciliation.succeeded
+  - broker_reconciliation.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
+- Tests verify audit log writes for order intent and reconciliation workflows.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
@@ -188,7 +197,7 @@ Current important limitations/gaps:
 - Broker reconciliation exists only as a protected manual endpoint; it is not scheduled yet.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
 - No scheduled jobs are implemented yet.
-- No audit_logs writes yet.
+- Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
 - No AI review tables yet.
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
 - No local Docker Compose/Postgres helper yet.
@@ -219,28 +228,27 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add audit_logs writes for sensitive actions:
-   - order_intent created
-   - order_intent submitted
-   - Alpaca rejection
-   - reconciliation job run
+- Add strategy CRUD:
+  - POST /api/v1/strategies
+  - GET /api/v1/strategies
+  - PATCH /api/v1/strategies/{id}
+  - support toggling is_active
+  - keep config as JSONB and avoid over-modeling strategy rules too early
 - Why this is the best next step:
-  - broker reconciliation now records job_runs, but user-facing/broker-touching actions still do not leave an audit trail.
-  - audit_logs are already in the schema, so this is a small, useful durability improvement.
-  - it makes later automation safer and easier to inspect.
+  - strategies already exist in the schema and are referenced by signals/order_intents.
+  - CRUD gives a real parent object for future signals and order intents.
+  - it is a small domain feature that does not require market data or scheduling yet.
 
-Likely next steps after audit logging:
-1. Add strategy CRUD:
-   - create/list/update active status
-   - keep config JSON simple
-2. Add signal ingestion:
+Likely next steps after strategy CRUD:
+1. Add signal ingestion:
    - create/list signals
    - allow rejected signals for later analysis
-3. Add real preview generation:
+2. Add real preview generation:
    - quote/option market data
    - estimated cost/risk metadata
    - basic buying-power/sizing checks if available
-4. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
+3. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
+4. Add route-level tests for auth/readiness/manual jobs.
 5. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

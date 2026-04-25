@@ -11,6 +11,7 @@ from app.integrations.alpaca import (
     AlpacaTradingClient,
     coerce_alpaca_datetime,
 )
+from app.services.audit_logs import record_audit_log
 
 
 class OrderIntentNotFoundError(LookupError):
@@ -44,6 +45,22 @@ def submit_order_intent(
         order_intent.status = "rejected"
         order_intent.rejection_reason = exc.detail
         db.add(order_intent)
+        record_audit_log(
+            db,
+            event_type="order_intent.rejected",
+            entity_type="order_intent",
+            entity_id=order_intent.id,
+            message="Alpaca rejected order intent submission",
+            payload={
+                "option_symbol": order_intent.option_symbol,
+                "side": order_intent.side,
+                "quantity": order_intent.quantity,
+                "order_type": order_intent.order_type,
+                "status": order_intent.status,
+                "rejection_reason": exc.detail,
+                "alpaca_status_code": exc.status_code,
+            },
+        )
         db.commit()
         db.refresh(order_intent)
         raise
@@ -71,6 +88,23 @@ def submit_order_intent(
 
     db.add(broker_order)
     db.add(order_intent)
+    db.flush()
+    record_audit_log(
+        db,
+        event_type="order_intent.submitted",
+        entity_type="order_intent",
+        entity_id=order_intent.id,
+        message="Order intent submitted to Alpaca",
+        payload={
+            "broker_order_id": str(broker_order.id),
+            "alpaca_order_id": broker_order.alpaca_order_id,
+            "option_symbol": order_intent.option_symbol,
+            "side": order_intent.side,
+            "quantity": order_intent.quantity,
+            "order_type": order_intent.order_type,
+            "status": order_intent.status,
+        },
+    )
     db.commit()
     db.refresh(order_intent)
     db.refresh(broker_order)

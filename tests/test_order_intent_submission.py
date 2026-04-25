@@ -6,7 +6,8 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from app.db.models import OrderIntent
+from app.api.routes.order_intents import create_order_intent
+from app.db.models import AuditLog, OrderIntent
 from app.integrations.alpaca import (
     AlpacaOrderRejectedError,
     AlpacaOrderSubmission,
@@ -21,6 +22,7 @@ class FakeSession:
         self.order_intent = order_intent
         self.added: list[object] = []
         self.commit_count = 0
+        self.flush_count = 0
 
     def get(self, model: type[OrderIntent], order_intent_id: uuid.UUID) -> OrderIntent | None:
         if self.order_intent is None:
@@ -36,6 +38,9 @@ class FakeSession:
 
     def commit(self) -> None:
         self.commit_count += 1
+
+    def flush(self) -> None:
+        self.flush_count += 1
 
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
@@ -96,6 +101,27 @@ def build_previewed_order_intent() -> OrderIntent:
 
 
 class OrderIntentSubmissionTests(unittest.TestCase):
+    def test_create_order_intent_records_audit_log(self) -> None:
+        db = FakeSession(None)
+        payload = OrderIntentCreate(
+            underlying_symbol="SPY",
+            option_symbol="SPY260417C00500000",
+            side="buy",
+            quantity=1,
+            order_type="limit",
+            limit_price=Decimal("1.25"),
+            time_in_force="day",
+        )
+
+        order_intent = create_order_intent(payload, db)
+
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(order_intent.underlying_symbol, "SPY")
+        self.assertEqual(audit_logs[-1].event_type, "order_intent.created")
+        self.assertEqual(audit_logs[-1].entity_type, "order_intent")
+        self.assertEqual(audit_logs[-1].payload["option_symbol"], "SPY260417C00500000")
+        self.assertEqual(db.commit_count, 1)
+
     def test_submit_previewed_order_intent_creates_broker_order(self) -> None:
         order_intent = build_previewed_order_intent()
         db = FakeSession(order_intent)
@@ -112,6 +138,9 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         self.assertEqual(broker_order.status, "new")
         self.assertEqual(broker_order.symbol, order_intent.option_symbol)
         self.assertEqual(db.commit_count, 1)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "order_intent.submitted")
+        self.assertEqual(audit_logs[-1].payload["alpaca_order_id"], "alpaca-order-123")
 
     def test_broker_rejection_marks_order_intent_rejected(self) -> None:
         order_intent = build_previewed_order_intent()
@@ -127,6 +156,9 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         self.assertEqual(order_intent.status, "rejected")
         self.assertEqual(order_intent.rejection_reason, "insufficient options buying power")
         self.assertEqual(db.commit_count, 1)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "order_intent.rejected")
+        self.assertEqual(audit_logs[-1].payload["rejection_reason"], "insufficient options buying power")
 
     def test_order_intent_create_matches_supported_options_rules(self) -> None:
         valid_payload = OrderIntentCreate(

@@ -94,6 +94,12 @@ The reconciliation job:
 - snapshots current Alpaca positions into `position_snapshots`
 - records success or failure in `job_runs`
 
+Audit logging currently records:
+- order intent creation
+- order intent submission
+- Alpaca order intent rejection
+- broker reconciliation success or failure
+
 ## Render
 
 Render startup now relies on the FastAPI startup hook to auto-run migrations when `AUTO_MIGRATE_ON_STARTUP=true` or the app environment is `production`/`staging`.

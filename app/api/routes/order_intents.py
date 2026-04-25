@@ -19,6 +19,7 @@ from app.schemas.order_intents import (
     OrderIntentRead,
     OrderIntentSubmissionRead,
 )
+from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
     OrderIntentNotFoundError,
     OrderIntentStateError,
@@ -39,6 +40,26 @@ def create_order_intent(
 ) -> OrderIntent:
     order_intent = OrderIntent(**payload.model_dump())
     db.add(order_intent)
+    db.flush()
+    record_audit_log(
+        db,
+        event_type="order_intent.created",
+        entity_type="order_intent",
+        entity_id=order_intent.id,
+        message="Order intent created",
+        payload={
+            "underlying_symbol": order_intent.underlying_symbol,
+            "option_symbol": order_intent.option_symbol,
+            "side": order_intent.side,
+            "quantity": order_intent.quantity,
+            "order_type": order_intent.order_type,
+            "limit_price": str(order_intent.limit_price)
+            if order_intent.limit_price is not None
+            else None,
+            "time_in_force": order_intent.time_in_force,
+            "status": order_intent.status,
+        },
+    )
     db.commit()
     db.refresh(order_intent)
     return order_intent
