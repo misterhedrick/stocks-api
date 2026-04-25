@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
-from app.db.models import Signal
+from app.db.models import Signal, Strategy
 from app.db.session import get_db
 from app.schemas.signals import SignalCreate, SignalRead, SignalUpdate
 from app.services.audit_logs import record_audit_log
@@ -24,6 +24,9 @@ def create_signal(
     payload: SignalCreate,
     db: Annotated[Session, Depends(get_db)],
 ) -> Signal:
+    if payload.strategy_id is not None:
+        _get_strategy_or_404(db, payload.strategy_id)
+
     signal = Signal(**payload.model_dump())
     db.add(signal)
     db.flush()
@@ -77,6 +80,10 @@ def update_signal(
     signal = _get_signal_or_404(db, signal_id)
     changes = payload.model_dump(exclude_unset=True)
 
+    strategy_id = changes.get("strategy_id")
+    if strategy_id is not None:
+        _get_strategy_or_404(db, strategy_id)
+
     for field_name, value in changes.items():
         setattr(signal, field_name, value)
 
@@ -96,6 +103,16 @@ def update_signal(
     db.commit()
     db.refresh(signal)
     return signal
+
+
+def _get_strategy_or_404(db: Session, strategy_id: uuid.UUID) -> Strategy:
+    strategy = db.get(Strategy, strategy_id)
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Strategy '{strategy_id}' was not found",
+        )
+    return strategy
 
 
 def _get_signal_or_404(db: Session, signal_id: uuid.UUID) -> Signal:

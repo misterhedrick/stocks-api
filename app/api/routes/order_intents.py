@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
-from app.db.models import OrderIntent
+from app.db.models import OrderIntent, Signal, Strategy
 from app.db.session import get_db
 from app.integrations.alpaca import (
     AlpacaOrderRejectedError,
@@ -42,6 +42,8 @@ def create_order_intent(
     payload: OrderIntentCreate,
     db: Annotated[Session, Depends(get_db)],
 ) -> OrderIntent:
+    _validate_order_intent_references(db, payload)
+
     order_intent = OrderIntent(**payload.model_dump())
     db.add(order_intent)
     db.flush()
@@ -153,3 +155,33 @@ def submit_order_intent_route(
         order_intent=OrderIntentRead.model_validate(order_intent),
         broker_order=BrokerOrderRead.model_validate(broker_order),
     )
+
+
+def _validate_order_intent_references(
+    db: Session,
+    payload: OrderIntentCreate,
+) -> None:
+    strategy = None
+    signal = None
+
+    if payload.strategy_id is not None:
+        strategy = db.get(Strategy, payload.strategy_id)
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Strategy '{payload.strategy_id}' was not found",
+            )
+
+    if payload.signal_id is not None:
+        signal = db.get(Signal, payload.signal_id)
+        if signal is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Signal '{payload.signal_id}' was not found",
+            )
+
+    if strategy is not None and signal is not None and signal.strategy_id != strategy.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Order intent strategy_id must match the signal's strategy_id",
+        )

@@ -13,7 +13,7 @@ Current local workspace:
 c:\Users\Miste\OneDrive\Documents\dev\stocks-api
 
 Last repo/app scope review:
-2026-04-24
+2026-04-25
 
 High-level project goal:
 - Build a FastAPI backend for one user.
@@ -193,10 +193,13 @@ Current behavior implemented:
 - Strategy create/update writes audit_logs.
 - Create/list/read/update signals.
 - List signals can filter by strategy_id, status, and symbol.
+- Signal create/update validates provided strategy_id exists.
 - Signal create/update writes audit_logs.
 - Generate previewed order intents from signals using Alpaca latest option quotes.
 - Generated previews derive a limit price from midpoint when no limit_price is supplied.
 - Generated previews store bid/ask/midpoint/spread/estimated notional context in order_intents.preview.
+- Manual order_intent creation validates provided strategy_id and signal_id exist.
+- Manual order_intent creation rejects strategy_id/signal_id combinations that do not match.
 - Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
 - Store returned Alpaca order as broker_orders.
 - Update order_intent status/submitted_at after submission.
@@ -220,13 +223,13 @@ Current behavior implemented:
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
+- Route-level tests verify public health routes, protected route auth, and reference-validation responses.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
 - No scanner/signal-generation logic yet.
 - Preview generation uses latest option quote only; no option-chain search/contract selection yet.
 - Manual order_intent creation still accepts client-provided preview data.
-- No validation that strategy_id or signal_id exists when creating an order_intent.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
 - Broker reconciliation exists only as a protected manual endpoint; it is not scheduled yet.
@@ -237,7 +240,7 @@ Current important limitations/gaps:
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
-- No tests for FastAPI route auth or readiness behavior yet.
+- No tests for readiness behavior yet.
 
 Planned scheduled jobs:
 1. Market-hours job every 5 minutes:
@@ -263,22 +266,19 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Validate references and tighten object linking:
-  - validate strategy_id exists when creating signals
-  - validate strategy_id and signal_id exist when manually creating order_intents
-  - ensure order_intent.strategy_id lines up with signal.strategy_id when both are supplied
-  - consider whether generated previews should reject non-new/rejected signals
+- Add route-level tests for readiness and core protected workflows:
+  - verify readiness reports database/schema problems cleanly.
+  - cover manual job/reconciliation response mapping through FastAPI TestClient.
+  - add happy-path route tests for strategy/signal/manual order-intent creation if useful.
 - Why this is the best next step:
-  - the app now has linked strategies, signals, and order intents.
-  - generated previews validate signal_id, but manual creation still trusts foreign-key inputs.
-  - tighter validation improves data quality before scheduling or automation.
+  - route behavior has initial coverage, but readiness is still a key deployment surface.
+  - route tests will reduce risk before adding scheduled jobs or scanners.
 
-Likely next steps after reference validation:
+Likely next steps after route-level tests:
 1. Add option-chain/contract selection support instead of requiring a preselected option_symbol.
 2. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
-3. Add route-level tests for auth/readiness/manual jobs.
-4. Add scanner/job scaffolding that can create signals.
-5. Add AI review tables only after closed-trade capture exists.
+3. Add scanner/job scaffolding that can create signals.
+4. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:
 - Single user only.

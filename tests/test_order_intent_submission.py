@@ -4,10 +4,11 @@ import unittest
 import uuid
 from decimal import Decimal
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.routes.order_intents import create_order_intent
-from app.db.models import AuditLog, OrderIntent, Signal
+from app.db.models import AuditLog, OrderIntent, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaOrderRejectedError,
@@ -28,9 +29,11 @@ class FakeSession:
         self,
         order_intent: OrderIntent | None,
         signal: Signal | None = None,
+        strategy: Strategy | None = None,
     ) -> None:
         self.order_intent = order_intent
         self.signal = signal
+        self.strategy = strategy
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -44,6 +47,10 @@ class FakeSession:
             if self.signal is None or self.signal.id != record_id:
                 return None
             return self.signal
+        if model is Strategy:
+            if self.strategy is None or self.strategy.id != record_id:
+                return None
+            return self.strategy
         return None
 
     def add(self, obj: object) -> None:
@@ -160,6 +167,16 @@ def build_signal() -> Signal:
     )
 
 
+def build_strategy(strategy_id: uuid.UUID | None = None) -> Strategy:
+    return Strategy(
+        id=strategy_id or uuid.uuid4(),
+        name="Opening Range Breakout",
+        description="Test strategy",
+        is_active=True,
+        config={"underlying": "SPY"},
+    )
+
+
 class OrderIntentSubmissionTests(unittest.TestCase):
     def test_create_order_intent_records_audit_log(self) -> None:
         db = FakeSession(None)
@@ -181,6 +198,96 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         self.assertEqual(audit_logs[-1].entity_type, "order_intent")
         self.assertEqual(audit_logs[-1].payload["option_symbol"], "SPY260417C00500000")
         self.assertEqual(db.commit_count, 1)
+
+    def test_create_order_intent_accepts_matching_strategy_and_signal(self) -> None:
+        signal = build_signal()
+        strategy = build_strategy(signal.strategy_id)
+        db = FakeSession(None, signal=signal, strategy=strategy)
+
+        order_intent = create_order_intent(
+            OrderIntentCreate(
+                strategy_id=strategy.id,
+                signal_id=signal.id,
+                underlying_symbol="SPY",
+                option_symbol="SPY260417C00500000",
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                limit_price=Decimal("1.25"),
+                time_in_force="day",
+            ),
+            db,
+        )
+
+        self.assertEqual(order_intent.strategy_id, strategy.id)
+        self.assertEqual(order_intent.signal_id, signal.id)
+        self.assertEqual(db.commit_count, 1)
+
+    def test_create_order_intent_requires_existing_strategy(self) -> None:
+        db = FakeSession(None)
+
+        with self.assertRaises(HTTPException) as context:
+            create_order_intent(
+                OrderIntentCreate(
+                    strategy_id=uuid.uuid4(),
+                    underlying_symbol="SPY",
+                    option_symbol="SPY260417C00500000",
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    limit_price=Decimal("1.25"),
+                    time_in_force="day",
+                ),
+                db,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(db.commit_count, 0)
+
+    def test_create_order_intent_requires_existing_signal(self) -> None:
+        db = FakeSession(None)
+
+        with self.assertRaises(HTTPException) as context:
+            create_order_intent(
+                OrderIntentCreate(
+                    signal_id=uuid.uuid4(),
+                    underlying_symbol="SPY",
+                    option_symbol="SPY260417C00500000",
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    limit_price=Decimal("1.25"),
+                    time_in_force="day",
+                ),
+                db,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(db.commit_count, 0)
+
+    def test_create_order_intent_rejects_strategy_signal_mismatch(self) -> None:
+        signal = build_signal()
+        strategy = build_strategy()
+        db = FakeSession(None, signal=signal, strategy=strategy)
+
+        with self.assertRaises(HTTPException) as context:
+            create_order_intent(
+                OrderIntentCreate(
+                    strategy_id=strategy.id,
+                    signal_id=signal.id,
+                    underlying_symbol="SPY",
+                    option_symbol="SPY260417C00500000",
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    limit_price=Decimal("1.25"),
+                    time_in_force="day",
+                ),
+                db,
+            )
+
+        self.assertEqual(context.exception.status_code, 409)
+        self.assertEqual(db.commit_count, 0)
 
     def test_preview_order_intent_from_signal_creates_preview_with_quote_context(self) -> None:
         signal = build_signal()

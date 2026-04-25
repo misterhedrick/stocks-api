@@ -165,6 +165,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents \
 ```
 
 Option order intents currently support Alpaca's `day` time-in-force only.
+When `strategy_id` or `signal_id` is supplied, the API validates those records exist and rejects mismatched strategy/signal links.
 
 Submit a previewed order intent to Alpaca paper trading:
 

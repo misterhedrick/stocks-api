@@ -8,13 +8,18 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.routes.signals import create_signal, get_signal, update_signal
-from app.db.models import AuditLog, Signal
+from app.db.models import AuditLog, Signal, Strategy
 from app.schemas.signals import SignalCreate, SignalUpdate
 
 
 class FakeSignalSession:
-    def __init__(self, signal: Signal | None = None) -> None:
+    def __init__(
+        self,
+        signal: Signal | None = None,
+        strategy: Strategy | None = None,
+    ) -> None:
         self.signal = signal
+        self.strategy = strategy
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -36,12 +41,16 @@ class FakeSignalSession:
         if getattr(obj, "id", None) is None:
             obj.id = uuid.uuid4()
 
-    def get(self, model: type[Signal], signal_id: uuid.UUID) -> Signal | None:
-        if model is not Signal or self.signal is None:
-            return None
-        if self.signal.id != signal_id:
-            return None
-        return self.signal
+    def get(self, model: type, record_id: uuid.UUID) -> object | None:
+        if model is Signal:
+            if self.signal is None or self.signal.id != record_id:
+                return None
+            return self.signal
+        if model is Strategy:
+            if self.strategy is None or self.strategy.id != record_id:
+                return None
+            return self.strategy
+        return None
 
 
 def build_signal() -> Signal:
@@ -59,13 +68,24 @@ def build_signal() -> Signal:
     )
 
 
+def build_strategy() -> Strategy:
+    return Strategy(
+        id=uuid.uuid4(),
+        name="Opening Range Breakout",
+        description="Test strategy",
+        is_active=True,
+        config={"underlying": "SPY"},
+    )
+
+
 class SignalRouteTests(unittest.TestCase):
     def test_create_signal_records_audit_log(self) -> None:
-        db = FakeSignalSession()
+        strategy = build_strategy()
+        db = FakeSignalSession(strategy=strategy)
 
         signal = create_signal(
             SignalCreate(
-                strategy_id=uuid.uuid4(),
+                strategy_id=strategy.id,
                 symbol="SPY260417C00500000",
                 underlying_symbol="SPY",
                 signal_type="breakout",
@@ -83,6 +103,24 @@ class SignalRouteTests(unittest.TestCase):
         self.assertEqual(audit_logs[-1].event_type, "signal.created")
         self.assertEqual(audit_logs[-1].entity_id, signal.id)
         self.assertEqual(audit_logs[-1].payload["confidence"], "0.7500")
+
+    def test_create_signal_requires_existing_strategy(self) -> None:
+        db = FakeSignalSession()
+
+        with self.assertRaises(HTTPException) as context:
+            create_signal(
+                SignalCreate(
+                    strategy_id=uuid.uuid4(),
+                    symbol="SPY260417C00500000",
+                    underlying_symbol="SPY",
+                    signal_type="breakout",
+                    direction="bullish",
+                ),
+                db,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(db.commit_count, 0)
 
     def test_update_signal_records_audit_log(self) -> None:
         existing_signal = build_signal()
@@ -104,6 +142,20 @@ class SignalRouteTests(unittest.TestCase):
         self.assertEqual(db.commit_count, 1)
         self.assertEqual(audit_logs[-1].event_type, "signal.updated")
         self.assertEqual(audit_logs[-1].payload["changes"]["confidence"], "0.6500")
+
+    def test_update_signal_requires_existing_strategy_when_changed(self) -> None:
+        existing_signal = build_signal()
+        db = FakeSignalSession(existing_signal)
+
+        with self.assertRaises(HTTPException) as context:
+            update_signal(
+                existing_signal.id,
+                SignalUpdate(strategy_id=uuid.uuid4()),
+                db,
+            )
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(db.commit_count, 0)
 
     def test_get_signal_returns_404_when_missing(self) -> None:
         db = FakeSignalSession()
