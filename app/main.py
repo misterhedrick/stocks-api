@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from app.api.routes.health import router as health_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.order_intents import router as order_intents_router
+from app.api.routes.signals import router as signals_router
+from app.api.routes.strategies import router as strategies_router
 from app.core.config import settings
 from app.db.migrations import upgrade_database_to_head
 
@@ -37,3 +39,5 @@ def root_health() -> dict[str, str]:
 app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(jobs_router, prefix=settings.api_v1_prefix)
 app.include_router(order_intents_router, prefix=settings.api_v1_prefix)
+app.include_router(signals_router, prefix=settings.api_v1_prefix)
+app.include_router(strategies_router, prefix=settings.api_v1_prefix)

@@ -40,6 +40,79 @@ Readiness check example:
 curl -H "Authorization: Bearer change-me" http://127.0.0.1:8000/api/v1/ready
 ```
 
+Create a strategy:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/strategies \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Opening range options",
+    "description": "Paper strategy scaffold",
+    "is_active": true,
+    "config": {
+      "underlying": "SPY"
+    }
+  }'
+```
+
+List active strategies:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/strategies?is_active=true"
+```
+
+Update a strategy:
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/api/v1/strategies/<strategy_id> \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "is_active": false
+  }'
+```
+
+Create a signal:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/signals \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_id": "<strategy_id>",
+    "symbol": "SPY260417C00500000",
+    "underlying_symbol": "SPY",
+    "signal_type": "breakout",
+    "direction": "bullish",
+    "confidence": "0.7500",
+    "rationale": "Opening range breakout",
+    "market_context": {
+      "price": "512.34"
+    }
+  }'
+```
+
+List signals:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/signals?status=new&limit=50"
+```
+
+Mark a signal rejected:
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/api/v1/signals/<signal_id> \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "rejected",
+    "rejected_reason": "Spread too wide"
+  }'
+```
+
 Run database migrations:
 
 ```bash
@@ -95,6 +168,10 @@ The reconciliation job:
 - records success or failure in `job_runs`
 
 Audit logging currently records:
+- strategy creation
+- strategy updates
+- signal creation
+- signal updates
 - order intent creation
 - order intent submission
 - Alpaca order intent rejection

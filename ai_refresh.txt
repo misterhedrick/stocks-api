@@ -117,12 +117,29 @@ Current repo structure and purpose:
   - POST /api/v1/order-intents, bearer-protected.
   - GET /api/v1/order-intents, bearer-protected.
   - POST /api/v1/order-intents/{id}/submit, bearer-protected.
+- app/api/routes/strategies.py
+  - POST /api/v1/strategies, bearer-protected.
+  - GET /api/v1/strategies, bearer-protected.
+  - GET /api/v1/strategies/{id}, bearer-protected.
+  - PATCH /api/v1/strategies/{id}, bearer-protected.
+  - Keeps strategy config as JSONB and supports toggling is_active.
+- app/api/routes/signals.py
+  - POST /api/v1/signals, bearer-protected.
+  - GET /api/v1/signals, bearer-protected.
+  - GET /api/v1/signals/{id}, bearer-protected.
+  - PATCH /api/v1/signals/{id}, bearer-protected.
+  - Captures strategy-generated or manual trade signals before order intents.
 - app/api/routes/jobs.py
   - POST /api/v1/jobs/reconcile-broker, bearer-protected.
   - Manually reconciles Alpaca broker state into local durable tables.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
   - Enforces limit_price rules and currently only supports time_in_force="day".
+- app/schemas/strategies.py
+  - Pydantic request/response schemas for strategy create, update, and read.
+- app/schemas/signals.py
+  - Pydantic request/response schemas for signal create, update, and read.
+  - Validates confidence between 0 and 1 when supplied.
 - app/schemas/jobs.py
   - Pydantic response schemas for job runs and broker reconciliation.
 - app/services/order_intents.py
@@ -165,6 +182,12 @@ Current behavior implemented:
 - Initial trading database schema.
 - Create previewed order intent.
 - List order intents, optionally filtered by status.
+- Create/list/read/update strategies.
+- List strategies can filter by is_active.
+- Strategy create/update writes audit_logs.
+- Create/list/read/update signals.
+- List signals can filter by strategy_id, status, and symbol.
+- Signal create/update writes audit_logs.
 - Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
 - Store returned Alpaca order as broker_orders.
 - Update order_intent status/submitted_at after submission.
@@ -178,16 +201,18 @@ Current behavior implemented:
   - order_intent.created
   - order_intent.submitted
   - order_intent.rejected
+  - strategy.created
+  - strategy.updated
+  - signal.created
+  - signal.updated
   - broker_reconciliation.succeeded
   - broker_reconciliation.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
-- Tests verify audit log writes for order intent and reconciliation workflows.
+- Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- No strategy CRUD/API yet.
-- No signal ingestion API yet.
 - No scanner/signal-generation logic yet.
 - No options-chain or quote-based preview logic yet.
 - order_intents are "previewed" records, but preview content is client-provided only.
@@ -228,27 +253,21 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add strategy CRUD:
-  - POST /api/v1/strategies
-  - GET /api/v1/strategies
-  - PATCH /api/v1/strategies/{id}
-  - support toggling is_active
-  - keep config as JSONB and avoid over-modeling strategy rules too early
+- Add real order-intent preview generation:
+  - a protected endpoint that takes a signal_id and proposed option/order details
+  - fetches Alpaca option quote/market data where available
+  - produces a durable order_intent preview with estimated cost/risk context
+  - keeps execution separate: preview first, submit later
 - Why this is the best next step:
-  - strategies already exist in the schema and are referenced by signals/order_intents.
-  - CRUD gives a real parent object for future signals and order intents.
-  - it is a small domain feature that does not require market data or scheduling yet.
+  - strategies and signals now exist as durable inputs.
+  - order_intents currently accept client-provided preview data only.
+  - preview generation is the missing bridge between captured signals and safe broker submission.
 
-Likely next steps after strategy CRUD:
-1. Add signal ingestion:
-   - create/list signals
-   - allow rejected signals for later analysis
-2. Add real preview generation:
-   - quote/option market data
-   - estimated cost/risk metadata
-   - basic buying-power/sizing checks if available
-3. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
-4. Add route-level tests for auth/readiness/manual jobs.
+Likely next steps after preview generation:
+1. Validate strategy_id/signal_id references when creating order intents and signals.
+2. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
+3. Add route-level tests for auth/readiness/manual jobs.
+4. Add scanner/job scaffolding that can create signals.
 5. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:
