@@ -9,8 +9,9 @@ from app.integrations.alpaca import (
     AlpacaTradingConfigurationError,
     AlpacaTradingError,
 )
-from app.schemas.jobs import BrokerReconciliationRead, JobRunRead
+from app.schemas.jobs import BrokerReconciliationRead, JobRunRead, SignalScanRead
 from app.services.broker_reconciliation import reconcile_broker_state
+from app.services.signal_scanner import scan_signals
 
 router = APIRouter(
     prefix="/jobs",
@@ -55,4 +56,24 @@ def reconcile_broker_route(
         fills_created=result.fills_created,
         positions_seen=result.positions_seen,
         position_snapshots_created=result.position_snapshots_created,
+    )
+
+
+@router.post(
+    "/scan-signals",
+    response_model=SignalScanRead,
+    status_code=status.HTTP_200_OK,
+)
+def scan_signals_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> SignalScanRead:
+    result = scan_signals(db, limit=limit)
+    return SignalScanRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        strategies_seen=result.strategies_seen,
+        strategies_scanned=result.strategies_scanned,
+        signals_created=result.signals_created,
+        signals_skipped=result.signals_skipped,
+        errors=result.errors,
     )

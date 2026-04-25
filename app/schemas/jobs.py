@@ -27,3 +27,12 @@ class BrokerReconciliationRead(BaseModel):
     fills_created: int
     positions_seen: int
     position_snapshots_created: int
+
+
+class SignalScanRead(BaseModel):
+    job_run: JobRunRead
+    strategies_seen: int
+    strategies_scanned: int
+    signals_created: int
+    signals_skipped: int
+    errors: list[str]

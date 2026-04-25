@@ -77,6 +77,7 @@ Current repo structure and purpose:
   - Python runtime for hosting.
 - render.yaml
   - Render service blueprint.
+  - Includes web service and disabled-by-default broker reconciliation cron service.
 - start.sh
   - Render/Linux startup script. Checks database connectivity, then starts uvicorn.
 - run-local.ps1
@@ -111,6 +112,9 @@ Current repo structure and purpose:
   - Programmatic Alembic upgrade helper used by FastAPI startup.
 - app/db/check_database.py
   - CLI database connectivity check used by startup scripts.
+- scripts/run_render_job.py
+  - Render cron helper that POSTs a protected API job endpoint.
+  - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -138,6 +142,8 @@ Current repo structure and purpose:
 - app/api/routes/jobs.py
   - POST /api/v1/jobs/reconcile-broker, bearer-protected.
   - Manually reconciles Alpaca broker state into local durable tables.
+  - POST /api/v1/jobs/scan-signals, bearer-protected.
+  - Manually scans active strategy configs and creates signals only.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
   - Includes schema for generated order intent previews from signals.
@@ -149,7 +155,7 @@ Current repo structure and purpose:
   - Pydantic request/response schemas for signal create, update, and read.
   - Validates confidence between 0 and 1 when supplied.
 - app/schemas/jobs.py
-  - Pydantic response schemas for job runs and broker reconciliation.
+  - Pydantic response schemas for job runs, broker reconciliation, and signal scans.
 - app/schemas/options.py
   - Pydantic request/response schemas for option contract selection.
 - app/services/order_intents.py
@@ -165,6 +171,11 @@ Current repo structure and purpose:
 - app/services/broker_reconciliation.py
   - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
   - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
+- app/services/signal_scanner.py
+  - Domain/service logic for manual signal scans.
+  - Reads active strategies with config.scan_signals entries.
+  - Creates signals only; does not create previews or submit orders.
+  - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
 - app/integrations/alpaca.py
@@ -180,8 +191,12 @@ Current repo structure and purpose:
   - unittest coverage for broker reconciliation success/failure behavior using fake Alpaca clients.
 - tests/test_option_contract_selection.py
   - unittest coverage for option contract selection and route error mapping using fake Alpaca clients.
+- tests/test_signal_scanner.py
+  - unittest coverage for manual scanner success, inactive strategy filtering, malformed specs, and failure recording.
+- tests/test_render_job_runner.py
+  - unittest coverage for the Render cron kill switch and job URL construction.
 - tests/test_routes.py
-  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, and option contract selection route mapping.
+  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, and signal scan route mapping.
 
 Current database tables implemented:
 - strategies
@@ -224,6 +239,9 @@ Current behavior implemented:
 - Update order_intent status/submitted_at after submission.
 - Mark order_intent rejected and save rejection reason if Alpaca rejects.
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
+- Render cron blueprint exists for broker reconciliation every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
+- Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
+- Signal scanning creates signal records only and never creates order intents or submits orders.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -239,22 +257,25 @@ Current behavior implemented:
   - order_intent.previewed
   - broker_reconciliation.succeeded
   - broker_reconciliation.failed
+  - signal_scan.succeeded
+  - signal_scan.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Basic tests for option contract selection and selector-backed preview generation.
+- Basic tests for manual signal scanning.
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
-- Route-level tests verify public health routes, readiness success/failure, protected route auth, reference-validation responses, happy-path creates, broker reconciliation route error mapping, and option contract selection route mapping.
+- Route-level tests verify public health routes, readiness success/failure, protected route auth, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- No scanner/signal-generation logic yet.
+- Scanner/signal-generation logic is config-driven scaffold only; no real market-data scanner yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
-- Broker reconciliation exists only as a protected manual endpoint; it is not scheduled yet.
+- Broker reconciliation has a protected manual endpoint and a disabled-by-default Render cron blueprint.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- No scheduled jobs are implemented yet.
+- Scheduled broker reconciliation is scaffolded in render.yaml but disabled by default.
 - Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
 - No AI review tables yet.
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
@@ -285,19 +306,19 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add scanner/job scaffolding that can create signals without submitting orders:
-  - add a protected/manual scan endpoint or service entrypoint first.
-  - create signals only; do not create previews or submit orders automatically yet.
-  - keep scanner logic deterministic and strategy-config driven.
-  - test with fake market data inputs before wiring any scheduled job.
+- Validate the deployed cron setup once merged:
+  - set ADMIN_API_TOKEN on the cron service in Render.
+  - keep SCHEDULED_JOBS_ENABLED=false for first deploy validation.
+  - manually trigger the cron once while disabled and confirm it exits successfully.
+  - flip SCHEDULED_JOBS_ENABLED=true only when ready for broker reconciliation to run every 30 minutes.
 - Why this is the best next step:
-  - the signal -> selected contract -> previewed order intent path now exists.
-  - the next missing automation piece is producing candidate signals.
-  - manual scanner execution lets behavior mature before Render cron or broker-touching automation.
+  - the repo now has the cron blueprint and kill switch, but Render secrets/settings need dashboard confirmation.
+  - this activates state freshness without introducing trading automation.
+  - keeping scan/manual preview/manual submit boundaries preserves paper-trading safety.
 
-Likely next steps after scanner scaffolding:
-1. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
-2. Add scheduled market-hours job orchestration.
+Likely next steps after cron validation:
+1. Add real market-data scanner rules behind the signal scanner service.
+2. Add scheduled market-hours job orchestration for scan/reconcile without auto-submit.
 3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

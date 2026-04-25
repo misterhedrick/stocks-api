@@ -15,6 +15,7 @@ from app.integrations.alpaca import AlpacaTradingConfigurationError, AlpacaTradi
 from app.main import app
 from app.schemas.options import OptionContractRead, OptionContractSelectionRead
 from app.services.broker_reconciliation import BrokerReconciliationResult
+from app.services.signal_scanner import SignalScanResult
 
 
 class FakeRouteSession:
@@ -394,6 +395,30 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "Alpaca is unavailable")
 
+    def test_scan_signals_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_signal_scan_result()
+
+        with patch(
+            "app.api.routes.jobs.scan_signals",
+            return_value=result,
+        ) as scanner:
+            response = client.post(
+                "/api/v1/jobs/scan-signals?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["strategies_seen"], 2)
+        self.assertEqual(response.json()["signals_created"], 1)
+        scanner.assert_called_once_with(db, limit=25)
+
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
     now = datetime.now(timezone.utc)
@@ -417,6 +442,29 @@ def build_reconciliation_result() -> BrokerReconciliationResult:
         fills_created=1,
         positions_seen=1,
         position_snapshots_created=1,
+    )
+
+
+def build_signal_scan_result() -> SignalScanResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="scan_signals",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={"signals_created": 1},
+        error=None,
+        created_at=now,
+    )
+
+    return SignalScanResult(
+        job_run=job_run,
+        strategies_seen=2,
+        strategies_scanned=1,
+        signals_created=1,
+        signals_skipped=1,
+        errors=["Strategy skipped"],
     )
 
 

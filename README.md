@@ -231,6 +231,51 @@ The reconciliation job:
 - snapshots current Alpaca positions into `position_snapshots`
 - records success or failure in `job_runs`
 
+Manually scan configured strategies for signals:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/scan-signals?limit=100" \
+  -H "Authorization: Bearer change-me"
+```
+
+The scanner currently creates signals only. It reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`.
+
+Example strategy config:
+
+```json
+{
+  "scan_signals": [
+    {
+      "symbol": "SPY",
+      "underlying_symbol": "SPY",
+      "signal_type": "manual_scan",
+      "direction": "bullish",
+      "confidence": "0.7500",
+      "rationale": "Manual scanner seed",
+      "market_context": {
+        "source": "strategy_config"
+      }
+    }
+  ]
+}
+```
+
+## Scheduled jobs
+
+`render.yaml` includes a Render cron service named `stocks-api-reconcile-broker` that runs every 30 minutes and calls:
+
+```text
+POST /api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100
+```
+
+It is disabled by default with:
+
+```text
+SCHEDULED_JOBS_ENABLED=false
+```
+
+To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
+
 Audit logging currently records:
 - strategy creation
 - strategy updates
@@ -241,6 +286,7 @@ Audit logging currently records:
 - order intent submission
 - Alpaca order intent rejection
 - broker reconciliation success or failure
+- signal scan success or failure
 
 ## Render
 
@@ -252,3 +298,4 @@ Set these environment variables in Render:
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
 - `AUTO_MIGRATE_ON_STARTUP=true`
+- `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
