@@ -1,0 +1,29 @@
+import uuid
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+
+class JobRunRead(BaseModel):
+    id: uuid.UUID
+    job_name: str
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    details: dict[str, Any]
+    error: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BrokerReconciliationRead(BaseModel):
+    job_run: JobRunRead
+    orders_seen: int
+    orders_created: int
+    orders_updated: int
+    fills_seen: int
+    fills_created: int
+    positions_seen: int
+    position_snapshots_created: int

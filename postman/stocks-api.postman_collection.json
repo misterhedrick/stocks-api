@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c33a068e-4384-4ef4-a2bd-57cbca5095db",
     "name": "stocks-api",
-    "description": "Single-user FastAPI trading API collection for health, readiness, and preview-only order intents.",
+    "description": "Single-user FastAPI trading API collection for health, readiness, preview-only order intents, and paper order submission.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -108,6 +108,377 @@
       "response": []
     },
     {
+      "name": "Reconcile Broker",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Reconcile broker returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Reconcile broker records a job run\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.job_run.job_name).to.eql(\"reconcile_broker\");",
+              "  pm.expect(body.job_run.status).to.eql(\"succeeded\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Create Strategy",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Opening range options\",\n  \"description\": \"Paper strategy scaffold\",\n  \"is_active\": true,\n  \"config\": {\n    \"underlying\": \"SPY\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/strategies"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Create strategy returns 201\", function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Create strategy stores id\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"id\");",
+              "  pm.collectionVariables.set(\"last_strategy_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "List Strategies",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/strategies"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"List strategies returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"List strategies returns an array\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Update Strategy",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"is_active\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/strategies/{{last_strategy_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Update strategy returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Update strategy changes active flag\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.is_active).to.eql(false);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Create Signal",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"strategy_id\": \"{{last_strategy_id}}\",\n  \"symbol\": \"SPY260417C00500000\",\n  \"underlying_symbol\": \"SPY\",\n  \"signal_type\": \"breakout\",\n  \"direction\": \"bullish\",\n  \"confidence\": \"0.7500\",\n  \"rationale\": \"Opening range breakout\",\n  \"market_context\": {\n    \"price\": \"512.34\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/signals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Create signal returns 201\", function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Create signal stores id\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"id\");",
+              "  pm.collectionVariables.set(\"last_signal_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "List Signals",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/signals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"List signals returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"List signals returns an array\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Update Signal",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"rejected\",\n  \"rejected_reason\": \"Spread too wide\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/signals/{{last_signal_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Update signal returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Update signal changes status\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"rejected\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Generate Order Intent Preview",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"signal_id\": \"{{last_signal_id}}\",\n  \"option_symbol\": \"SPY260417C00500000\",\n  \"side\": \"buy\",\n  \"quantity\": 1,\n  \"order_type\": \"limit\",\n  \"time_in_force\": \"day\",\n  \"data_feed\": \"indicative\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/order-intents/preview"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Generate order intent preview returns 201\", function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Generated preview stores order intent id\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"previewed\");",
+              "  pm.expect(body.preview.source).to.eql(\"alpaca_latest_option_quote\");",
+              "  pm.collectionVariables.set(\"last_order_intent_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Create Order Intent",
       "request": {
         "auth": {
@@ -153,6 +524,44 @@
               "  pm.expect(body).to.have.property(\"id\");",
               "  pm.expect(body.status).to.eql(\"previewed\");",
               "  pm.collectionVariables.set(\"last_order_intent_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Submit Order Intent",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/order-intents/{{last_order_intent_id}}/submit"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Submit order intent returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Submit order intent returns broker order payload\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.order_intent.status).to.not.eql(\"previewed\");",
+              "  pm.expect(body.broker_order).to.have.property(\"alpaca_order_id\");",
               "});"
             ]
           }
@@ -248,6 +657,16 @@
     },
     {
       "key": "last_order_intent_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "last_strategy_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "last_signal_id",
       "value": "",
       "type": "string"
     }
