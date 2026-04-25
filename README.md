@@ -132,6 +132,25 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
 
 The preview endpoint fetches the latest Alpaca option quote, derives a limit price when one is not supplied, stores quote/risk context in `preview`, and does not place an Alpaca order.
 
+Select an option contract:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/options/select-contract \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "underlying_symbol": "SPY",
+    "option_type": "call",
+    "side": "buy",
+    "expiration_date_gte": "2026-04-17",
+    "expiration_date_lte": "2026-05-01",
+    "target_strike": "500",
+    "data_feed": "indicative"
+  }'
+```
+
+The contract selector fetches active Alpaca contracts, chooses the earliest expiration with the strike closest to `target_strike` or `underlying_price`, and returns the selected contract plus latest quote context. It does not create or submit an order.
+
 Run database migrations:
 
 ```bash

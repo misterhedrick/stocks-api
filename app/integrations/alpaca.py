@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -76,6 +76,27 @@ class AlpacaOptionQuote(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
+class AlpacaOptionContract(BaseModel):
+    id: str
+    symbol: str
+    name: str | None = None
+    status: str
+    tradable: bool
+    expiration_date: date
+    root_symbol: str | None = None
+    underlying_symbol: str
+    type: str
+    style: str | None = None
+    strike_price: Decimal
+    size: Decimal | None = None
+    open_interest: Decimal | None = None
+    open_interest_date: date | None = None
+    close_price: Decimal | None = None
+    close_price_date: date | None = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 @dataclass(slots=True)
 class AlpacaOrderSubmission:
     order: AlpacaSubmittedOrder
@@ -87,6 +108,14 @@ class AlpacaLatestOptionQuote:
     symbol: str
     quote: AlpacaOptionQuote
     raw_response: dict[str, Any]
+
+
+@dataclass(slots=True)
+class AlpacaOptionContractsPage:
+    contracts: list[AlpacaOptionContract]
+    raw_response: dict[str, Any]
+    page_token: str | None
+    limit: int | None
 
 
 class AlpacaTradingClient:
@@ -221,6 +250,51 @@ class AlpacaTradingClient:
             for item in payload
             if isinstance(item, dict)
         ]
+
+    def list_option_contracts(
+        self,
+        *,
+        underlying_symbol: str,
+        option_type: str,
+        status: str = "active",
+        expiration_date: date | None = None,
+        expiration_date_gte: date | None = None,
+        expiration_date_lte: date | None = None,
+        limit: int = 100,
+    ) -> AlpacaOptionContractsPage:
+        params = {
+            "underlying_symbols": underlying_symbol,
+            "type": option_type,
+            "status": status,
+            "limit": str(limit),
+        }
+        if expiration_date is not None:
+            params["expiration_date"] = expiration_date.isoformat()
+        if expiration_date_gte is not None:
+            params["expiration_date_gte"] = expiration_date_gte.isoformat()
+        if expiration_date_lte is not None:
+            params["expiration_date_lte"] = expiration_date_lte.isoformat()
+
+        payload = self._get_json("/v2/options/contracts", params=params)
+        if not isinstance(payload, dict):
+            raise AlpacaTradingError("Unexpected Alpaca option contracts response")
+
+        raw_contracts = payload.get("option_contracts")
+        if not isinstance(raw_contracts, list):
+            raise AlpacaTradingError("Unexpected Alpaca option contracts response")
+
+        return AlpacaOptionContractsPage(
+            contracts=[
+                AlpacaOptionContract.model_validate(item)
+                for item in raw_contracts
+                if isinstance(item, dict)
+            ],
+            raw_response=payload,
+            page_token=payload.get("page_token")
+            if isinstance(payload.get("page_token"), str)
+            else None,
+            limit=payload.get("limit") if isinstance(payload.get("limit"), int) else None,
+        )
 
     def _get_json(
         self,

@@ -90,7 +90,7 @@ Current repo structure and purpose:
 - app/main.py
   - FastAPI app entrypoint.
   - Adds root and /health.
-  - Includes /api/v1 health and order-intents routers.
+  - Includes /api/v1 health, jobs, order-intents, options, signals, and strategies routers.
   - Runs Alembic migrations on startup if settings.should_auto_migrate_on_startup is true.
 - app/core/config.py
   - Pydantic settings loaded from env/.env.
@@ -120,6 +120,9 @@ Current repo structure and purpose:
   - GET /api/v1/order-intents, bearer-protected.
   - POST /api/v1/order-intents/{id}/submit, bearer-protected.
   - Preview endpoint turns a signal plus option contract into a durable previewed order_intent using Alpaca latest option quote data.
+- app/api/routes/options.py
+  - POST /api/v1/options/select-contract, bearer-protected.
+  - Selects an Alpaca option contract from simple constraints and returns quote context.
 - app/api/routes/strategies.py
   - POST /api/v1/strategies, bearer-protected.
   - GET /api/v1/strategies, bearer-protected.
@@ -146,11 +149,17 @@ Current repo structure and purpose:
   - Validates confidence between 0 and 1 when supplied.
 - app/schemas/jobs.py
   - Pydantic response schemas for job runs and broker reconciliation.
+- app/schemas/options.py
+  - Pydantic request/response schemas for option contract selection.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
   - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
   - Creates broker_orders and updates order_intents.
   - Marks order_intents rejected when Alpaca rejects.
+- app/services/option_contracts.py
+  - Domain/service logic to select an active tradable Alpaca option contract.
+  - First-pass selection chooses earliest expiration and strike closest to target_strike or underlying_price.
+  - Fetches latest option quote context for the selected contract.
 - app/services/broker_reconciliation.py
   - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
   - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
@@ -160,12 +169,17 @@ Current repo structure and purpose:
   - Thin httpx-based Alpaca Trading API integration.
   - Currently supports POST /v2/orders for order intent submission.
   - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
+  - Supports GET /v2/options/contracts for option contract selection.
   - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
   - unittest coverage for order submission service behavior and schema validation.
 - tests/test_broker_reconciliation.py
   - unittest coverage for broker reconciliation success/failure behavior using fake Alpaca clients.
+- tests/test_option_contract_selection.py
+  - unittest coverage for option contract selection and route error mapping using fake Alpaca clients.
+- tests/test_routes.py
+  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, and option contract selection route mapping.
 
 Current database tables implemented:
 - strategies
@@ -198,6 +212,8 @@ Current behavior implemented:
 - Generate previewed order intents from signals using Alpaca latest option quotes.
 - Generated previews derive a limit price from midpoint when no limit_price is supplied.
 - Generated previews store bid/ask/midpoint/spread/estimated notional context in order_intents.preview.
+- Select an option contract by underlying, call/put, expiration filters, and optional target strike/underlying price.
+- Option contract selection returns selected contract details and latest quote context without creating an order.
 - Manual order_intent creation validates provided strategy_id and signal_id exist.
 - Manual order_intent creation rejects strategy_id/signal_id combinations that do not match.
 - Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
@@ -223,12 +239,12 @@ Current behavior implemented:
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
-- Route-level tests verify public health routes, protected route auth, and reference-validation responses.
+- Route-level tests verify public health routes, readiness success/failure, protected route auth, reference-validation responses, happy-path creates, broker reconciliation route error mapping, and option contract selection route mapping.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
 - No scanner/signal-generation logic yet.
-- Preview generation uses latest option quote only; no option-chain search/contract selection yet.
+- Preview generation still requires a preselected option_symbol; contract selection exists as a separate endpoint but is not yet wired into preview generation.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
@@ -240,7 +256,6 @@ Current important limitations/gaps:
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
-- No tests for readiness behavior yet.
 
 Planned scheduled jobs:
 1. Market-hours job every 5 minutes:
@@ -266,19 +281,20 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add route-level tests for readiness and core protected workflows:
-  - verify readiness reports database/schema problems cleanly.
-  - cover manual job/reconciliation response mapping through FastAPI TestClient.
-  - add happy-path route tests for strategy/signal/manual order-intent creation if useful.
+- Wire option contract selection into generated order-intent previews:
+  - allow preview requests to provide selection constraints instead of an explicit option_symbol.
+  - keep explicit option_symbol support for manual control.
+  - store selection context in order_intents.preview alongside quote context.
+  - keep tests fake-client based and avoid live Alpaca calls.
 - Why this is the best next step:
-  - route behavior has initial coverage, but readiness is still a key deployment surface.
-  - route tests will reduce risk before adding scheduled jobs or scanners.
+  - the selector exists but preview generation still requires callers to pass the selected symbol manually.
+  - scanners will eventually need a single path from signal -> selected contract -> previewed order intent.
+  - this keeps automation preparation focused without adding scheduled execution yet.
 
-Likely next steps after route-level tests:
-1. Add option-chain/contract selection support instead of requiring a preselected option_symbol.
-2. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
-3. Add scanner/job scaffolding that can create signals.
-4. Add AI review tables only after closed-trade capture exists.
+Likely next steps after selector-backed previews:
+1. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
+2. Add scanner/job scaffolding that can create signals.
+3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:
 - Single user only.
