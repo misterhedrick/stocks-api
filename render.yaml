@@ -27,3 +27,33 @@ services:
         value: true
       - key: AUTO_MIGRATE_ON_STARTUP
         value: true
+      - key: MARKET_CYCLE_SCAN_ENABLED
+        value: true
+      - key: MARKET_CYCLE_RECONCILE_ENABLED
+        value: true
+      - key: MARKET_CYCLE_PREVIEW_ENABLED
+        value: false
+      - key: MARKET_CYCLE_SUBMIT_ENABLED
+        value: false
+      - key: SCHEDULED_JOBS_ENABLED
+        value: false
+  - type: cron
+    name: stocks-api-market-cycle
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "*/30 * * * *"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: false
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+      - key: JOB_TIMEOUT_SECONDS
+        value: 90
+      - key: ADMIN_API_TOKEN
+        sync: false

@@ -132,6 +132,50 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
 
 The preview endpoint fetches the latest Alpaca option quote, derives a limit price when one is not supplied, stores quote/risk context in `preview`, and does not place an Alpaca order.
 
+Generate a previewed order intent and let the API select the option contract:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signal_id": "<signal_id>",
+    "contract_selection": {
+      "underlying_symbol": "SPY",
+      "option_type": "call",
+      "expiration_date_gte": "2026-04-17",
+      "expiration_date_lte": "2026-05-01",
+      "target_strike": "500"
+    },
+    "side": "buy",
+    "quantity": 1,
+    "order_type": "limit",
+    "time_in_force": "day",
+    "data_feed": "indicative"
+  }'
+```
+
+Preview requests must provide exactly one of `option_symbol` or `contract_selection`.
+
+Select an option contract:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/options/select-contract \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "underlying_symbol": "SPY",
+    "option_type": "call",
+    "side": "buy",
+    "expiration_date_gte": "2026-04-17",
+    "expiration_date_lte": "2026-05-01",
+    "target_strike": "500",
+    "data_feed": "indicative"
+  }'
+```
+
+The contract selector fetches active Alpaca contracts, chooses the earliest expiration with the strike closest to `target_strike` or `underlying_price`, and returns the selected contract plus latest quote context. It does not create or submit an order.
+
 Run database migrations:
 
 ```bash
@@ -187,6 +231,80 @@ The reconciliation job:
 - snapshots current Alpaca positions into `position_snapshots`
 - records success or failure in `job_runs`
 
+Manually scan configured strategies for signals:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/scan-signals?limit=100" \
+  -H "Authorization: Bearer change-me"
+```
+
+The scanner currently creates signals only. It reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`.
+
+Example strategy config:
+
+```json
+{
+  "scan_signals": [
+    {
+      "symbol": "SPY",
+      "underlying_symbol": "SPY",
+      "signal_type": "manual_scan",
+      "direction": "bullish",
+      "confidence": "0.7500",
+      "rationale": "Manual scanner seed",
+      "market_context": {
+        "source": "strategy_config"
+      }
+    }
+  ]
+}
+```
+
+It also supports a live stock quote threshold rule:
+
+```json
+{
+  "scanner": {
+    "type": "price_threshold",
+    "symbols": ["SPY", "QQQ"],
+    "signal_type": "price_breakout",
+    "direction": "bullish",
+    "price_above": "500",
+    "confidence": "0.6500",
+    "data_feed": "iex"
+  }
+}
+```
+
+For bearish threshold checks, use `price_below` instead of `price_above`. The scanner uses the latest Alpaca stock quote midpoint as the observed price and stores quote context in `signals.market_context`.
+
+## Scheduled jobs
+
+`render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 30 minutes and calls:
+
+```text
+POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+```
+
+It is disabled by default with:
+
+```text
+SCHEDULED_JOBS_ENABLED=false
+```
+
+To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
+
+Market-cycle behavior is controlled by these web-service env vars:
+
+```text
+MARKET_CYCLE_SCAN_ENABLED=true
+MARKET_CYCLE_RECONCILE_ENABLED=true
+MARKET_CYCLE_PREVIEW_ENABLED=false
+MARKET_CYCLE_SUBMIT_ENABLED=false
+```
+
+Current market-cycle automation can scan for signals and reconcile broker state. Preview and submit automation are intentionally reported as disabled/not implemented until those switches are wired to actual behavior.
+
 Audit logging currently records:
 - strategy creation
 - strategy updates
@@ -197,6 +315,7 @@ Audit logging currently records:
 - order intent submission
 - Alpaca order intent rejection
 - broker reconciliation success or failure
+- signal scan success or failure
 
 ## Render
 
@@ -208,3 +327,8 @@ Set these environment variables in Render:
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
 - `AUTO_MIGRATE_ON_STARTUP=true`
+- `MARKET_CYCLE_SCAN_ENABLED=true`
+- `MARKET_CYCLE_RECONCILE_ENABLED=true`
+- `MARKET_CYCLE_PREVIEW_ENABLED=false`
+- `MARKET_CYCLE_SUBMIT_ENABLED=false`
+- `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs

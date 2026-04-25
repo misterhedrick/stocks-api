@@ -3,25 +3,30 @@ from __future__ import annotations
 import unittest
 import uuid
 from decimal import Decimal
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from app.api.routes.order_intents import create_order_intent
+from app.api.routes.order_intents import create_order_intent, preview_order_intent
 from app.db.models import AuditLog, OrderIntent, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
+    AlpacaOptionContract,
+    AlpacaOptionContractsPage,
     AlpacaOrderRejectedError,
     AlpacaOrderSubmission,
     AlpacaOptionQuote,
     AlpacaSubmittedOrder,
 )
 from app.schemas.order_intents import OrderIntentCreate, OrderIntentPreviewCreate
+from app.schemas.options import OptionContractSelectionCreate
 from app.services.order_intents import (
     SignalNotFoundError,
     preview_order_intent_from_signal,
     submit_order_intent,
 )
+from app.services.option_contracts import OptionContractNotFoundError
 
 
 class FakeSession:
@@ -134,6 +139,33 @@ class SuccessfulMarketDataClient:
                 "as": "12",
                 "t": "2026-04-23T16:00:00Z",
             },
+        )
+
+
+class SuccessfulOptionContractTradingClient:
+    def list_option_contracts(self, **_: object) -> AlpacaOptionContractsPage:
+        return AlpacaOptionContractsPage(
+            contracts=[
+                AlpacaOptionContract.model_validate(
+                    {
+                        "id": "contract-1",
+                        "symbol": "SPY260417C00500000",
+                        "name": "SPY Apr 17 2026 500 Call",
+                        "status": "active",
+                        "tradable": True,
+                        "expiration_date": "2026-04-17",
+                        "root_symbol": "SPY",
+                        "underlying_symbol": "SPY",
+                        "type": "call",
+                        "style": "american",
+                        "strike_price": "500",
+                        "size": "100",
+                    }
+                )
+            ],
+            raw_response={"option_contracts": []},
+            page_token=None,
+            limit=100,
         )
 
 
@@ -317,6 +349,37 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "order_intent.previewed")
 
+    def test_preview_order_intent_from_signal_can_select_contract(self) -> None:
+        signal = build_signal()
+        db = FakeSession(None, signal)
+
+        order_intent = preview_order_intent_from_signal(
+            db,
+            OrderIntentPreviewCreate(
+                signal_id=signal.id,
+                contract_selection=OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                    target_strike=Decimal("500"),
+                ),
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                time_in_force="day",
+            ),
+            trading_client=SuccessfulOptionContractTradingClient(),
+            market_data_client=SuccessfulMarketDataClient(),
+        )
+
+        self.assertEqual(order_intent.option_symbol, "SPY260417C00500000")
+        self.assertEqual(order_intent.limit_price, Decimal("1.25"))
+        self.assertEqual(
+            order_intent.preview["selection"]["selected_contract"]["symbol"],
+            "SPY260417C00500000",
+        )
+        self.assertEqual(order_intent.preview["selection"]["quote"]["midpoint"], "1.25")
+        self.assertEqual(db.commit_count, 1)
+
     def test_preview_order_intent_from_signal_requires_existing_signal(self) -> None:
         db = FakeSession(None)
 
@@ -333,6 +396,55 @@ class OrderIntentSubmissionTests(unittest.TestCase):
                 ),
                 market_data_client=SuccessfulMarketDataClient(),
             )
+
+    def test_preview_order_intent_schema_requires_one_contract_source(self) -> None:
+        signal_id = uuid.uuid4()
+
+        with self.assertRaises(ValidationError):
+            OrderIntentPreviewCreate(
+                signal_id=signal_id,
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                time_in_force="day",
+            )
+
+        with self.assertRaises(ValidationError):
+            OrderIntentPreviewCreate(
+                signal_id=signal_id,
+                option_symbol="SPY260417C00500000",
+                contract_selection=OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                ),
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                time_in_force="day",
+            )
+
+    def test_preview_order_intent_route_maps_contract_selection_not_found(self) -> None:
+        with self.assertRaises(HTTPException) as context:
+            with patch(
+                "app.api.routes.order_intents.preview_order_intent_from_signal",
+                side_effect=OptionContractNotFoundError("No contracts"),
+            ):
+                preview_order_intent(
+                    OrderIntentPreviewCreate(
+                        signal_id=uuid.uuid4(),
+                        contract_selection=OptionContractSelectionCreate(
+                            underlying_symbol="SPY",
+                            option_type="call",
+                        ),
+                        side="buy",
+                        quantity=1,
+                        order_type="limit",
+                        time_in_force="day",
+                    ),
+                    FakeSession(None),
+                )
+
+        self.assertEqual(context.exception.status_code, 404)
 
     def test_submit_previewed_order_intent_creates_broker_order(self) -> None:
         order_intent = build_previewed_order_intent()

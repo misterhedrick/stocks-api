@@ -5,12 +5,18 @@ import uuid
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.db.models import OrderIntent, Signal, Strategy
-from app.db.session import get_db
+from app.db.models import JobRun, OrderIntent, Signal, Strategy
+from app.db.session import DatabaseSchemaNotReadyError, get_db
+from app.integrations.alpaca import AlpacaTradingConfigurationError, AlpacaTradingError
 from app.main import app
+from app.schemas.options import OptionContractRead, OptionContractSelectionRead
+from app.services.broker_reconciliation import BrokerReconciliationResult
+from app.services.market_cycle import MarketCycleResult
+from app.services.signal_scanner import SignalScanResult
 
 
 class FakeRouteSession:
@@ -44,6 +50,8 @@ class FakeRouteSession:
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
+        if isinstance(obj, Strategy):
+            self.strategy = obj
         if isinstance(obj, OrderIntent):
             self.order_intent = obj
         if isinstance(obj, Signal):
@@ -57,6 +65,9 @@ class FakeRouteSession:
     def commit(self) -> None:
         self.commit_count += 1
 
+    def rollback(self) -> None:
+        pass
+
     def refresh(self, obj: object) -> None:
         _hydrate_model_defaults(obj)
 
@@ -64,6 +75,15 @@ class FakeRouteSession:
 def _hydrate_model_defaults(obj: object) -> None:
     if hasattr(obj, "id") and getattr(obj, "id", None) is None:
         obj.id = uuid.uuid4()
+
+    if isinstance(obj, OrderIntent):
+        if obj.status is None:
+            obj.status = "previewed"
+        if obj.preview is None:
+            obj.preview = {}
+
+    if isinstance(obj, Signal) and obj.status is None:
+        obj.status = "new"
 
     now = datetime.now(timezone.utc)
     if hasattr(obj, "created_at") and getattr(obj, "created_at", None) is None:
@@ -122,6 +142,90 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(missing_auth.status_code, 401)
         self.assertEqual(bad_auth.status_code, 401)
 
+    def test_readiness_requires_auth(self) -> None:
+        client = TestClient(app)
+
+        response = client.get("/api/v1/ready")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_readiness_returns_ready_when_database_checks_pass(self) -> None:
+        client = TestClient(app)
+
+        with (
+            patch("app.api.routes.health.check_database_connection") as check_connection,
+            patch("app.api.routes.health.check_database_schema") as check_schema,
+        ):
+            response = client.get(
+                "/api/v1/ready",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ready", "database": "ok"})
+        check_connection.assert_called_once_with()
+        check_schema.assert_called_once_with()
+
+    def test_readiness_returns_503_when_database_schema_is_not_ready(self) -> None:
+        client = TestClient(app)
+
+        with patch("app.api.routes.health.check_database_connection"), patch(
+            "app.api.routes.health.check_database_schema",
+            side_effect=DatabaseSchemaNotReadyError("missing tables"),
+        ):
+            response = client.get(
+                "/api/v1/ready",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_create_strategy_route_happy_path(self) -> None:
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession()
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/strategies",
+            headers={"Authorization": "Bearer change-me"},
+            json={
+                "name": "Opening Range Breakout",
+                "description": "Test strategy",
+                "is_active": True,
+                "config": {"underlying": "SPY"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["name"], "Opening Range Breakout")
+
+    def test_create_signal_route_happy_path(self) -> None:
+        strategy = build_strategy()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession(strategy=strategy)
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/signals",
+            headers={"Authorization": "Bearer change-me"},
+            json={
+                "strategy_id": str(strategy.id),
+                "symbol": "SPY260417C00500000",
+                "underlying_symbol": "SPY",
+                "signal_type": "breakout",
+                "direction": "bullish",
+                "confidence": "0.7500",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["strategy_id"], str(strategy.id))
+
     def test_create_signal_returns_404_for_missing_strategy(self) -> None:
         def override_db() -> Iterator[FakeRouteSession]:
             yield FakeRouteSession()
@@ -143,6 +247,36 @@ class RouteBehaviorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertIn("Strategy", response.json()["detail"])
+
+    def test_create_order_intent_route_happy_path(self) -> None:
+        signal = build_signal()
+        strategy = build_strategy(signal.strategy_id)
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession(strategy=strategy, signal=signal)
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/order-intents",
+            headers={"Authorization": "Bearer change-me"},
+            json={
+                "strategy_id": str(strategy.id),
+                "signal_id": str(signal.id),
+                "underlying_symbol": "SPY",
+                "option_symbol": "SPY260417C00500000",
+                "side": "buy",
+                "quantity": 1,
+                "order_type": "limit",
+                "limit_price": "1.25",
+                "time_in_force": "day",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["strategy_id"], str(strategy.id))
+        self.assertEqual(response.json()["signal_id"], str(signal.id))
 
     def test_create_order_intent_returns_409_for_strategy_signal_mismatch(self) -> None:
         signal = build_signal()
@@ -172,6 +306,254 @@ class RouteBehaviorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertIn("strategy_id", response.json()["detail"])
+
+    def test_select_option_contract_route_returns_service_result(self) -> None:
+        client = TestClient(app)
+        result = build_option_contract_selection_result()
+
+        with patch(
+            "app.api.routes.options.select_option_contract",
+            return_value=result,
+        ):
+            response = client.post(
+                "/api/v1/options/select-contract",
+                headers={"Authorization": "Bearer change-me"},
+                json={
+                    "underlying_symbol": "SPY",
+                    "option_type": "call",
+                    "target_strike": "500",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["selected_contract"]["symbol"],
+            "SPY260417C00500000",
+        )
+        self.assertEqual(response.json()["quote"]["midpoint"], "1.25")
+
+    def test_reconcile_broker_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_reconciliation_result()
+
+        with patch(
+            "app.api.routes.jobs.reconcile_broker_state",
+            return_value=result,
+        ) as reconcile:
+            response = client.post(
+                "/api/v1/jobs/reconcile-broker?order_limit=25&fill_page_size=50",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["orders_seen"], 2)
+        self.assertEqual(response.json()["fills_created"], 1)
+        reconcile.assert_called_once_with(db, order_limit=25, fill_page_size=50)
+
+    def test_reconcile_broker_route_maps_configuration_error(self) -> None:
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession()
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "app.api.routes.jobs.reconcile_broker_state",
+            side_effect=AlpacaTradingConfigurationError(
+                "Alpaca API credentials are not configured"
+            ),
+        ):
+            response = client.post(
+                "/api/v1/jobs/reconcile-broker",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("Alpaca API credentials", response.json()["detail"])
+
+    def test_reconcile_broker_route_maps_alpaca_error(self) -> None:
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession()
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "app.api.routes.jobs.reconcile_broker_state",
+            side_effect=AlpacaTradingError("Alpaca is unavailable"),
+        ):
+            response = client.post(
+                "/api/v1/jobs/reconcile-broker",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["detail"], "Alpaca is unavailable")
+
+    def test_scan_signals_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_signal_scan_result()
+
+        with patch(
+            "app.api.routes.jobs.scan_signals",
+            return_value=result,
+        ) as scanner:
+            response = client.post(
+                "/api/v1/jobs/scan-signals?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["strategies_seen"], 2)
+        self.assertEqual(response.json()["signals_created"], 1)
+        scanner.assert_called_once_with(db, limit=25)
+
+    def test_market_cycle_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_cycle_result()
+
+        with patch(
+            "app.api.routes.jobs.run_market_cycle",
+            return_value=result,
+        ) as market_cycle:
+            response = client.post(
+                "/api/v1/jobs/market-cycle?scan_limit=25&order_limit=50&fill_page_size=75",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["scan_enabled"])
+        self.assertEqual(response.json()["scan"]["signals_created"], 1)
+        market_cycle.assert_called_once_with(
+            db,
+            scan_limit=25,
+            order_limit=50,
+            fill_page_size=75,
+        )
+
+
+def build_reconciliation_result() -> BrokerReconciliationResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="reconcile_broker",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={"orders_seen": 2},
+        error=None,
+        created_at=now,
+    )
+
+    return BrokerReconciliationResult(
+        job_run=job_run,
+        orders_seen=2,
+        orders_created=1,
+        orders_updated=1,
+        fills_seen=1,
+        fills_created=1,
+        positions_seen=1,
+        position_snapshots_created=1,
+    )
+
+
+def build_signal_scan_result() -> SignalScanResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="scan_signals",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={"signals_created": 1},
+        error=None,
+        created_at=now,
+    )
+
+    return SignalScanResult(
+        job_run=job_run,
+        strategies_seen=2,
+        strategies_scanned=1,
+        signals_created=1,
+        signals_skipped=1,
+        errors=["Strategy skipped"],
+    )
+
+
+def build_market_cycle_result() -> MarketCycleResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="market_cycle",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={"scan": {"signals_created": 1}},
+        error=None,
+        created_at=now,
+    )
+
+    return MarketCycleResult(
+        job_run=job_run,
+        scan_enabled=True,
+        reconcile_enabled=True,
+        preview_enabled=False,
+        submit_enabled=False,
+        scan={"signals_created": 1},
+        reconcile={"orders_seen": 2},
+        preview={"status": "disabled"},
+        submit={"status": "disabled"},
+    )
+
+
+def build_option_contract_selection_result() -> OptionContractSelectionRead:
+    now = datetime.now(timezone.utc)
+    return OptionContractSelectionRead(
+        selected_contract=OptionContractRead(
+            id="contract-id",
+            symbol="SPY260417C00500000",
+            name="SPY Apr 17 2026 500 Call",
+            status="active",
+            tradable=True,
+            expiration_date=now.date(),
+            root_symbol="SPY",
+            underlying_symbol="SPY",
+            option_type="call",
+            style="american",
+            strike_price=Decimal("500"),
+            size=Decimal("100"),
+            open_interest=None,
+            open_interest_date=None,
+            close_price=None,
+            close_price_date=None,
+        ),
+        quote={
+            "bid_price": "1.20",
+            "ask_price": "1.30",
+            "midpoint": "1.25",
+        },
+        selection_reason="Selected test contract",
+        candidates_seen=3,
+        selected_at=now,
+    )
 
 
 if __name__ == "__main__":

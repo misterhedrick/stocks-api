@@ -77,6 +77,7 @@ Current repo structure and purpose:
   - Python runtime for hosting.
 - render.yaml
   - Render service blueprint.
+  - Includes web service and disabled-by-default market-cycle cron service.
 - start.sh
   - Render/Linux startup script. Checks database connectivity, then starts uvicorn.
 - run-local.ps1
@@ -90,7 +91,7 @@ Current repo structure and purpose:
 - app/main.py
   - FastAPI app entrypoint.
   - Adds root and /health.
-  - Includes /api/v1 health and order-intents routers.
+  - Includes /api/v1 health, jobs, order-intents, options, signals, and strategies routers.
   - Runs Alembic migrations on startup if settings.should_auto_migrate_on_startup is true.
 - app/core/config.py
   - Pydantic settings loaded from env/.env.
@@ -98,6 +99,7 @@ Current repo structure and purpose:
   - Picks Alpaca paper/live base URL from ALPACA_PAPER.
   - Provides Alpaca market data base URL for option quote previews.
   - Determines startup auto-migration behavior.
+  - Provides market-cycle feature switches for scan/reconcile/preview/submit.
 - app/core/security.py
   - Single admin bearer token dependency.
 - app/db/base.py
@@ -111,6 +113,9 @@ Current repo structure and purpose:
   - Programmatic Alembic upgrade helper used by FastAPI startup.
 - app/db/check_database.py
   - CLI database connectivity check used by startup scripts.
+- scripts/run_render_job.py
+  - Render cron helper that POSTs a protected API job endpoint.
+  - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -119,7 +124,10 @@ Current repo structure and purpose:
   - POST /api/v1/order-intents, bearer-protected.
   - GET /api/v1/order-intents, bearer-protected.
   - POST /api/v1/order-intents/{id}/submit, bearer-protected.
-  - Preview endpoint turns a signal plus option contract into a durable previewed order_intent using Alpaca latest option quote data.
+  - Preview endpoint turns a signal plus an explicit option_symbol or contract_selection constraints into a durable previewed order_intent using Alpaca latest option quote data.
+- app/api/routes/options.py
+  - POST /api/v1/options/select-contract, bearer-protected.
+  - Selects an Alpaca option contract from simple constraints and returns quote context.
 - app/api/routes/strategies.py
   - POST /api/v1/strategies, bearer-protected.
   - GET /api/v1/strategies, bearer-protected.
@@ -135,9 +143,14 @@ Current repo structure and purpose:
 - app/api/routes/jobs.py
   - POST /api/v1/jobs/reconcile-broker, bearer-protected.
   - Manually reconciles Alpaca broker state into local durable tables.
+  - POST /api/v1/jobs/scan-signals, bearer-protected.
+  - Manually scans active strategy configs and creates signals only.
+  - POST /api/v1/jobs/market-cycle, bearer-protected.
+  - Runs enabled market-cycle steps behind env switches.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
   - Includes schema for generated order intent previews from signals.
+  - Preview schema requires exactly one of option_symbol or contract_selection.
   - Enforces limit_price rules and currently only supports time_in_force="day".
 - app/schemas/strategies.py
   - Pydantic request/response schemas for strategy create, update, and read.
@@ -145,27 +158,57 @@ Current repo structure and purpose:
   - Pydantic request/response schemas for signal create, update, and read.
   - Validates confidence between 0 and 1 when supplied.
 - app/schemas/jobs.py
-  - Pydantic response schemas for job runs and broker reconciliation.
+  - Pydantic response schemas for job runs, broker reconciliation, signal scans, and market cycles.
+- app/schemas/options.py
+  - Pydantic request/response schemas for option contract selection.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
   - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
+  - Can select an option contract before previewing when contract_selection is supplied.
   - Creates broker_orders and updates order_intents.
   - Marks order_intents rejected when Alpaca rejects.
+- app/services/option_contracts.py
+  - Domain/service logic to select an active tradable Alpaca option contract.
+  - First-pass selection chooses earliest expiration and strike closest to target_strike or underlying_price.
+  - Fetches latest option quote context for the selected contract.
 - app/services/broker_reconciliation.py
   - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
   - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
+- app/services/signal_scanner.py
+  - Domain/service logic for manual signal scans.
+  - Reads active strategies with config.scan_signals entries.
+  - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
+  - Creates signals only; does not create previews or submit orders.
+  - Records job_runs and audit_logs for success/failure.
+- app/services/market_cycle.py
+  - Orchestrates enabled market-cycle steps.
+  - Currently supports scan_signals and broker reconciliation.
+  - Reports preview/submit automation as disabled/not implemented.
+  - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
 - app/integrations/alpaca.py
   - Thin httpx-based Alpaca Trading API integration.
   - Currently supports POST /v2/orders for order intent submission.
   - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
+  - Supports GET /v2/options/contracts for option contract selection.
+  - Supports GET https://data.alpaca.markets/v2/stocks/quotes/latest for stock quote scanner rules.
   - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
   - unittest coverage for order submission service behavior and schema validation.
 - tests/test_broker_reconciliation.py
   - unittest coverage for broker reconciliation success/failure behavior using fake Alpaca clients.
+- tests/test_option_contract_selection.py
+  - unittest coverage for option contract selection and route error mapping using fake Alpaca clients.
+- tests/test_signal_scanner.py
+  - unittest coverage for manual scanner success, inactive strategy filtering, malformed specs, and failure recording.
+- tests/test_render_job_runner.py
+  - unittest coverage for the Render cron kill switch and job URL construction.
+- tests/test_market_cycle.py
+  - unittest coverage for market-cycle orchestration, env switches, and failure recording.
+- tests/test_routes.py
+  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, signal scan route mapping, and market-cycle route mapping.
 
 Current database tables implemented:
 - strategies
@@ -196,8 +239,11 @@ Current behavior implemented:
 - Signal create/update validates provided strategy_id exists.
 - Signal create/update writes audit_logs.
 - Generate previewed order intents from signals using Alpaca latest option quotes.
+- Generated previews can either use an explicit option_symbol or select a contract from contract_selection constraints.
 - Generated previews derive a limit price from midpoint when no limit_price is supplied.
-- Generated previews store bid/ask/midpoint/spread/estimated notional context in order_intents.preview.
+- Generated previews store bid/ask/midpoint/spread/estimated notional context and selection context in order_intents.preview.
+- Select an option contract by underlying, call/put, expiration filters, and optional target strike/underlying price.
+- Option contract selection returns selected contract details and latest quote context without creating an order.
 - Manual order_intent creation validates provided strategy_id and signal_id exist.
 - Manual order_intent creation rejects strategy_id/signal_id combinations that do not match.
 - Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
@@ -205,6 +251,11 @@ Current behavior implemented:
 - Update order_intent status/submitted_at after submission.
 - Mark order_intent rejected and save rejection reason if Alpaca rejects.
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
+- Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
+- Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
+- Signal scanning creates signal records only and never creates order intents or submits orders.
+- Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold rules.
+- Market-cycle endpoint can run scan and reconciliation in one protected call.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -220,27 +271,32 @@ Current behavior implemented:
   - order_intent.previewed
   - broker_reconciliation.succeeded
   - broker_reconciliation.failed
+  - signal_scan.succeeded
+  - signal_scan.failed
+  - market_cycle.succeeded
+  - market_cycle.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
+- Basic tests for option contract selection and selector-backed preview generation.
+- Basic tests for manual signal scanning.
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
-- Route-level tests verify public health routes, protected route auth, and reference-validation responses.
+- Route-level tests verify public health routes, readiness success/failure, protected route auth, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- No scanner/signal-generation logic yet.
-- Preview generation uses latest option quote only; no option-chain search/contract selection yet.
+- Scanner/signal-generation logic has a first live stock quote price-threshold rule only; no richer technical scanner yet.
+- Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
-- Broker reconciliation exists only as a protected manual endpoint; it is not scheduled yet.
+- Broker reconciliation has a protected manual endpoint and a disabled-by-default Render cron blueprint.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- No scheduled jobs are implemented yet.
+- Scheduled market-cycle is scaffolded in render.yaml but disabled by default.
 - Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
 - No AI review tables yet.
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
-- No tests for readiness behavior yet.
 
 Planned scheduled jobs:
 1. Market-hours job every 5 minutes:
@@ -266,19 +322,20 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add route-level tests for readiness and core protected workflows:
-  - verify readiness reports database/schema problems cleanly.
-  - cover manual job/reconciliation response mapping through FastAPI TestClient.
-  - add happy-path route tests for strategy/signal/manual order-intent creation if useful.
+- Add scanner duplicate suppression/idempotency rules:
+  - avoid creating repeated identical signals every market-cycle run.
+  - use strategy_id, symbol, signal_type, direction, status, and a lookback window.
+  - keep an override for intentionally repeated signals later.
+  - add tests for duplicate suppression and fresh signal creation after the window expires.
 - Why this is the best next step:
-  - route behavior has initial coverage, but readiness is still a key deployment surface.
-  - route tests will reduce risk before adding scheduled jobs or scanners.
+  - scheduled market-cycle can now repeatedly call the scanner.
+  - price-threshold rules can otherwise create duplicate signals every run while a threshold remains true.
+  - idempotency keeps paper automation useful before optional auto-preview is added.
 
-Likely next steps after route-level tests:
-1. Add option-chain/contract selection support instead of requiring a preselected option_symbol.
-2. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
-3. Add scanner/job scaffolding that can create signals.
-4. Add AI review tables only after closed-trade capture exists.
+Likely next steps after scanner duplicate suppression:
+1. Add optional auto-preview for scanner-created signals.
+2. Add controlled paper auto-submit behind MARKET_CYCLE_SUBMIT_ENABLED.
+3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:
 - Single user only.
