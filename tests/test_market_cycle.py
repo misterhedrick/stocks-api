@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
-from app.db.models import AuditLog, JobRun, OrderIntent, Signal, Strategy
+from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import run_market_cycle
 from app.services.signal_scanner import SignalScanResult
@@ -18,9 +18,11 @@ class FakeMarketCycleSession:
         *,
         signal: Signal | None = None,
         strategy: Strategy | None = None,
+        order_intent: OrderIntent | None = None,
     ) -> None:
         self.signal = signal
         self.strategy = strategy
+        self.order_intent = order_intent
         self.added: list[object] = []
         self.commit_count = 0
         self.rollback_count = 0
@@ -54,6 +56,10 @@ class FakeMarketCycleSession:
             if self.strategy is None or self.strategy.id != record_id:
                 return None
             return self.strategy
+        if model is OrderIntent:
+            if self.order_intent is None or self.order_intent.id != record_id:
+                return None
+            return self.order_intent
         return None
 
 
@@ -116,6 +122,12 @@ def build_strategy() -> Strategy:
                     "time_in_force": "day",
                     "data_feed": "indicative",
                 },
+                "submit": {
+                    "enabled": True,
+                    "max_orders_per_cycle": 1,
+                    "max_contracts_per_order": 1,
+                    "allowed_sides": ["buy"],
+                },
             }
         },
         created_at=now,
@@ -155,6 +167,21 @@ def build_order_intent(signal: Signal) -> OrderIntent:
         time_in_force="day",
         status="previewed",
         preview={"source": "test"},
+    )
+
+
+def build_broker_order(order_intent: OrderIntent) -> BrokerOrder:
+    return BrokerOrder(
+        id=uuid.uuid4(),
+        order_intent_id=order_intent.id,
+        alpaca_order_id="alpaca-order-123",
+        symbol=order_intent.option_symbol,
+        side=order_intent.side,
+        quantity=Decimal(order_intent.quantity),
+        order_type=order_intent.order_type,
+        limit_price=order_intent.limit_price,
+        status="new",
+        raw_response={"id": "alpaca-order-123"},
     )
 
 
@@ -243,6 +270,118 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.preview["previews_skipped"], 1)
         self.assertIn("scanner.preview config is required", result.preview["errors"][0])
         preview.assert_not_called()
+
+    def test_run_market_cycle_auto_submits_current_cycle_previews_when_enabled(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        broker_order = build_broker_order(order_intent)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, broker_order),
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertTrue(result.submit_enabled)
+        self.assertEqual(result.submit["order_intents_seen"], 1)
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        self.assertEqual(result.submit["broker_order_ids"], [str(broker_order.id)])
+        submit.assert_called_once_with(db, order_intent.id)
+
+    def test_run_market_cycle_skips_auto_submit_without_strategy_submit_config(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"].pop("submit")
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("scanner.submit config is required", result.submit["errors"][0])
+        submit.assert_not_called()
+
+    def test_run_market_cycle_enforces_submit_max_contracts_per_order(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["max_contracts_per_order"] = 1
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        order_intent.quantity = 2
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("max_contracts_per_order", result.submit["errors"][0])
+        submit.assert_not_called()
 
     def test_run_market_cycle_honors_disabled_scan_and_reconcile_switches(self) -> None:
         db = FakeMarketCycleSession()

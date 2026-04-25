@@ -8,12 +8,12 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import JobRun, Signal, Strategy
+from app.db.models import JobRun, OrderIntent, Signal, Strategy
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
 from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
-from app.services.order_intents import preview_order_intent_from_signal
+from app.services.order_intents import preview_order_intent_from_signal, submit_order_intent
 from app.services.signal_scanner import scan_signals
 
 
@@ -79,6 +79,12 @@ def run_market_cycle(
         if preview_enabled:
             preview = _preview_created_signals(db, created_signal_ids)
 
+        if submit_enabled:
+            submit = _submit_previewed_order_intents(
+                db,
+                _order_intent_ids_from_preview(preview),
+            )
+
         if reconcile_enabled:
             reconciliation_result = reconcile_broker_state(
                 db,
@@ -97,9 +103,6 @@ def run_market_cycle(
             }
         else:
             reconcile = _disabled_step("reconcile")
-
-        if submit_enabled:
-            submit = _not_implemented_step("submit")
 
         details = {
             "scan_enabled": scan_enabled,
@@ -209,6 +212,79 @@ def _preview_created_signals(
     }
 
 
+def _submit_previewed_order_intents(
+    db: Session,
+    order_intent_ids: list[uuid.UUID],
+) -> dict[str, Any]:
+    submitted = 0
+    rejected = 0
+    skipped = 0
+    errors: list[str] = []
+    broker_order_ids: list[str] = []
+
+    orders_submitted_by_strategy: dict[uuid.UUID, int] = {}
+    for order_intent_id in order_intent_ids:
+        order_intent = db.get(OrderIntent, order_intent_id)
+        if order_intent is None:
+            skipped += 1
+            errors.append(f"Order intent '{order_intent_id}' was not found")
+            continue
+
+        strategy = db.get(Strategy, order_intent.strategy_id) if order_intent.strategy_id else None
+        if strategy is None:
+            skipped += 1
+            errors.append(f"Order intent '{order_intent_id}' has no strategy")
+            continue
+
+        try:
+            submit_config = _submit_config_for_strategy(strategy)
+            _validate_submit_limits(
+                order_intent,
+                submit_config,
+                orders_submitted_by_strategy.get(strategy.id, 0),
+            )
+        except ValueError as exc:
+            skipped += 1
+            errors.append(f"Order intent '{order_intent_id}': {exc}")
+            continue
+
+        try:
+            _, broker_order = submit_order_intent(db, order_intent.id)
+        except Exception as exc:
+            rejected += 1
+            errors.append(f"Order intent '{order_intent_id}': {exc.__class__.__name__}: {exc}")
+            continue
+
+        submitted += 1
+        orders_submitted_by_strategy[strategy.id] = (
+            orders_submitted_by_strategy.get(strategy.id, 0) + 1
+        )
+        broker_order_ids.append(str(broker_order.id))
+
+    return {
+        "status": "completed",
+        "order_intents_seen": len(order_intent_ids),
+        "submitted": submitted,
+        "rejected": rejected,
+        "skipped": skipped,
+        "errors": errors,
+        "broker_order_ids": broker_order_ids,
+    }
+
+
+def _order_intent_ids_from_preview(preview: dict[str, Any] | None) -> list[uuid.UUID]:
+    if not isinstance(preview, dict):
+        return []
+
+    order_intent_ids = []
+    for value in preview.get("order_intent_ids", []):
+        try:
+            order_intent_ids.append(uuid.UUID(str(value)))
+        except ValueError:
+            continue
+    return order_intent_ids
+
+
 def _preview_payload_for_signal(
     signal: Signal,
     strategy: Strategy,
@@ -247,6 +323,54 @@ def _preview_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
     if preview_config.get("enabled") is not True:
         raise ValueError("scanner.preview.enabled must be true")
     return preview_config
+
+
+def _submit_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
+    scanner_config = strategy.config.get("scanner")
+    if not isinstance(scanner_config, dict):
+        raise ValueError("strategy scanner config is required for auto-submit")
+
+    submit_config = scanner_config.get("submit")
+    if not isinstance(submit_config, dict):
+        raise ValueError("scanner.submit config is required")
+    if submit_config.get("enabled") is not True:
+        raise ValueError("scanner.submit.enabled must be true")
+    return submit_config
+
+
+def _validate_submit_limits(
+    order_intent: OrderIntent,
+    submit_config: dict[str, Any],
+    submitted_for_strategy: int,
+) -> None:
+    max_orders_per_cycle = _int_config(
+        submit_config,
+        "max_orders_per_cycle",
+        default=1,
+        label_prefix="scanner.submit",
+    )
+    if submitted_for_strategy >= max_orders_per_cycle:
+        raise ValueError("scanner.submit.max_orders_per_cycle reached")
+
+    max_contracts_per_order = _int_config(
+        submit_config,
+        "max_contracts_per_order",
+        default=1,
+        label_prefix="scanner.submit",
+    )
+    if order_intent.quantity > max_contracts_per_order:
+        raise ValueError("order quantity exceeds scanner.submit.max_contracts_per_order")
+
+    allowed_sides = submit_config.get("allowed_sides", ["buy"])
+    if not isinstance(allowed_sides, list) or not allowed_sides:
+        raise ValueError("scanner.submit.allowed_sides must be a non-empty list")
+    clean_allowed_sides = {
+        value.strip().lower()
+        for value in allowed_sides
+        if isinstance(value, str) and value.strip()
+    }
+    if order_intent.side.lower() not in clean_allowed_sides:
+        raise ValueError("order side is not allowed by scanner.submit.allowed_sides")
 
 
 def _contract_selection_for_signal(
@@ -288,12 +412,13 @@ def _int_config(
     key: str,
     *,
     default: int,
+    label_prefix: str = "scanner.preview",
 ) -> int:
     value = config.get(key, default)
     try:
         int_value = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"scanner.preview.{key} must be an integer") from exc
+        raise ValueError(f"{label_prefix}.{key} must be an integer") from exc
     if int_value <= 0:
-        raise ValueError(f"scanner.preview.{key} must be greater than 0")
+        raise ValueError(f"{label_prefix}.{key} must be greater than 0")
     return int_value

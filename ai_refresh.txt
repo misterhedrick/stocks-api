@@ -185,7 +185,8 @@ Current repo structure and purpose:
   - Orchestrates enabled market-cycle steps.
   - Currently supports scan_signals and broker reconciliation.
   - Supports optional auto-preview for scanner-created signals when MARKET_CYCLE_PREVIEW_ENABLED=true and strategy config has scanner.preview.enabled=true.
-  - Reports submit automation as disabled/not implemented.
+  - Supports controlled paper auto-submit for same-cycle previewed order_intents when MARKET_CYCLE_SUBMIT_ENABLED=true and strategy config has scanner.submit.enabled=true.
+  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, and allowed_sides.
   - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
@@ -260,6 +261,7 @@ Current behavior implemented:
 - Signal scanning suppresses duplicate recent scanner signals by default using dedupe_minutes.
 - Market-cycle endpoint can run scan and reconciliation in one protected call.
 - Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
+- Market-cycle endpoint can auto-submit only same-cycle previewed order intents when submit switches/config are enabled.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -326,19 +328,19 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add controlled paper auto-submit behind MARKET_CYCLE_SUBMIT_ENABLED:
-  - submit only previewed order intents created by the current market-cycle run.
-  - keep MARKET_CYCLE_SUBMIT_ENABLED=false by default.
-  - enforce simple max contracts/notional per cycle before submission.
-  - record submitted/rejected counts and errors in market-cycle details.
+- Add richer scanner rules beyond price thresholds:
+  - support simple moving-average or percent-change conditions.
+  - keep rule definitions strategy-config driven.
+  - reuse scanner dedupe and preview/submit config.
+  - test with fake market data instead of live Alpaca calls.
 - Why this is the best next step:
-  - scanner-created signals can now become previewed order intents.
-  - submit remains the final paper-trading automation step.
-  - explicit sizing limits keep paper automation adjustable.
+  - the full paper path from scan -> preview -> submit now exists behind switches.
+  - better signal quality matters more than adding more execution plumbing.
+  - keeping rules config-driven makes the trading brain easy to update.
 
-Likely next steps after controlled paper auto-submit:
-1. Add richer scanner rules beyond price thresholds.
-2. Add per-strategy risk/sizing controls.
+Likely next steps after richer scanner rules:
+1. Add per-strategy risk/sizing controls.
+2. Add market-hours schedule windows and duplicate order safeguards.
 3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

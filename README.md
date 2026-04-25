@@ -282,6 +282,12 @@ It also supports a live stock quote threshold rule:
       "order_type": "limit",
       "time_in_force": "day",
       "data_feed": "indicative"
+    },
+    "submit": {
+      "enabled": true,
+      "max_orders_per_cycle": 1,
+      "max_contracts_per_order": 1,
+      "allowed_sides": ["buy"]
     }
   }
 }
@@ -290,6 +296,7 @@ It also supports a live stock quote threshold rule:
 For bearish threshold checks, use `price_below` instead of `price_above`. The scanner uses the latest Alpaca stock quote midpoint as the observed price and stores quote context in `signals.market_context`.
 `dedupe_minutes` suppresses repeated signals with the same strategy, symbol, signal type, and direction while a prior signal is still recent. Set it to `0` to allow repeated signals.
 When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.preview.enabled=true` can automatically create previewed order intents. This still does not submit orders while `MARKET_CYCLE_SUBMIT_ENABLED=false`.
+When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
 
 ## Scheduled jobs
 
