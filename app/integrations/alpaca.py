@@ -76,6 +76,16 @@ class AlpacaOptionQuote(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
+class AlpacaStockQuote(BaseModel):
+    bid_price: Decimal | None = Field(default=None, alias="bp")
+    bid_size: Decimal | None = Field(default=None, alias="bs")
+    ask_price: Decimal | None = Field(default=None, alias="ap")
+    ask_size: Decimal | None = Field(default=None, alias="as")
+    timestamp: datetime | None = Field(default=None, alias="t")
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
 class AlpacaOptionContract(BaseModel):
     id: str
     symbol: str
@@ -107,6 +117,13 @@ class AlpacaOrderSubmission:
 class AlpacaLatestOptionQuote:
     symbol: str
     quote: AlpacaOptionQuote
+    raw_response: dict[str, Any]
+
+
+@dataclass(slots=True)
+class AlpacaLatestStockQuote:
+    symbol: str
+    quote: AlpacaStockQuote
     raw_response: dict[str, Any]
 
 
@@ -410,6 +427,38 @@ class AlpacaMarketDataClient:
             quote=AlpacaOptionQuote.model_validate(raw_quote),
             raw_response=raw_quote,
         )
+
+    def get_latest_stock_quotes(
+        self,
+        symbols: list[str],
+        *,
+        feed: str = "iex",
+    ) -> dict[str, AlpacaLatestStockQuote]:
+        payload = self._get_json(
+            "/v2/stocks/quotes/latest",
+            params={
+                "symbols": ",".join(symbols),
+                "feed": feed,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise AlpacaTradingError("Unexpected Alpaca stock quote response")
+
+        quotes = payload.get("quotes")
+        if not isinstance(quotes, dict):
+            raise AlpacaTradingError("Unexpected Alpaca stock quote response")
+
+        latest_quotes: dict[str, AlpacaLatestStockQuote] = {}
+        for symbol in symbols:
+            raw_quote = quotes.get(symbol)
+            if isinstance(raw_quote, dict):
+                latest_quotes[symbol] = AlpacaLatestStockQuote(
+                    symbol=symbol,
+                    quote=AlpacaStockQuote.model_validate(raw_quote),
+                    raw_response=raw_quote,
+                )
+
+        return latest_quotes
 
     def _get_json(
         self,

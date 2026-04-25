@@ -36,3 +36,15 @@ class SignalScanRead(BaseModel):
     signals_created: int
     signals_skipped: int
     errors: list[str]
+
+
+class MarketCycleRead(BaseModel):
+    job_run: JobRunRead
+    scan_enabled: bool
+    reconcile_enabled: bool
+    preview_enabled: bool
+    submit_enabled: bool
+    scan: dict[str, Any] | None
+    reconcile: dict[str, Any] | None
+    preview: dict[str, Any] | None
+    submit: dict[str, Any] | None

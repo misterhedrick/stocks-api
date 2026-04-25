@@ -15,6 +15,7 @@ from app.integrations.alpaca import AlpacaTradingConfigurationError, AlpacaTradi
 from app.main import app
 from app.schemas.options import OptionContractRead, OptionContractSelectionRead
 from app.services.broker_reconciliation import BrokerReconciliationResult
+from app.services.market_cycle import MarketCycleResult
 from app.services.signal_scanner import SignalScanResult
 
 
@@ -419,6 +420,35 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["signals_created"], 1)
         scanner.assert_called_once_with(db, limit=25)
 
+    def test_market_cycle_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_cycle_result()
+
+        with patch(
+            "app.api.routes.jobs.run_market_cycle",
+            return_value=result,
+        ) as market_cycle:
+            response = client.post(
+                "/api/v1/jobs/market-cycle?scan_limit=25&order_limit=50&fill_page_size=75",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["scan_enabled"])
+        self.assertEqual(response.json()["scan"]["signals_created"], 1)
+        market_cycle.assert_called_once_with(
+            db,
+            scan_limit=25,
+            order_limit=50,
+            fill_page_size=75,
+        )
+
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
     now = datetime.now(timezone.utc)
@@ -465,6 +495,32 @@ def build_signal_scan_result() -> SignalScanResult:
         signals_created=1,
         signals_skipped=1,
         errors=["Strategy skipped"],
+    )
+
+
+def build_market_cycle_result() -> MarketCycleResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="market_cycle",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={"scan": {"signals_created": 1}},
+        error=None,
+        created_at=now,
+    )
+
+    return MarketCycleResult(
+        job_run=job_run,
+        scan_enabled=True,
+        reconcile_enabled=True,
+        preview_enabled=False,
+        submit_enabled=False,
+        scan={"signals_created": 1},
+        reconcile={"orders_seen": 2},
+        preview={"status": "disabled"},
+        submit={"status": "disabled"},
     )
 
 

@@ -77,7 +77,7 @@ Current repo structure and purpose:
   - Python runtime for hosting.
 - render.yaml
   - Render service blueprint.
-  - Includes web service and disabled-by-default broker reconciliation cron service.
+  - Includes web service and disabled-by-default market-cycle cron service.
 - start.sh
   - Render/Linux startup script. Checks database connectivity, then starts uvicorn.
 - run-local.ps1
@@ -99,6 +99,7 @@ Current repo structure and purpose:
   - Picks Alpaca paper/live base URL from ALPACA_PAPER.
   - Provides Alpaca market data base URL for option quote previews.
   - Determines startup auto-migration behavior.
+  - Provides market-cycle feature switches for scan/reconcile/preview/submit.
 - app/core/security.py
   - Single admin bearer token dependency.
 - app/db/base.py
@@ -144,6 +145,8 @@ Current repo structure and purpose:
   - Manually reconciles Alpaca broker state into local durable tables.
   - POST /api/v1/jobs/scan-signals, bearer-protected.
   - Manually scans active strategy configs and creates signals only.
+  - POST /api/v1/jobs/market-cycle, bearer-protected.
+  - Runs enabled market-cycle steps behind env switches.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
   - Includes schema for generated order intent previews from signals.
@@ -155,7 +158,7 @@ Current repo structure and purpose:
   - Pydantic request/response schemas for signal create, update, and read.
   - Validates confidence between 0 and 1 when supplied.
 - app/schemas/jobs.py
-  - Pydantic response schemas for job runs, broker reconciliation, and signal scans.
+  - Pydantic response schemas for job runs, broker reconciliation, signal scans, and market cycles.
 - app/schemas/options.py
   - Pydantic request/response schemas for option contract selection.
 - app/services/order_intents.py
@@ -174,7 +177,13 @@ Current repo structure and purpose:
 - app/services/signal_scanner.py
   - Domain/service logic for manual signal scans.
   - Reads active strategies with config.scan_signals entries.
+  - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
   - Creates signals only; does not create previews or submit orders.
+  - Records job_runs and audit_logs for success/failure.
+- app/services/market_cycle.py
+  - Orchestrates enabled market-cycle steps.
+  - Currently supports scan_signals and broker reconciliation.
+  - Reports preview/submit automation as disabled/not implemented.
   - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
@@ -183,6 +192,7 @@ Current repo structure and purpose:
   - Currently supports POST /v2/orders for order intent submission.
   - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
   - Supports GET /v2/options/contracts for option contract selection.
+  - Supports GET https://data.alpaca.markets/v2/stocks/quotes/latest for stock quote scanner rules.
   - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
@@ -195,8 +205,10 @@ Current repo structure and purpose:
   - unittest coverage for manual scanner success, inactive strategy filtering, malformed specs, and failure recording.
 - tests/test_render_job_runner.py
   - unittest coverage for the Render cron kill switch and job URL construction.
+- tests/test_market_cycle.py
+  - unittest coverage for market-cycle orchestration, env switches, and failure recording.
 - tests/test_routes.py
-  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, and signal scan route mapping.
+  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, signal scan route mapping, and market-cycle route mapping.
 
 Current database tables implemented:
 - strategies
@@ -239,9 +251,11 @@ Current behavior implemented:
 - Update order_intent status/submitted_at after submission.
 - Mark order_intent rejected and save rejection reason if Alpaca rejects.
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
-- Render cron blueprint exists for broker reconciliation every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
+- Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
 - Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
 - Signal scanning creates signal records only and never creates order intents or submits orders.
+- Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold rules.
+- Market-cycle endpoint can run scan and reconciliation in one protected call.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -259,6 +273,8 @@ Current behavior implemented:
   - broker_reconciliation.failed
   - signal_scan.succeeded
   - signal_scan.failed
+  - market_cycle.succeeded
+  - market_cycle.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Basic tests for option contract selection and selector-backed preview generation.
@@ -268,14 +284,14 @@ Current behavior implemented:
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- Scanner/signal-generation logic is config-driven scaffold only; no real market-data scanner yet.
+- Scanner/signal-generation logic has a first live stock quote price-threshold rule only; no richer technical scanner yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
 - Broker reconciliation has a protected manual endpoint and a disabled-by-default Render cron blueprint.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- Scheduled broker reconciliation is scaffolded in render.yaml but disabled by default.
+- Scheduled market-cycle is scaffolded in render.yaml but disabled by default.
 - Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
 - No AI review tables yet.
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.
@@ -306,19 +322,19 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Validate the deployed cron setup once merged:
-  - set ADMIN_API_TOKEN on the cron service in Render.
-  - keep SCHEDULED_JOBS_ENABLED=false for first deploy validation.
-  - manually trigger the cron once while disabled and confirm it exits successfully.
-  - flip SCHEDULED_JOBS_ENABLED=true only when ready for broker reconciliation to run every 30 minutes.
+- Add scanner duplicate suppression/idempotency rules:
+  - avoid creating repeated identical signals every market-cycle run.
+  - use strategy_id, symbol, signal_type, direction, status, and a lookback window.
+  - keep an override for intentionally repeated signals later.
+  - add tests for duplicate suppression and fresh signal creation after the window expires.
 - Why this is the best next step:
-  - the repo now has the cron blueprint and kill switch, but Render secrets/settings need dashboard confirmation.
-  - this activates state freshness without introducing trading automation.
-  - keeping scan/manual preview/manual submit boundaries preserves paper-trading safety.
+  - scheduled market-cycle can now repeatedly call the scanner.
+  - price-threshold rules can otherwise create duplicate signals every run while a threshold remains true.
+  - idempotency keeps paper automation useful before optional auto-preview is added.
 
-Likely next steps after cron validation:
-1. Add real market-data scanner rules behind the signal scanner service.
-2. Add scheduled market-hours job orchestration for scan/reconcile without auto-submit.
+Likely next steps after scanner duplicate suppression:
+1. Add optional auto-preview for scanner-created signals.
+2. Add controlled paper auto-submit behind MARKET_CYCLE_SUBMIT_ENABLED.
 3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

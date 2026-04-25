@@ -260,12 +260,30 @@ Example strategy config:
 }
 ```
 
+It also supports a live stock quote threshold rule:
+
+```json
+{
+  "scanner": {
+    "type": "price_threshold",
+    "symbols": ["SPY", "QQQ"],
+    "signal_type": "price_breakout",
+    "direction": "bullish",
+    "price_above": "500",
+    "confidence": "0.6500",
+    "data_feed": "iex"
+  }
+}
+```
+
+For bearish threshold checks, use `price_below` instead of `price_above`. The scanner uses the latest Alpaca stock quote midpoint as the observed price and stores quote context in `signals.market_context`.
+
 ## Scheduled jobs
 
-`render.yaml` includes a Render cron service named `stocks-api-reconcile-broker` that runs every 30 minutes and calls:
+`render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 30 minutes and calls:
 
 ```text
-POST /api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100
+POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
 ```
 
 It is disabled by default with:
@@ -275,6 +293,17 @@ SCHEDULED_JOBS_ENABLED=false
 ```
 
 To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
+
+Market-cycle behavior is controlled by these web-service env vars:
+
+```text
+MARKET_CYCLE_SCAN_ENABLED=true
+MARKET_CYCLE_RECONCILE_ENABLED=true
+MARKET_CYCLE_PREVIEW_ENABLED=false
+MARKET_CYCLE_SUBMIT_ENABLED=false
+```
+
+Current market-cycle automation can scan for signals and reconcile broker state. Preview and submit automation are intentionally reported as disabled/not implemented until those switches are wired to actual behavior.
 
 Audit logging currently records:
 - strategy creation
@@ -298,4 +327,8 @@ Set these environment variables in Render:
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
 - `AUTO_MIGRATE_ON_STARTUP=true`
+- `MARKET_CYCLE_SCAN_ENABLED=true`
+- `MARKET_CYCLE_RECONCILE_ENABLED=true`
+- `MARKET_CYCLE_PREVIEW_ENABLED=false`
+- `MARKET_CYCLE_SUBMIT_ENABLED=false`
 - `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs

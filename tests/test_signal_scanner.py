@@ -5,6 +5,11 @@ import uuid
 from datetime import datetime, timezone
 
 from app.db.models import AuditLog, JobRun, Signal, Strategy
+from app.integrations.alpaca import (
+    AlpacaLatestStockQuote,
+    AlpacaStockQuote,
+    AlpacaTradingError,
+)
 from app.services.signal_scanner import scan_signals
 
 
@@ -47,6 +52,46 @@ class FakeScannerSession:
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
             obj.id = uuid.uuid4()
+
+
+class FakeMarketDataClient:
+    def __init__(self, quotes: dict[str, tuple[str | None, str | None]]) -> None:
+        self.quotes = quotes
+
+    def get_latest_stock_quotes(
+        self,
+        symbols: list[str],
+        *,
+        feed: str,
+    ) -> dict[str, AlpacaLatestStockQuote]:
+        latest_quotes = {}
+        for symbol in symbols:
+            bid_price, ask_price = self.quotes.get(symbol, (None, None))
+            if bid_price is None and ask_price is None:
+                continue
+            raw_quote = {
+                "bp": bid_price,
+                "bs": "10",
+                "ap": ask_price,
+                "as": "12",
+                "t": "2026-04-23T16:00:00Z",
+            }
+            latest_quotes[symbol] = AlpacaLatestStockQuote(
+                symbol=symbol,
+                quote=AlpacaStockQuote.model_validate(raw_quote),
+                raw_response=raw_quote,
+            )
+        return latest_quotes
+
+
+class FailingMarketDataClient:
+    def get_latest_stock_quotes(
+        self,
+        symbols: list[str],
+        *,
+        feed: str,
+    ) -> dict[str, AlpacaLatestStockQuote]:
+        raise AlpacaTradingError("market data unavailable")
 
 
 def build_strategy(
@@ -148,6 +193,100 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_skipped, 1)
         self.assertEqual(signals[-1].symbol, "QQQ")
         self.assertIn("direction is required", result.errors[0])
+
+    def test_scan_signals_creates_signal_when_price_threshold_is_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY", "QQQ"],
+                    "signal_type": "price_breakout",
+                    "direction": "bullish",
+                    "price_above": "500",
+                    "confidence": "0.65",
+                    "data_feed": "iex",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                {
+                    "SPY": ("500.00", "501.00"),
+                    "QQQ": ("420.00", "421.00"),
+                }
+            ),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].symbol, "SPY")
+        self.assertEqual(signals[-1].signal_type, "price_breakout")
+        self.assertEqual(signals[-1].market_context["price"], "500.50")
+        self.assertEqual(
+            signals[-1].market_context["quote"]["quote_timestamp"],
+            "2026-04-23T16:00:00+00:00",
+        )
+
+    def test_scan_signals_does_not_create_signal_when_threshold_is_not_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                    "price_below": "490",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient({"SPY": ("500.00", "501.00")}),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertFalse([item for item in db.added if isinstance(item, Signal)])
+
+    def test_scan_signals_records_malformed_scanner_config_as_skipped(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient({"SPY": ("500.00", "501.00")}),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.signals_skipped, 1)
+        self.assertIn("price_above or price_below", result.errors[0])
+
+    def test_scan_signals_records_market_data_error_as_skipped(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                    "price_above": "500",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(db, market_data_client=FailingMarketDataClient())
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.signals_skipped, 1)
+        self.assertIn("market data unavailable", result.errors[0])
 
     def test_scan_signals_records_failed_job_run(self) -> None:
         class FailingScannerSession(FakeScannerSession):

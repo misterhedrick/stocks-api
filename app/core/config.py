@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     alpaca_api_secret: str = ""
     alpaca_paper: bool = True
     alpaca_request_timeout_seconds: int = 10
+    market_cycle_scan_enabled: bool = True
+    market_cycle_reconcile_enabled: bool = True
+    market_cycle_preview_enabled: bool = False
+    market_cycle_submit_enabled: bool = False
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
