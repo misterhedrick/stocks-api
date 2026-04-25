@@ -113,6 +113,25 @@ curl -X PATCH http://127.0.0.1:8000/api/v1/signals/<signal_id> \
   }'
 ```
 
+Generate a previewed order intent from a signal:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signal_id": "<signal_id>",
+    "option_symbol": "SPY260417C00500000",
+    "side": "buy",
+    "quantity": 1,
+    "order_type": "limit",
+    "time_in_force": "day",
+    "data_feed": "indicative"
+  }'
+```
+
+The preview endpoint fetches the latest Alpaca option quote, derives a limit price when one is not supplied, stores quote/risk context in `preview`, and does not place an Alpaca order.
+
 Run database migrations:
 
 ```bash
@@ -173,6 +192,7 @@ Audit logging currently records:
 - signal creation
 - signal updates
 - order intent creation
+- generated order intent previews
 - order intent submission
 - Alpaca order intent rejection
 - broker reconciliation success or failure

@@ -28,6 +28,24 @@ class OrderIntentCreate(BaseModel):
         return self
 
 
+class OrderIntentPreviewCreate(BaseModel):
+    signal_id: uuid.UUID
+    option_symbol: str = Field(min_length=1, max_length=64)
+    side: Literal["buy", "sell"]
+    quantity: int = Field(gt=0)
+    order_type: Literal["market", "limit"] = "limit"
+    limit_price: Decimal | None = Field(default=None, gt=0)
+    time_in_force: Literal["day"] = "day"
+    rationale: str | None = None
+    data_feed: Literal["indicative", "opra"] = "indicative"
+
+    @model_validator(mode="after")
+    def reject_limit_price_for_market_orders(self) -> "OrderIntentPreviewCreate":
+        if self.order_type == "market" and self.limit_price is not None:
+            raise ValueError("limit_price is only allowed for limit order intents")
+        return self
+
+
 class OrderIntentRead(BaseModel):
     id: uuid.UUID
     strategy_id: uuid.UUID | None

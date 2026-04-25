@@ -16,13 +16,17 @@ from app.integrations.alpaca import (
 from app.schemas.order_intents import (
     BrokerOrderRead,
     OrderIntentCreate,
+    OrderIntentPreviewCreate,
     OrderIntentRead,
     OrderIntentSubmissionRead,
 )
 from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
+    OrderIntentPreviewError,
     OrderIntentNotFoundError,
     OrderIntentStateError,
+    SignalNotFoundError,
+    preview_order_intent_from_signal,
     submit_order_intent,
 )
 
@@ -63,6 +67,35 @@ def create_order_intent(
     db.commit()
     db.refresh(order_intent)
     return order_intent
+
+
+@router.post("/preview", response_model=OrderIntentRead, status_code=status.HTTP_201_CREATED)
+def preview_order_intent(
+    payload: OrderIntentPreviewCreate,
+    db: Annotated[Session, Depends(get_db)],
+) -> OrderIntent:
+    try:
+        return preview_order_intent_from_signal(db, payload)
+    except SignalNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except OrderIntentPreviewError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
 
 
 @router.get("", response_model=list[OrderIntentRead])

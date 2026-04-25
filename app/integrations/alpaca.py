@@ -66,9 +66,26 @@ class AlpacaFillActivity(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
+class AlpacaOptionQuote(BaseModel):
+    bid_price: Decimal | None = Field(default=None, alias="bp")
+    bid_size: Decimal | None = Field(default=None, alias="bs")
+    ask_price: Decimal | None = Field(default=None, alias="ap")
+    ask_size: Decimal | None = Field(default=None, alias="as")
+    timestamp: datetime | None = Field(default=None, alias="t")
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
 @dataclass(slots=True)
 class AlpacaOrderSubmission:
     order: AlpacaSubmittedOrder
+    raw_response: dict[str, Any]
+
+
+@dataclass(slots=True)
+class AlpacaLatestOptionQuote:
+    symbol: str
+    quote: AlpacaOptionQuote
     raw_response: dict[str, Any]
 
 
@@ -262,7 +279,117 @@ class AlpacaTradingClient:
         return "Alpaca rejected the order submission"
 
 
+class AlpacaMarketDataClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        api_secret: str,
+        base_url: str,
+        timeout_seconds: int,
+    ) -> None:
+        self._api_key = api_key
+        self._api_secret = api_secret
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+
+    @classmethod
+    def from_settings(cls) -> "AlpacaMarketDataClient":
+        if not settings.alpaca_api_key or not settings.alpaca_api_secret:
+            raise AlpacaTradingConfigurationError(
+                "Alpaca API credentials are not configured"
+            )
+
+        return cls(
+            api_key=settings.alpaca_api_key,
+            api_secret=settings.alpaca_api_secret,
+            base_url=settings.alpaca_data_base_url,
+            timeout_seconds=settings.alpaca_request_timeout_seconds,
+        )
+
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str = "indicative",
+    ) -> AlpacaLatestOptionQuote:
+        payload = self._get_json(
+            "/v1beta1/options/quotes/latest",
+            params={
+                "symbols": symbol,
+                "feed": feed,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise AlpacaTradingError("Unexpected Alpaca option quote response")
+
+        quotes = payload.get("quotes")
+        if not isinstance(quotes, dict):
+            raise AlpacaTradingError("Unexpected Alpaca option quote response")
+
+        raw_quote = quotes.get(symbol)
+        if not isinstance(raw_quote, dict):
+            raise AlpacaTradingError(f"No latest option quote returned for {symbol}")
+
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(raw_quote),
+            raw_response=raw_quote,
+        )
+
+    def _get_json(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> Any:
+        try:
+            with httpx.Client(
+                base_url=self._base_url,
+                timeout=self._timeout_seconds,
+                headers={
+                    "APCA-API-KEY-ID": self._api_key,
+                    "APCA-API-SECRET-KEY": self._api_secret,
+                },
+            ) as client:
+                response = client.get(path, params=params)
+        except httpx.HTTPError as exc:
+            raise AlpacaTradingError(
+                f"Unable to reach Alpaca Market Data API: {exc}"
+            ) from exc
+
+        payload = _parse_any_response(response)
+
+        if response.is_error:
+            raise AlpacaTradingError(
+                _extract_error_detail(payload),
+                status_code=response.status_code,
+            )
+
+        return payload
+
+
 def coerce_alpaca_datetime(value: str | datetime | None) -> datetime | None:
     if value is None or isinstance(value, datetime):
         return value
     return DATETIME_ADAPTER.validate_python(value)
+
+
+def _parse_any_response(response: httpx.Response) -> Any:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {"message": response.text.strip() or "Empty response from Alpaca"}
+    return payload
+
+
+def _extract_error_detail(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return "Alpaca rejected the request"
+
+    for key in ("message", "detail", "error"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return "Alpaca rejected the request"

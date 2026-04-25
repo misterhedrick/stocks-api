@@ -67,5 +67,9 @@ class Settings(BaseSettings):
             return "https://paper-api.alpaca.markets"
         return "https://api.alpaca.markets"
 
+    @property
+    def alpaca_data_base_url(self) -> str:
+        return "https://data.alpaca.markets"
+
 
 settings = Settings()

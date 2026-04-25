@@ -426,6 +426,59 @@
       "response": []
     },
     {
+      "name": "Generate Order Intent Preview",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"signal_id\": \"{{last_signal_id}}\",\n  \"option_symbol\": \"SPY260417C00500000\",\n  \"side\": \"buy\",\n  \"quantity\": 1,\n  \"order_type\": \"limit\",\n  \"time_in_force\": \"day\",\n  \"data_feed\": \"indicative\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/order-intents/preview"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Generate order intent preview returns 201\", function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Generated preview stores order intent id\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql(\"previewed\");",
+              "  pm.expect(body.preview.source).to.eql(\"alpaca_latest_option_quote\");",
+              "  pm.collectionVariables.set(\"last_order_intent_id\", body.id);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Create Order Intent",
       "request": {
         "auth": {

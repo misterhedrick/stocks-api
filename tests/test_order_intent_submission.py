@@ -7,40 +7,57 @@ from decimal import Decimal
 from pydantic import ValidationError
 
 from app.api.routes.order_intents import create_order_intent
-from app.db.models import AuditLog, OrderIntent
+from app.db.models import AuditLog, OrderIntent, Signal
 from app.integrations.alpaca import (
+    AlpacaLatestOptionQuote,
     AlpacaOrderRejectedError,
     AlpacaOrderSubmission,
+    AlpacaOptionQuote,
     AlpacaSubmittedOrder,
 )
-from app.schemas.order_intents import OrderIntentCreate
-from app.services.order_intents import submit_order_intent
+from app.schemas.order_intents import OrderIntentCreate, OrderIntentPreviewCreate
+from app.services.order_intents import (
+    SignalNotFoundError,
+    preview_order_intent_from_signal,
+    submit_order_intent,
+)
 
 
 class FakeSession:
-    def __init__(self, order_intent: OrderIntent | None) -> None:
+    def __init__(
+        self,
+        order_intent: OrderIntent | None,
+        signal: Signal | None = None,
+    ) -> None:
         self.order_intent = order_intent
+        self.signal = signal
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
 
-    def get(self, model: type[OrderIntent], order_intent_id: uuid.UUID) -> OrderIntent | None:
-        if self.order_intent is None:
-            return None
-        if model is not OrderIntent:
-            return None
-        if self.order_intent.id != order_intent_id:
-            return None
-        return self.order_intent
+    def get(self, model: type, record_id: uuid.UUID) -> object | None:
+        if model is OrderIntent:
+            if self.order_intent is None or self.order_intent.id != record_id:
+                return None
+            return self.order_intent
+        if model is Signal:
+            if self.signal is None or self.signal.id != record_id:
+                return None
+            return self.signal
+        return None
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
+        if isinstance(obj, OrderIntent):
+            self.order_intent = obj
 
     def commit(self) -> None:
         self.commit_count += 1
 
     def flush(self) -> None:
         self.flush_count += 1
+        if self.order_intent is not None and getattr(self.order_intent, "id", None) is None:
+            self.order_intent.id = uuid.uuid4()
 
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
@@ -85,6 +102,34 @@ class RejectedTradingClient:
         )
 
 
+class SuccessfulMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "1.20",
+                    "bs": "10",
+                    "ap": "1.30",
+                    "as": "12",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "1.20",
+                "bs": "10",
+                "ap": "1.30",
+                "as": "12",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
 def build_previewed_order_intent() -> OrderIntent:
     return OrderIntent(
         id=uuid.uuid4(),
@@ -97,6 +142,21 @@ def build_previewed_order_intent() -> OrderIntent:
         time_in_force="day",
         status="previewed",
         preview={"source": "test"},
+    )
+
+
+def build_signal() -> Signal:
+    return Signal(
+        id=uuid.uuid4(),
+        strategy_id=uuid.uuid4(),
+        symbol="SPY",
+        underlying_symbol="SPY",
+        signal_type="breakout",
+        direction="bullish",
+        confidence=Decimal("0.7500"),
+        rationale="Opening range breakout",
+        market_context={"price": "512.34"},
+        status="new",
     )
 
 
@@ -121,6 +181,51 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         self.assertEqual(audit_logs[-1].entity_type, "order_intent")
         self.assertEqual(audit_logs[-1].payload["option_symbol"], "SPY260417C00500000")
         self.assertEqual(db.commit_count, 1)
+
+    def test_preview_order_intent_from_signal_creates_preview_with_quote_context(self) -> None:
+        signal = build_signal()
+        db = FakeSession(None, signal)
+
+        order_intent = preview_order_intent_from_signal(
+            db,
+            OrderIntentPreviewCreate(
+                signal_id=signal.id,
+                option_symbol="SPY260417C00500000",
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                time_in_force="day",
+            ),
+            market_data_client=SuccessfulMarketDataClient(),
+        )
+
+        self.assertEqual(order_intent.status, "previewed")
+        self.assertEqual(order_intent.strategy_id, signal.strategy_id)
+        self.assertEqual(order_intent.signal_id, signal.id)
+        self.assertEqual(order_intent.limit_price, Decimal("1.25"))
+        self.assertEqual(order_intent.preview["quote"]["bid_price"], "1.20")
+        self.assertEqual(order_intent.preview["quote"]["ask_price"], "1.30")
+        self.assertEqual(order_intent.preview["quote"]["estimated_notional"], "130.00")
+        self.assertEqual(db.commit_count, 1)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "order_intent.previewed")
+
+    def test_preview_order_intent_from_signal_requires_existing_signal(self) -> None:
+        db = FakeSession(None)
+
+        with self.assertRaises(SignalNotFoundError):
+            preview_order_intent_from_signal(
+                db,
+                OrderIntentPreviewCreate(
+                    signal_id=uuid.uuid4(),
+                    option_symbol="SPY260417C00500000",
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    time_in_force="day",
+                ),
+                market_data_client=SuccessfulMarketDataClient(),
+            )
 
     def test_submit_previewed_order_intent_creates_broker_order(self) -> None:
         order_intent = build_previewed_order_intent()

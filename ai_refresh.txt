@@ -96,6 +96,7 @@ Current repo structure and purpose:
   - Pydantic settings loaded from env/.env.
   - Normalizes Render postgres:// URLs to postgresql+psycopg://.
   - Picks Alpaca paper/live base URL from ALPACA_PAPER.
+  - Provides Alpaca market data base URL for option quote previews.
   - Determines startup auto-migration behavior.
 - app/core/security.py
   - Single admin bearer token dependency.
@@ -114,9 +115,11 @@ Current repo structure and purpose:
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
 - app/api/routes/order_intents.py
+  - POST /api/v1/order-intents/preview, bearer-protected.
   - POST /api/v1/order-intents, bearer-protected.
   - GET /api/v1/order-intents, bearer-protected.
   - POST /api/v1/order-intents/{id}/submit, bearer-protected.
+  - Preview endpoint turns a signal plus option contract into a durable previewed order_intent using Alpaca latest option quote data.
 - app/api/routes/strategies.py
   - POST /api/v1/strategies, bearer-protected.
   - GET /api/v1/strategies, bearer-protected.
@@ -134,6 +137,7 @@ Current repo structure and purpose:
   - Manually reconciles Alpaca broker state into local durable tables.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
+  - Includes schema for generated order intent previews from signals.
   - Enforces limit_price rules and currently only supports time_in_force="day".
 - app/schemas/strategies.py
   - Pydantic request/response schemas for strategy create, update, and read.
@@ -144,6 +148,7 @@ Current repo structure and purpose:
   - Pydantic response schemas for job runs and broker reconciliation.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
+  - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
   - Creates broker_orders and updates order_intents.
   - Marks order_intents rejected when Alpaca rejects.
 - app/services/broker_reconciliation.py
@@ -155,6 +160,7 @@ Current repo structure and purpose:
   - Thin httpx-based Alpaca Trading API integration.
   - Currently supports POST /v2/orders for order intent submission.
   - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
+  - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
   - unittest coverage for order submission service behavior and schema validation.
@@ -188,6 +194,9 @@ Current behavior implemented:
 - Create/list/read/update signals.
 - List signals can filter by strategy_id, status, and symbol.
 - Signal create/update writes audit_logs.
+- Generate previewed order intents from signals using Alpaca latest option quotes.
+- Generated previews derive a limit price from midpoint when no limit_price is supplied.
+- Generated previews store bid/ask/midpoint/spread/estimated notional context in order_intents.preview.
 - Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
 - Store returned Alpaca order as broker_orders.
 - Update order_intent status/submitted_at after submission.
@@ -205,6 +214,7 @@ Current behavior implemented:
   - strategy.updated
   - signal.created
   - signal.updated
+  - order_intent.previewed
   - broker_reconciliation.succeeded
   - broker_reconciliation.failed
 - Basic tests for order submission success/rejection and order intent schema rules.
@@ -214,8 +224,8 @@ Current behavior implemented:
 
 Current important limitations/gaps:
 - No scanner/signal-generation logic yet.
-- No options-chain or quote-based preview logic yet.
-- order_intents are "previewed" records, but preview content is client-provided only.
+- Preview generation uses latest option quote only; no option-chain search/contract selection yet.
+- Manual order_intent creation still accepts client-provided preview data.
 - No validation that strategy_id or signal_id exists when creating an order_intent.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
@@ -253,18 +263,18 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add real order-intent preview generation:
-  - a protected endpoint that takes a signal_id and proposed option/order details
-  - fetches Alpaca option quote/market data where available
-  - produces a durable order_intent preview with estimated cost/risk context
-  - keeps execution separate: preview first, submit later
+- Validate references and tighten object linking:
+  - validate strategy_id exists when creating signals
+  - validate strategy_id and signal_id exist when manually creating order_intents
+  - ensure order_intent.strategy_id lines up with signal.strategy_id when both are supplied
+  - consider whether generated previews should reject non-new/rejected signals
 - Why this is the best next step:
-  - strategies and signals now exist as durable inputs.
-  - order_intents currently accept client-provided preview data only.
-  - preview generation is the missing bridge between captured signals and safe broker submission.
+  - the app now has linked strategies, signals, and order intents.
+  - generated previews validate signal_id, but manual creation still trusts foreign-key inputs.
+  - tighter validation improves data quality before scheduling or automation.
 
-Likely next steps after preview generation:
-1. Validate strategy_id/signal_id references when creating order intents and signals.
+Likely next steps after reference validation:
+1. Add option-chain/contract selection support instead of requiring a preselected option_symbol.
 2. Wire broker reconciliation to a Render cron job after manual endpoint behavior is proven.
 3. Add route-level tests for auth/readiness/manual jobs.
 4. Add scanner/job scaffolding that can create signals.
