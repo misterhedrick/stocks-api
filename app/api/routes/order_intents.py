@@ -29,6 +29,10 @@ from app.services.order_intents import (
     preview_order_intent_from_signal,
     submit_order_intent,
 )
+from app.services.option_contracts import (
+    OptionContractNotFoundError,
+    OptionContractSelectionError,
+)
 
 router = APIRouter(
     prefix="/order-intents",
@@ -81,6 +85,16 @@ def preview_order_intent(
     except SignalNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except OptionContractNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except OptionContractSelectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
     except OrderIntentPreviewError as exc:

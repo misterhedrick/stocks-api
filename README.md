@@ -132,6 +132,31 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
 
 The preview endpoint fetches the latest Alpaca option quote, derives a limit price when one is not supplied, stores quote/risk context in `preview`, and does not place an Alpaca order.
 
+Generate a previewed order intent and let the API select the option contract:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signal_id": "<signal_id>",
+    "contract_selection": {
+      "underlying_symbol": "SPY",
+      "option_type": "call",
+      "expiration_date_gte": "2026-04-17",
+      "expiration_date_lte": "2026-05-01",
+      "target_strike": "500"
+    },
+    "side": "buy",
+    "quantity": 1,
+    "order_type": "limit",
+    "time_in_force": "day",
+    "data_feed": "indicative"
+  }'
+```
+
+Preview requests must provide exactly one of `option_symbol` or `contract_selection`.
+
 Select an option contract:
 
 ```bash

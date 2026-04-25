@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.options import OptionContractSelectionCreate
+
 
 class OrderIntentCreate(BaseModel):
     strategy_id: uuid.UUID | None = None
@@ -30,7 +32,8 @@ class OrderIntentCreate(BaseModel):
 
 class OrderIntentPreviewCreate(BaseModel):
     signal_id: uuid.UUID
-    option_symbol: str = Field(min_length=1, max_length=64)
+    option_symbol: str | None = Field(default=None, min_length=1, max_length=64)
+    contract_selection: OptionContractSelectionCreate | None = None
     side: Literal["buy", "sell"]
     quantity: int = Field(gt=0)
     order_type: Literal["market", "limit"] = "limit"
@@ -40,7 +43,13 @@ class OrderIntentPreviewCreate(BaseModel):
     data_feed: Literal["indicative", "opra"] = "indicative"
 
     @model_validator(mode="after")
-    def reject_limit_price_for_market_orders(self) -> "OrderIntentPreviewCreate":
+    def validate_preview_request(self) -> "OrderIntentPreviewCreate":
+        has_option_symbol = self.option_symbol is not None
+        has_contract_selection = self.contract_selection is not None
+        if has_option_symbol == has_contract_selection:
+            raise ValueError(
+                "Provide exactly one of option_symbol or contract_selection"
+            )
         if self.order_type == "market" and self.limit_price is not None:
             raise ValueError("limit_price is only allowed for limit order intents")
         return self

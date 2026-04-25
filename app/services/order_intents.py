@@ -15,7 +15,9 @@ from app.integrations.alpaca import (
     coerce_alpaca_datetime,
 )
 from app.schemas.order_intents import OrderIntentPreviewCreate
+from app.schemas.options import OptionContractSelectionRead
 from app.services.audit_logs import record_audit_log
+from app.services.option_contracts import select_option_contract
 
 
 class OrderIntentNotFoundError(LookupError):
@@ -41,14 +43,33 @@ def preview_order_intent_from_signal(
     payload: OrderIntentPreviewCreate,
     *,
     market_data_client: AlpacaMarketDataClient | None = None,
+    trading_client: AlpacaTradingClient | None = None,
 ) -> OrderIntent:
     signal = db.get(Signal, payload.signal_id)
     if signal is None:
         raise SignalNotFoundError(f"Signal '{payload.signal_id}' was not found")
 
+    option_symbol = payload.option_symbol
+    selection = None
+    if payload.contract_selection is not None:
+        selection = select_option_contract(
+            payload.contract_selection.model_copy(
+                update={
+                    "side": payload.side,
+                    "data_feed": payload.data_feed,
+                }
+            ),
+            trading_client=trading_client,
+            market_data_client=market_data_client,
+        )
+        option_symbol = selection.selected_contract.symbol
+
+    if option_symbol is None:
+        raise OrderIntentPreviewError("Unable to determine an option symbol")
+
     client = market_data_client or AlpacaMarketDataClient.from_settings()
     latest_quote = client.get_latest_option_quote(
-        payload.option_symbol,
+        option_symbol,
         feed=payload.data_feed,
     )
     quote_preview = _build_quote_preview(
@@ -70,7 +91,7 @@ def preview_order_intent_from_signal(
         strategy_id=signal.strategy_id,
         signal_id=signal.id,
         underlying_symbol=signal.underlying_symbol or signal.symbol,
-        option_symbol=payload.option_symbol,
+        option_symbol=option_symbol,
         side=payload.side,
         quantity=payload.quantity,
         order_type=payload.order_type,
@@ -94,6 +115,7 @@ def preview_order_intent_from_signal(
                 "status": signal.status,
             },
             "quote": quote_preview,
+            "selection": _selection_preview(selection),
         },
     )
 
@@ -254,6 +276,14 @@ def _build_quote_preview(
         else None,
         "raw_quote": _json_safe_value(latest_quote.raw_response),
     }
+
+
+def _selection_preview(
+    selection: OptionContractSelectionRead | None,
+) -> dict[str, object] | None:
+    if selection is None:
+        return None
+    return selection.model_dump(mode="json")
 
 
 def _midpoint(
