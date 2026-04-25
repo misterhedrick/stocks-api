@@ -22,8 +22,13 @@ class FakeScalarResult:
 
 
 class FakeScannerSession:
-    def __init__(self, strategies: list[Strategy] | None = None) -> None:
+    def __init__(
+        self,
+        strategies: list[Strategy] | None = None,
+        scalar_results: list[object | None] | None = None,
+    ) -> None:
         self.strategies = strategies or []
+        self.scalar_results = scalar_results or []
         self.added: list[object] = []
         self.commit_count = 0
         self.rollback_count = 0
@@ -42,6 +47,11 @@ class FakeScannerSession:
         return FakeScalarResult(
             [strategy for strategy in self.strategies if strategy.is_active]
         )
+
+    def scalar(self, _: object) -> object | None:
+        if self.scalar_results:
+            return self.scalar_results.pop(0)
+        return None
 
     def commit(self) -> None:
         self.commit_count += 1
@@ -106,6 +116,24 @@ def build_strategy(
         description="Test strategy",
         is_active=is_active,
         config=config or {},
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def build_existing_signal(strategy: Strategy) -> Signal:
+    now = datetime.now(timezone.utc)
+    return Signal(
+        id=uuid.uuid4(),
+        strategy_id=strategy.id,
+        symbol="SPY",
+        underlying_symbol="SPY",
+        signal_type="price_breakout",
+        direction="bullish",
+        confidence=None,
+        rationale="Existing signal",
+        market_context={},
+        status="new",
         created_at=now,
         updated_at=now,
     )
@@ -287,6 +315,62 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_created, 0)
         self.assertEqual(result.signals_skipped, 1)
         self.assertIn("market data unavailable", result.errors[0])
+
+    def test_scan_signals_suppresses_recent_duplicate_signal(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                    "signal_type": "price_breakout",
+                    "direction": "bullish",
+                    "price_above": "500",
+                    "dedupe_minutes": 240,
+                }
+            }
+        )
+        db = FakeScannerSession(
+            [strategy],
+            scalar_results=[build_existing_signal(strategy)],
+        )
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient({"SPY": ("500.00", "501.00")}),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.signals_skipped, 1)
+        self.assertIn("duplicate signal suppressed", result.errors[0])
+        self.assertFalse([item for item in db.added if isinstance(item, Signal)])
+
+    def test_scan_signals_can_disable_duplicate_suppression(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                    "signal_type": "price_breakout",
+                    "direction": "bullish",
+                    "price_above": "500",
+                    "dedupe_minutes": 0,
+                }
+            }
+        )
+        db = FakeScannerSession(
+            [strategy],
+            scalar_results=[build_existing_signal(strategy)],
+        )
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient({"SPY": ("500.00", "501.00")}),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(result.signals_skipped, 0)
+        self.assertEqual(signals[-1].symbol, "SPY")
 
     def test_scan_signals_records_failed_job_run(self) -> None:
         class FailingScannerSession(FakeScannerSession):

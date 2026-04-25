@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,9 @@ from sqlalchemy.orm import Session
 from app.db.models import JobRun, Signal, Strategy
 from app.integrations.alpaca import AlpacaLatestStockQuote, AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
+
+DEFAULT_DEDUPE_MINUTES = 240
+DEDUPE_STATUSES = ("new", "previewed", "submitted")
 
 
 @dataclass(slots=True)
@@ -21,6 +25,7 @@ class SignalScanResult:
     signals_created: int
     signals_skipped: int
     errors: list[str]
+    created_signal_ids: list[uuid.UUID]
 
 
 def scan_signals(
@@ -52,6 +57,7 @@ def scan_signals(
         strategies_scanned = 0
         signals_created = 0
         signals_skipped = 0
+        created_signal_ids: list[uuid.UUID] = []
         errors: list[str] = []
 
         for strategy in strategies:
@@ -82,6 +88,14 @@ def scan_signals(
                     errors.append(f"{strategy.name}[{index}]: {exc}")
                     continue
 
+                if _has_recent_duplicate_signal(db, signal, signal_spec):
+                    signals_skipped += 1
+                    errors.append(
+                        f"{strategy.name}[{index}]: duplicate signal suppressed for "
+                        f"{signal.symbol} {signal.signal_type} {signal.direction}"
+                    )
+                    continue
+
                 db.add(signal)
                 db.flush()
                 record_audit_log(
@@ -104,6 +118,7 @@ def scan_signals(
                     },
                 )
                 signals_created += 1
+                created_signal_ids.append(signal.id)
 
         details = {
             "strategies_seen": len(strategies),
@@ -111,6 +126,7 @@ def scan_signals(
             "signals_created": signals_created,
             "signals_skipped": signals_skipped,
             "errors": errors,
+            "created_signal_ids": [str(signal_id) for signal_id in created_signal_ids],
         }
         job_run.status = "succeeded"
         job_run.finished_at = datetime.now(timezone.utc)
@@ -135,6 +151,7 @@ def scan_signals(
             signals_created=signals_created,
             signals_skipped=signals_skipped,
             errors=errors,
+            created_signal_ids=created_signal_ids,
         )
     except Exception as exc:
         db.rollback()
@@ -245,6 +262,10 @@ def _signal_specs_from_scanner(
                     "data_feed": feed.strip(),
                     "quote": _stock_quote_context(latest_quote),
                 },
+                "dedupe_minutes": scanner_config.get(
+                    "dedupe_minutes",
+                    DEFAULT_DEDUPE_MINUTES,
+                ),
             }
         )
 
@@ -298,6 +319,40 @@ def _optional_confidence(signal_spec: dict[str, Any]) -> Decimal | None:
     if confidence < Decimal("0") or confidence > Decimal("1"):
         raise ValueError("confidence must be between 0 and 1")
     return confidence
+
+
+def _has_recent_duplicate_signal(
+    db: Session,
+    signal: Signal,
+    signal_spec: dict[str, Any],
+) -> bool:
+    dedupe_minutes = _dedupe_minutes(signal_spec)
+    if dedupe_minutes <= 0:
+        return False
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=dedupe_minutes)
+    statement = (
+        select(Signal)
+        .where(Signal.strategy_id == signal.strategy_id)
+        .where(Signal.symbol == signal.symbol)
+        .where(Signal.signal_type == signal.signal_type)
+        .where(Signal.direction == signal.direction)
+        .where(Signal.status.in_(DEDUPE_STATUSES))
+        .where(Signal.created_at >= cutoff)
+        .limit(1)
+    )
+    return db.scalar(statement) is not None
+
+
+def _dedupe_minutes(signal_spec: dict[str, Any]) -> int:
+    value = signal_spec.get("dedupe_minutes", DEFAULT_DEDUPE_MINUTES)
+    try:
+        dedupe_minutes = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("dedupe_minutes must be an integer") from exc
+    if dedupe_minutes < 0:
+        raise ValueError("dedupe_minutes must be greater than or equal to 0")
+    return dedupe_minutes
 
 
 def _optional_decimal(config: dict[str, Any], key: str) -> Decimal | None:

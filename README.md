@@ -271,12 +271,25 @@ It also supports a live stock quote threshold rule:
     "direction": "bullish",
     "price_above": "500",
     "confidence": "0.6500",
-    "data_feed": "iex"
+    "data_feed": "iex",
+    "dedupe_minutes": 240,
+    "preview": {
+      "enabled": true,
+      "option_type": "call",
+      "target_strike": "500",
+      "side": "buy",
+      "quantity": 1,
+      "order_type": "limit",
+      "time_in_force": "day",
+      "data_feed": "indicative"
+    }
   }
 }
 ```
 
 For bearish threshold checks, use `price_below` instead of `price_above`. The scanner uses the latest Alpaca stock quote midpoint as the observed price and stores quote context in `signals.market_context`.
+`dedupe_minutes` suppresses repeated signals with the same strategy, symbol, signal type, and direction while a prior signal is still recent. Set it to `0` to allow repeated signals.
+When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.preview.enabled=true` can automatically create previewed order intents. This still does not submit orders while `MARKET_CYCLE_SUBMIT_ENABLED=false`.
 
 ## Scheduled jobs
 

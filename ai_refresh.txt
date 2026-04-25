@@ -178,12 +178,14 @@ Current repo structure and purpose:
   - Domain/service logic for manual signal scans.
   - Reads active strategies with config.scan_signals entries.
   - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
+  - Supports scanner dedupe_minutes to suppress repeated equivalent signals.
   - Creates signals only; does not create previews or submit orders.
   - Records job_runs and audit_logs for success/failure.
 - app/services/market_cycle.py
   - Orchestrates enabled market-cycle steps.
   - Currently supports scan_signals and broker reconciliation.
-  - Reports preview/submit automation as disabled/not implemented.
+  - Supports optional auto-preview for scanner-created signals when MARKET_CYCLE_PREVIEW_ENABLED=true and strategy config has scanner.preview.enabled=true.
+  - Reports submit automation as disabled/not implemented.
   - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
@@ -255,7 +257,9 @@ Current behavior implemented:
 - Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
 - Signal scanning creates signal records only and never creates order intents or submits orders.
 - Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold rules.
+- Signal scanning suppresses duplicate recent scanner signals by default using dedupe_minutes.
 - Market-cycle endpoint can run scan and reconciliation in one protected call.
+- Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -284,7 +288,7 @@ Current behavior implemented:
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- Scanner/signal-generation logic has a first live stock quote price-threshold rule only; no richer technical scanner yet.
+- Scanner/signal-generation logic has a first live stock quote price-threshold rule and duplicate suppression only; no richer technical scanner yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
@@ -322,19 +326,19 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add scanner duplicate suppression/idempotency rules:
-  - avoid creating repeated identical signals every market-cycle run.
-  - use strategy_id, symbol, signal_type, direction, status, and a lookback window.
-  - keep an override for intentionally repeated signals later.
-  - add tests for duplicate suppression and fresh signal creation after the window expires.
+- Add controlled paper auto-submit behind MARKET_CYCLE_SUBMIT_ENABLED:
+  - submit only previewed order intents created by the current market-cycle run.
+  - keep MARKET_CYCLE_SUBMIT_ENABLED=false by default.
+  - enforce simple max contracts/notional per cycle before submission.
+  - record submitted/rejected counts and errors in market-cycle details.
 - Why this is the best next step:
-  - scheduled market-cycle can now repeatedly call the scanner.
-  - price-threshold rules can otherwise create duplicate signals every run while a threshold remains true.
-  - idempotency keeps paper automation useful before optional auto-preview is added.
+  - scanner-created signals can now become previewed order intents.
+  - submit remains the final paper-trading automation step.
+  - explicit sizing limits keep paper automation adjustable.
 
-Likely next steps after scanner duplicate suppression:
-1. Add optional auto-preview for scanner-created signals.
-2. Add controlled paper auto-submit behind MARKET_CYCLE_SUBMIT_ENABLED.
+Likely next steps after controlled paper auto-submit:
+1. Add richer scanner rules beyond price thresholds.
+2. Add per-strategy risk/sizing controls.
 3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

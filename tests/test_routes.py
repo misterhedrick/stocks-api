@@ -495,6 +495,7 @@ def build_signal_scan_result() -> SignalScanResult:
         signals_created=1,
         signals_skipped=1,
         errors=["Strategy skipped"],
+        created_signal_ids=[uuid.uuid4()],
     )
 
 
