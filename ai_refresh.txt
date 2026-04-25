@@ -178,15 +178,17 @@ Current repo structure and purpose:
   - Domain/service logic for manual signal scans.
   - Reads active strategies with config.scan_signals entries.
   - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
+  - Supports config.scanner.type="percent_change" using recent Alpaca stock bars.
   - Supports scanner dedupe_minutes to suppress repeated equivalent signals.
-  - Creates signals only; does not create previews or submit orders.
+  - Creates signals; market_cycle can optionally preview/submit scanner-created signals behind separate switches.
   - Records job_runs and audit_logs for success/failure.
 - app/services/market_cycle.py
   - Orchestrates enabled market-cycle steps.
   - Currently supports scan_signals and broker reconciliation.
   - Supports optional auto-preview for scanner-created signals when MARKET_CYCLE_PREVIEW_ENABLED=true and strategy config has scanner.preview.enabled=true.
   - Supports controlled paper auto-submit for same-cycle previewed order_intents when MARKET_CYCLE_SUBMIT_ENABLED=true and strategy config has scanner.submit.enabled=true.
-  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, and allowed_sides.
+  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, optional max_contracts_per_cycle, optional max_notional_per_order, optional max_open_contracts_per_symbol, optional max_open_contracts_per_strategy, and allowed_sides.
+  - Existing open-contract checks use broker_orders joined to the strategy order_intents.
   - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
@@ -196,6 +198,7 @@ Current repo structure and purpose:
   - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
   - Supports GET /v2/options/contracts for option contract selection.
   - Supports GET https://data.alpaca.markets/v2/stocks/quotes/latest for stock quote scanner rules.
+  - Supports GET https://data.alpaca.markets/v2/stocks/bars for percent-change scanner rules.
   - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
@@ -205,7 +208,7 @@ Current repo structure and purpose:
 - tests/test_option_contract_selection.py
   - unittest coverage for option contract selection and route error mapping using fake Alpaca clients.
 - tests/test_signal_scanner.py
-  - unittest coverage for manual scanner success, inactive strategy filtering, malformed specs, and failure recording.
+  - unittest coverage for manual scanner success, inactive strategy filtering, price-threshold and percent-change rules, malformed specs, duplicate suppression, and failure recording.
 - tests/test_render_job_runner.py
   - unittest coverage for the Render cron kill switch and job URL construction.
 - tests/test_market_cycle.py
@@ -256,12 +259,13 @@ Current behavior implemented:
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
 - Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
 - Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
-- Signal scanning creates signal records only and never creates order intents or submits orders.
-- Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold rules.
+- Signal scanning creates signal records; market-cycle handles optional preview/submit automation.
+- Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold/percent_change rules.
 - Signal scanning suppresses duplicate recent scanner signals by default using dedupe_minutes.
 - Market-cycle endpoint can run scan and reconciliation in one protected call.
 - Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
 - Market-cycle endpoint can auto-submit only same-cycle previewed order intents when submit switches/config are enabled.
+- Auto-submit enforces strategy-level sizing and existing-exposure controls before broker submission.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -290,7 +294,7 @@ Current behavior implemented:
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
-- Scanner/signal-generation logic has a first live stock quote price-threshold rule and duplicate suppression only; no richer technical scanner yet.
+- Scanner/signal-generation logic supports first-pass quote-threshold and percent-change rules, but no moving-average/indicator scoring yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
@@ -328,19 +332,14 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add richer scanner rules beyond price thresholds:
-  - support simple moving-average or percent-change conditions.
-  - keep rule definitions strategy-config driven.
-  - reuse scanner dedupe and preview/submit config.
-  - test with fake market data instead of live Alpaca calls.
-- Why this is the best next step:
-  - the full paper path from scan -> preview -> submit now exists behind switches.
-  - better signal quality matters more than adding more execution plumbing.
-  - keeping rules config-driven makes the trading brain easy to update.
+- Add daily order caps and market-hours windows:
+  - max submitted orders per strategy per trading day.
+  - allowed trade windows in America/New_York.
+  - keep controls config-driven so paper aggressiveness can be adjusted without code changes.
 
-Likely next steps after richer scanner rules:
-1. Add per-strategy risk/sizing controls.
-2. Add market-hours schedule windows and duplicate order safeguards.
+Likely next steps after daily/window controls:
+1. Improve broker-order/position linkage for more exact open position accounting.
+2. Add moving-average or simple indicator scanner rules.
 3. Add AI review tables only after closed-trade capture exists.
 
 Important product rules:

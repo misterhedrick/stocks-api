@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from app.db.models import AuditLog, JobRun, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestStockQuote,
+    AlpacaStockBar,
+    AlpacaStockBars,
     AlpacaStockQuote,
     AlpacaTradingError,
 )
@@ -65,7 +67,12 @@ class FakeScannerSession:
 
 
 class FakeMarketDataClient:
-    def __init__(self, quotes: dict[str, tuple[str | None, str | None]]) -> None:
+    def __init__(
+        self,
+        quotes: dict[str, tuple[str | None, str | None]] | None = None,
+        bars: dict[str, list[str]] | None = None,
+    ) -> None:
+        self.bars = bars or {}
         self.quotes = quotes
 
     def get_latest_stock_quotes(
@@ -76,7 +83,7 @@ class FakeMarketDataClient:
     ) -> dict[str, AlpacaLatestStockQuote]:
         latest_quotes = {}
         for symbol in symbols:
-            bid_price, ask_price = self.quotes.get(symbol, (None, None))
+            bid_price, ask_price = (self.quotes or {}).get(symbol, (None, None))
             if bid_price is None and ask_price is None:
                 continue
             raw_quote = {
@@ -92,6 +99,39 @@ class FakeMarketDataClient:
                 raw_response=raw_quote,
             )
         return latest_quotes
+
+    def get_stock_bars(
+        self,
+        symbols: list[str],
+        *,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        feed: str,
+        limit: int,
+    ) -> dict[str, AlpacaStockBars]:
+        results = {}
+        for symbol in symbols:
+            closes = self.bars.get(symbol)
+            if closes is None:
+                continue
+            raw_bars = [
+                {
+                    "o": close,
+                    "h": close,
+                    "l": close,
+                    "c": close,
+                    "v": "1000",
+                    "t": f"2026-04-23T16:{index:02d}:00Z",
+                }
+                for index, close in enumerate(closes)
+            ]
+            results[symbol] = AlpacaStockBars(
+                symbol=symbol,
+                bars=[AlpacaStockBar.model_validate(item) for item in raw_bars],
+                raw_response=raw_bars,
+            )
+        return results
 
 
 class FailingMarketDataClient:
@@ -315,6 +355,118 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_created, 0)
         self.assertEqual(result.signals_skipped, 1)
         self.assertIn("market data unavailable", result.errors[0])
+
+    def test_scan_signals_creates_signal_when_percent_change_threshold_is_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "percent_change",
+                    "symbols": ["SPY", "QQQ"],
+                    "lookback_minutes": 30,
+                    "change_above_percent": "0.50",
+                    "signal_type": "momentum_breakout",
+                    "direction": "bullish",
+                    "confidence": "0.65",
+                    "data_feed": "iex",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={
+                    "SPY": ["500.00", "503.00"],
+                    "QQQ": ["420.00", "421.00"],
+                }
+            ),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].symbol, "SPY")
+        self.assertEqual(signals[-1].signal_type, "momentum_breakout")
+        self.assertEqual(signals[-1].market_context["source"], "scanner.percent_change")
+        self.assertEqual(signals[-1].market_context["first_close"], "500.00")
+        self.assertEqual(signals[-1].market_context["last_close"], "503.00")
+
+    def test_scan_signals_does_not_create_signal_when_percent_change_threshold_is_not_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "percent_change",
+                    "symbols": ["SPY"],
+                    "lookback_minutes": 30,
+                    "change_above_percent": "1.00",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["500.00", "502.00"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertFalse([item for item in db.added if isinstance(item, Signal)])
+
+    def test_scan_signals_creates_signal_when_percent_change_drops_below_threshold(
+        self,
+    ) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "percent_change",
+                    "symbols": ["SPY"],
+                    "lookback_minutes": 30,
+                    "change_below_percent": "-0.50",
+                    "signal_type": "momentum_breakdown",
+                    "direction": "bearish",
+                    "confidence": "0.65",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["500.00", "495.00"]}
+            ),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].symbol, "SPY")
+        self.assertEqual(signals[-1].signal_type, "momentum_breakdown")
+        self.assertEqual(signals[-1].direction, "bearish")
+        self.assertEqual(signals[-1].market_context["change_below_percent"], "-0.50")
+
+    def test_scan_signals_records_malformed_percent_change_config_as_skipped(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "percent_change",
+                    "symbols": ["SPY"],
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["500.00", "503.00"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.signals_skipped, 1)
+        self.assertIn("change_above_percent or change_below_percent", result.errors[0])
 
     def test_scan_signals_suppresses_recent_duplicate_signal(self) -> None:
         strategy = build_strategy(

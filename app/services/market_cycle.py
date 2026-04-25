@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
 
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import JobRun, OrderIntent, Signal, Strategy
+from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
 from app.services.audit_logs import record_audit_log
@@ -28,6 +30,16 @@ class MarketCycleResult:
     reconcile: dict[str, Any] | None
     preview: dict[str, Any] | None
     submit: dict[str, Any] | None
+
+
+EXPOSURE_BROKER_ORDER_STATUSES = (
+    "new",
+    "accepted",
+    "pending_new",
+    "partially_filled",
+    "filled",
+    "submitted",
+)
 
 
 def run_market_cycle(
@@ -223,6 +235,8 @@ def _submit_previewed_order_intents(
     broker_order_ids: list[str] = []
 
     orders_submitted_by_strategy: dict[uuid.UUID, int] = {}
+    contracts_submitted_by_strategy: dict[uuid.UUID, int] = {}
+    contracts_submitted_by_strategy_symbol: dict[tuple[uuid.UUID, str], int] = {}
     for order_intent_id in order_intent_ids:
         order_intent = db.get(OrderIntent, order_intent_id)
         if order_intent is None:
@@ -239,9 +253,16 @@ def _submit_previewed_order_intents(
         try:
             submit_config = _submit_config_for_strategy(strategy)
             _validate_submit_limits(
+                db,
                 order_intent,
+                strategy.id,
                 submit_config,
                 orders_submitted_by_strategy.get(strategy.id, 0),
+                contracts_submitted_by_strategy.get(strategy.id, 0),
+                contracts_submitted_by_strategy_symbol.get(
+                    (strategy.id, order_intent.option_symbol),
+                    0,
+                ),
             )
         except ValueError as exc:
             skipped += 1
@@ -258,6 +279,14 @@ def _submit_previewed_order_intents(
         submitted += 1
         orders_submitted_by_strategy[strategy.id] = (
             orders_submitted_by_strategy.get(strategy.id, 0) + 1
+        )
+        contracts_submitted_by_strategy[strategy.id] = (
+            contracts_submitted_by_strategy.get(strategy.id, 0) + order_intent.quantity
+        )
+        strategy_symbol_key = (strategy.id, order_intent.option_symbol)
+        contracts_submitted_by_strategy_symbol[strategy_symbol_key] = (
+            contracts_submitted_by_strategy_symbol.get(strategy_symbol_key, 0)
+            + order_intent.quantity
         )
         broker_order_ids.append(str(broker_order.id))
 
@@ -339,9 +368,13 @@ def _submit_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
 
 
 def _validate_submit_limits(
+    db: Session,
     order_intent: OrderIntent,
+    strategy_id: uuid.UUID,
     submit_config: dict[str, Any],
     submitted_for_strategy: int,
+    contracts_submitted_for_strategy: int,
+    contracts_submitted_for_strategy_symbol: int,
 ) -> None:
     max_orders_per_cycle = _int_config(
         submit_config,
@@ -360,6 +393,66 @@ def _validate_submit_limits(
     )
     if order_intent.quantity > max_contracts_per_order:
         raise ValueError("order quantity exceeds scanner.submit.max_contracts_per_order")
+
+    max_contracts_per_cycle = _optional_int_config(
+        submit_config,
+        "max_contracts_per_cycle",
+        label_prefix="scanner.submit",
+    )
+    if (
+        max_contracts_per_cycle is not None
+        and contracts_submitted_for_strategy + order_intent.quantity
+        > max_contracts_per_cycle
+    ):
+        raise ValueError("scanner.submit.max_contracts_per_cycle reached")
+
+    max_open_contracts_per_strategy = _optional_int_config(
+        submit_config,
+        "max_open_contracts_per_strategy",
+        label_prefix="scanner.submit",
+    )
+    if max_open_contracts_per_strategy is not None:
+        strategy_exposure = _existing_contract_exposure(db, strategy_id=strategy_id)
+        projected_strategy_exposure = (
+            strategy_exposure
+            + contracts_submitted_for_strategy
+            + order_intent.quantity
+        )
+        if projected_strategy_exposure > Decimal(max_open_contracts_per_strategy):
+            raise ValueError("scanner.submit.max_open_contracts_per_strategy reached")
+
+    max_open_contracts_per_symbol = _optional_int_config(
+        submit_config,
+        "max_open_contracts_per_symbol",
+        label_prefix="scanner.submit",
+    )
+    if max_open_contracts_per_symbol is not None:
+        symbol_exposure = _existing_contract_exposure(
+            db,
+            strategy_id=strategy_id,
+            option_symbol=order_intent.option_symbol,
+        )
+        projected_symbol_exposure = (
+            symbol_exposure
+            + contracts_submitted_for_strategy_symbol
+            + order_intent.quantity
+        )
+        if projected_symbol_exposure > Decimal(max_open_contracts_per_symbol):
+            raise ValueError("scanner.submit.max_open_contracts_per_symbol reached")
+
+    max_notional_per_order = _optional_decimal_config(
+        submit_config,
+        "max_notional_per_order",
+        label_prefix="scanner.submit",
+    )
+    if max_notional_per_order is not None:
+        order_notional = _order_intent_notional(order_intent)
+        if order_notional is None:
+            raise ValueError(
+                "order notional is required for scanner.submit.max_notional_per_order"
+            )
+        if order_notional > max_notional_per_order:
+            raise ValueError("order notional exceeds scanner.submit.max_notional_per_order")
 
     allowed_sides = submit_config.get("allowed_sides", ["buy"])
     if not isinstance(allowed_sides, list) or not allowed_sides:
@@ -422,3 +515,91 @@ def _int_config(
     if int_value <= 0:
         raise ValueError(f"{label_prefix}.{key} must be greater than 0")
     return int_value
+
+
+def _optional_int_config(
+    config: dict[str, Any],
+    key: str,
+    *,
+    label_prefix: str,
+) -> int | None:
+    if config.get(key) is None:
+        return None
+    return _int_config(config, key, default=1, label_prefix=label_prefix)
+
+
+def _optional_decimal_config(
+    config: dict[str, Any],
+    key: str,
+    *,
+    label_prefix: str,
+) -> Decimal | None:
+    value = config.get(key)
+    if value is None:
+        return None
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{label_prefix}.{key} must be a decimal") from exc
+    if decimal_value <= Decimal("0"):
+        raise ValueError(f"{label_prefix}.{key} must be greater than 0")
+    return decimal_value
+
+
+def _order_intent_notional(order_intent: OrderIntent) -> Decimal | None:
+    if order_intent.limit_price is not None:
+        return order_intent.limit_price * Decimal(order_intent.quantity) * Decimal("100")
+
+    preview = order_intent.preview if isinstance(order_intent.preview, dict) else {}
+    quote_preview = preview.get("quote")
+    if isinstance(quote_preview, dict):
+        notional = _decimal_from_preview(quote_preview.get("estimated_notional"))
+        if notional is not None:
+            return notional
+
+    selection_preview = preview.get("selection")
+    if isinstance(selection_preview, dict):
+        selection_quote = selection_preview.get("quote")
+        if isinstance(selection_quote, dict):
+            return _decimal_from_preview(selection_quote.get("estimated_notional"))
+
+    return None
+
+
+def _decimal_from_preview(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _existing_contract_exposure(
+    db: Session,
+    *,
+    strategy_id: uuid.UUID,
+    option_symbol: str | None = None,
+) -> Decimal:
+    signed_quantity = case(
+        (func.lower(BrokerOrder.side) == "sell", -BrokerOrder.quantity),
+        else_=BrokerOrder.quantity,
+    )
+    statement = (
+        select(func.coalesce(func.sum(signed_quantity), 0))
+        .select_from(BrokerOrder)
+        .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
+        .where(OrderIntent.strategy_id == strategy_id)
+        .where(BrokerOrder.status.in_(EXPOSURE_BROKER_ORDER_STATUSES))
+    )
+    if option_symbol is not None:
+        statement = statement.where(BrokerOrder.symbol == option_symbol)
+
+    value = db.scalar(statement)
+    if value is None:
+        return Decimal("0")
+    try:
+        exposure = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+    return max(exposure, Decimal("0"))

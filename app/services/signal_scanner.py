@@ -10,7 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import JobRun, Signal, Strategy
-from app.integrations.alpaca import AlpacaLatestStockQuote, AlpacaMarketDataClient
+from app.integrations.alpaca import (
+    AlpacaLatestStockQuote,
+    AlpacaMarketDataClient,
+    AlpacaStockBars,
+)
 from app.services.audit_logs import record_audit_log
 
 DEFAULT_DEDUPE_MINUTES = 240
@@ -192,9 +196,6 @@ def _signal_specs_from_scanner(
         raise ValueError("scanner must be an object")
 
     scanner_type = scanner_config.get("type")
-    if scanner_type != "price_threshold":
-        raise ValueError("scanner.type must be price_threshold")
-
     symbols = scanner_config.get("symbols")
     if not isinstance(symbols, list) or not symbols:
         raise ValueError("scanner.symbols must be a non-empty list")
@@ -205,6 +206,27 @@ def _signal_specs_from_scanner(
             raise ValueError("scanner.symbols must contain only non-empty strings")
         clean_symbols.append(symbol.strip().upper())
 
+    if scanner_type == "price_threshold":
+        return _price_threshold_signal_specs(
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+        )
+    if scanner_type == "percent_change":
+        return _percent_change_signal_specs(
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+        )
+    raise ValueError("scanner.type must be price_threshold or percent_change")
+
+
+def _price_threshold_signal_specs(
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+) -> list[dict[str, Any]]:
     price_above = _optional_decimal(scanner_config, "price_above")
     price_below = _optional_decimal(scanner_config, "price_below")
     if price_above is None and price_below is None:
@@ -215,10 +237,10 @@ def _signal_specs_from_scanner(
         raise ValueError("scanner.data_feed must be a non-empty string")
 
     client = market_data_client or AlpacaMarketDataClient.from_settings()
-    quotes = client.get_latest_stock_quotes(clean_symbols, feed=feed.strip())
+    quotes = client.get_latest_stock_quotes(symbols, feed=feed.strip())
     signal_specs: list[dict[str, Any]] = []
 
-    for symbol in clean_symbols:
+    for symbol in symbols:
         latest_quote = quotes.get(symbol)
         if latest_quote is None:
             continue
@@ -261,6 +283,102 @@ def _signal_specs_from_scanner(
                     "price_below": str(price_below) if price_below is not None else None,
                     "data_feed": feed.strip(),
                     "quote": _stock_quote_context(latest_quote),
+                },
+                "dedupe_minutes": scanner_config.get(
+                    "dedupe_minutes",
+                    DEFAULT_DEDUPE_MINUTES,
+                ),
+            }
+        )
+
+    return signal_specs
+
+
+def _percent_change_signal_specs(
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+) -> list[dict[str, Any]]:
+    change_above = _optional_decimal(scanner_config, "change_above_percent")
+    change_below = _optional_decimal(scanner_config, "change_below_percent")
+    if change_above is None and change_below is None:
+        raise ValueError(
+            "scanner requires change_above_percent or change_below_percent"
+        )
+
+    lookback_minutes = _positive_int(scanner_config, "lookback_minutes", default=30)
+    timeframe = _scanner_string(scanner_config, "timeframe", default="1Min")
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 5, 10),
+    )
+    signal_specs: list[dict[str, Any]] = []
+
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            continue
+
+        first_bar = stock_bars.bars[0]
+        last_bar = stock_bars.bars[-1]
+        if first_bar.close == Decimal("0"):
+            continue
+
+        change_percent = (
+            (last_bar.close - first_bar.close) / first_bar.close
+        ) * Decimal("100")
+        triggered = (
+            (change_above is not None and change_percent >= change_above)
+            or (change_below is not None and change_percent <= change_below)
+        )
+        if not triggered:
+            continue
+
+        signal_specs.append(
+            {
+                "symbol": symbol,
+                "underlying_symbol": symbol,
+                "signal_type": _scanner_string(
+                    scanner_config,
+                    "signal_type",
+                    default="percent_change",
+                ),
+                "direction": _scanner_string(
+                    scanner_config,
+                    "direction",
+                    default="bullish" if change_above is not None else "bearish",
+                ),
+                "confidence": scanner_config.get("confidence"),
+                "rationale": _scanner_string(
+                    scanner_config,
+                    "rationale",
+                    default="Percent change scanner triggered",
+                ),
+                "market_context": {
+                    "source": "scanner.percent_change",
+                    "lookback_minutes": lookback_minutes,
+                    "timeframe": timeframe,
+                    "data_feed": feed,
+                    "first_close": str(first_bar.close),
+                    "last_close": str(last_bar.close),
+                    "change_percent": str(change_percent),
+                    "change_above_percent": str(change_above)
+                    if change_above is not None
+                    else None,
+                    "change_below_percent": str(change_below)
+                    if change_below is not None
+                    else None,
+                    "bars": _stock_bars_context(stock_bars),
                 },
                 "dedupe_minutes": scanner_config.get(
                     "dedupe_minutes",
@@ -366,6 +484,17 @@ def _optional_decimal(config: dict[str, Any], key: str) -> Decimal | None:
     return decimal_value
 
 
+def _positive_int(config: dict[str, Any], key: str, *, default: int) -> int:
+    value = config.get(key, default)
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"scanner.{key} must be an integer") from exc
+    if int_value <= 0:
+        raise ValueError(f"scanner.{key} must be greater than 0")
+    return int_value
+
+
 def _scanner_string(
     scanner_config: dict[str, Any],
     key: str,
@@ -398,4 +527,13 @@ def _stock_quote_context(latest_quote: AlpacaLatestStockQuote) -> dict[str, obje
         if quote.timestamp is not None
         else None,
         "raw_quote": latest_quote.raw_response,
+    }
+
+
+def _stock_bars_context(stock_bars: AlpacaStockBars) -> dict[str, object]:
+    return {
+        "symbol": stock_bars.symbol,
+        "bars_seen": len(stock_bars.bars),
+        "first_timestamp": stock_bars.bars[0].timestamp.isoformat(),
+        "last_timestamp": stock_bars.bars[-1].timestamp.isoformat(),
     }

@@ -238,7 +238,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/scan-signals?limit=100" \
   -H "Authorization: Bearer change-me"
 ```
 
-The scanner currently creates signals only. It reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`.
+The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 
 Example strategy config:
 
@@ -260,7 +260,7 @@ Example strategy config:
 }
 ```
 
-It also supports a live stock quote threshold rule:
+It also supports live stock scanner rules. A quote threshold rule uses the latest Alpaca stock quote midpoint:
 
 ```json
 {
@@ -287,6 +287,10 @@ It also supports a live stock quote threshold rule:
       "enabled": true,
       "max_orders_per_cycle": 1,
       "max_contracts_per_order": 1,
+      "max_contracts_per_cycle": 1,
+      "max_notional_per_order": "250.00",
+      "max_open_contracts_per_symbol": 1,
+      "max_open_contracts_per_strategy": 2,
       "allowed_sides": ["buy"]
     }
   }
@@ -294,9 +298,31 @@ It also supports a live stock quote threshold rule:
 ```
 
 For bearish threshold checks, use `price_below` instead of `price_above`. The scanner uses the latest Alpaca stock quote midpoint as the observed price and stores quote context in `signals.market_context`.
+
+A percent-change rule uses recent Alpaca stock bars:
+
+```json
+{
+  "scanner": {
+    "type": "percent_change",
+    "symbols": ["SPY", "QQQ"],
+    "lookback_minutes": 30,
+    "timeframe": "1Min",
+    "change_above_percent": "0.50",
+    "signal_type": "momentum_breakout",
+    "direction": "bullish",
+    "confidence": "0.6500",
+    "data_feed": "iex",
+    "dedupe_minutes": 240
+  }
+}
+```
+
+For bearish momentum checks, use `change_below_percent` instead of `change_above_percent`, for example `"-0.50"`.
 `dedupe_minutes` suppresses repeated signals with the same strategy, symbol, signal type, and direction while a prior signal is still recent. Set it to `0` to allow repeated signals.
 When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.preview.enabled=true` can automatically create previewed order intents. This still does not submit orders while `MARKET_CYCLE_SUBMIT_ENABLED=false`.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
+Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
 
 ## Scheduled jobs
 
@@ -323,7 +349,7 @@ MARKET_CYCLE_PREVIEW_ENABLED=false
 MARKET_CYCLE_SUBMIT_ENABLED=false
 ```
 
-Current market-cycle automation can scan for signals and reconcile broker state. Preview and submit automation are intentionally reported as disabled/not implemented until those switches are wired to actual behavior.
+Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 
 Audit logging currently records:
 - strategy creation
