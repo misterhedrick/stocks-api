@@ -36,6 +36,7 @@ class SignalScanRead(BaseModel):
     signals_created: int
     signals_skipped: int
     errors: list[str]
+    created_signal_ids: list[uuid.UUID]
 
 
 class MarketCycleRead(BaseModel):

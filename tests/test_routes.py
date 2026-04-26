@@ -14,6 +14,10 @@ from app.db.session import DatabaseSchemaNotReadyError, get_db
 from app.integrations.alpaca import AlpacaTradingConfigurationError, AlpacaTradingError
 from app.main import app
 from app.schemas.options import OptionContractRead, OptionContractSelectionRead
+from app.schemas.automation import (
+    AutomationStatusRead,
+    AutomationSwitchesRead,
+)
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
 from app.services.signal_scanner import SignalScanResult
@@ -134,12 +138,14 @@ class RouteBehaviorTests(unittest.TestCase):
         client = TestClient(app)
 
         missing_auth = client.get("/api/v1/order-intents")
+        missing_automation_auth = client.get("/api/v1/automation/status")
         bad_auth = client.get(
             "/api/v1/order-intents",
             headers={"Authorization": "Bearer wrong-token"},
         )
 
         self.assertEqual(missing_auth.status_code, 401)
+        self.assertEqual(missing_automation_auth.status_code, 401)
         self.assertEqual(bad_auth.status_code, 401)
 
     def test_readiness_requires_auth(self) -> None:
@@ -449,6 +455,54 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_automation_status_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = AutomationStatusRead(
+            switches=AutomationSwitchesRead(
+                scan_enabled=True,
+                reconcile_enabled=True,
+                preview_enabled=False,
+                submit_enabled=False,
+            ),
+            trading_automation_enabled=False,
+            auto_submit_requires_paper=True,
+            paper_mode=True,
+            max_auto_orders_per_cycle=1,
+            max_auto_orders_per_day=3,
+            max_open_positions=3,
+            max_open_positions_per_symbol=1,
+            max_contracts_per_order=1,
+            max_estimated_premium_per_order=Decimal("250"),
+            active_strategies=[],
+            latest_job_runs={
+                "market_cycle": None,
+                "scan_signals": None,
+                "reconcile_broker": None,
+            },
+        )
+
+        with patch(
+            "app.api.routes.automation.get_automation_status",
+            return_value=result,
+        ) as automation_status:
+            response = client.get(
+                "/api/v1/automation/status",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["switches"]["scan_enabled"])
+        self.assertFalse(response.json()["trading_automation_enabled"])
+        self.assertEqual(response.json()["max_auto_orders_per_day"], 3)
+        self.assertEqual(response.json()["active_strategies"], [])
+        automation_status.assert_called_once_with(db)
+
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
     now = datetime.now(timezone.utc)
@@ -495,6 +549,7 @@ def build_signal_scan_result() -> SignalScanResult:
         signals_created=1,
         signals_skipped=1,
         errors=["Strategy skipped"],
+        created_signal_ids=[uuid.uuid4()],
     )
 
 

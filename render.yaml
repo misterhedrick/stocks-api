@@ -35,6 +35,22 @@ services:
         value: false
       - key: MARKET_CYCLE_SUBMIT_ENABLED
         value: false
+      - key: TRADING_AUTOMATION_ENABLED
+        value: false
+      - key: AUTO_SUBMIT_REQUIRES_PAPER
+        value: true
+      - key: MAX_AUTO_ORDERS_PER_CYCLE
+        value: 1
+      - key: MAX_AUTO_ORDERS_PER_DAY
+        value: 3
+      - key: MAX_OPEN_POSITIONS
+        value: 3
+      - key: MAX_OPEN_POSITIONS_PER_SYMBOL
+        value: 1
+      - key: MAX_CONTRACTS_PER_ORDER
+        value: 1
+      - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
+        value: 250
       - key: SCHEDULED_JOBS_ENABLED
         value: false
   - type: cron
