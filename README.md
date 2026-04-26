@@ -291,6 +291,15 @@ It also supports live stock scanner rules. A quote threshold rule uses the lates
       "max_notional_per_order": "250.00",
       "max_open_contracts_per_symbol": 1,
       "max_open_contracts_per_strategy": 2,
+      "max_orders_per_trading_day": 3,
+      "trading_day_timezone": "America/New_York",
+      "trade_windows": [
+        {
+          "timezone": "America/New_York",
+          "start": "09:45",
+          "end": "15:45"
+        }
+      ],
       "allowed_sides": ["buy"]
     }
   }
@@ -322,7 +331,7 @@ For bearish momentum checks, use `change_below_percent` instead of `change_above
 `dedupe_minutes` suppresses repeated signals with the same strategy, symbol, signal type, and direction while a prior signal is still recent. Set it to `0` to allow repeated signals.
 When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.preview.enabled=true` can automatically create previewed order intents. This still does not submit orders while `MARKET_CYCLE_SUBMIT_ENABLED=false`.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
-Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
+Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, optional `max_orders_per_trading_day`, optional `trading_day_timezone`, optional `trade_windows`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
 
 ## Scheduled jobs
 

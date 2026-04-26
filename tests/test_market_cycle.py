@@ -469,6 +469,96 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("max_notional_per_order", result.submit["errors"][0])
         submit.assert_not_called()
 
+    def test_run_market_cycle_enforces_submit_max_orders_per_trading_day(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["max_orders_per_trading_day"] = 1
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+            scalar_results=[1],
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("max_orders_per_trading_day", result.submit["errors"][0])
+        submit.assert_not_called()
+
+    def test_run_market_cycle_enforces_submit_trade_windows(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["trade_windows"] = [
+            {
+                "timezone": "UTC",
+                "start": "00:00",
+                "end": "00:00",
+            }
+        ]
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.datetime",
+            wraps=datetime,
+        ) as market_cycle_datetime, patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            market_cycle_datetime.now.return_value = datetime(
+                2026,
+                4,
+                23,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            )
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
+        submit.assert_not_called()
+
     def test_run_market_cycle_enforces_submit_max_open_contracts_per_symbol(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_strategy")

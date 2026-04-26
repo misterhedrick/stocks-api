@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -238,6 +239,7 @@ def _submit_previewed_order_intents(
     contracts_submitted_by_strategy: dict[uuid.UUID, int] = {}
     contracts_submitted_by_strategy_symbol: dict[tuple[uuid.UUID, str], int] = {}
     for order_intent_id in order_intent_ids:
+        now = datetime.now(timezone.utc)
         order_intent = db.get(OrderIntent, order_intent_id)
         if order_intent is None:
             skipped += 1
@@ -263,6 +265,7 @@ def _submit_previewed_order_intents(
                     (strategy.id, order_intent.option_symbol),
                     0,
                 ),
+                now=now,
             )
         except ValueError as exc:
             skipped += 1
@@ -375,7 +378,10 @@ def _validate_submit_limits(
     submitted_for_strategy: int,
     contracts_submitted_for_strategy: int,
     contracts_submitted_for_strategy_symbol: int,
+    now: datetime,
 ) -> None:
+    _validate_trade_windows(submit_config, now=now)
+
     max_orders_per_cycle = _int_config(
         submit_config,
         "max_orders_per_cycle",
@@ -384,6 +390,22 @@ def _validate_submit_limits(
     )
     if submitted_for_strategy >= max_orders_per_cycle:
         raise ValueError("scanner.submit.max_orders_per_cycle reached")
+
+    max_orders_per_trading_day = _optional_int_config(
+        submit_config,
+        "max_orders_per_trading_day",
+        label_prefix="scanner.submit",
+    )
+    if max_orders_per_trading_day is not None:
+        submitted_today = _submitted_orders_for_trading_day(
+            db,
+            strategy_id=strategy_id,
+            submit_config=submit_config,
+            now=now,
+        )
+        projected_submitted_today = submitted_today + submitted_for_strategy + 1
+        if projected_submitted_today > max_orders_per_trading_day:
+            raise ValueError("scanner.submit.max_orders_per_trading_day reached")
 
     max_contracts_per_order = _int_config(
         submit_config,
@@ -493,10 +515,11 @@ def _string_config(
     key: str,
     *,
     default: str | None = None,
+    label_prefix: str = "scanner.preview",
 ) -> str:
     value = config.get(key, default)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"scanner.preview.{key} must be a non-empty string")
+        raise ValueError(f"{label_prefix}.{key} must be a non-empty string")
     return value.strip()
 
 
@@ -515,6 +538,69 @@ def _int_config(
     if int_value <= 0:
         raise ValueError(f"{label_prefix}.{key} must be greater than 0")
     return int_value
+
+
+def _validate_trade_windows(
+    submit_config: dict[str, Any],
+    *,
+    now: datetime,
+) -> None:
+    windows = submit_config.get("trade_windows")
+    if windows is None:
+        return
+    if not isinstance(windows, list) or not windows:
+        raise ValueError("scanner.submit.trade_windows must be a non-empty list")
+
+    window_errors: list[str] = []
+    for window in windows:
+        try:
+            if _is_inside_trade_window(window, now=now):
+                return
+        except ValueError as exc:
+            window_errors.append(str(exc))
+
+    if window_errors:
+        raise ValueError(window_errors[0])
+    raise ValueError("current time is outside scanner.submit.trade_windows")
+
+
+def _is_inside_trade_window(window: object, *, now: datetime) -> bool:
+    if not isinstance(window, dict):
+        raise ValueError("scanner.submit.trade_windows entries must be objects")
+
+    timezone_name = _string_config(
+        window,
+        "timezone",
+        default="America/New_York",
+        label_prefix="scanner.submit.trade_windows",
+    )
+    try:
+        window_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(
+            "scanner.submit.trade_windows.timezone must be a valid timezone"
+        ) from exc
+
+    start = _time_config(window, "start")
+    end = _time_config(window, "end")
+    current_time = (
+        now.astimezone(window_timezone).time().replace(second=0, microsecond=0)
+    )
+
+    if start <= end:
+        return start <= current_time <= end
+    return current_time >= start or current_time <= end
+
+
+def _time_config(config: dict[str, Any], key: str) -> time:
+    value = config.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"scanner.submit.trade_windows.{key} must be HH:MM")
+    try:
+        parsed_time = time.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"scanner.submit.trade_windows.{key} must be HH:MM") from exc
+    return parsed_time.replace(second=0, microsecond=0)
 
 
 def _optional_int_config(
@@ -603,3 +689,50 @@ def _existing_contract_exposure(
     except (InvalidOperation, ValueError):
         return Decimal("0")
     return max(exposure, Decimal("0"))
+
+
+def _submitted_orders_for_trading_day(
+    db: Session,
+    *,
+    strategy_id: uuid.UUID,
+    submit_config: dict[str, Any],
+    now: datetime,
+) -> int:
+    day_timezone = _trading_day_timezone(submit_config)
+    current_local = now.astimezone(day_timezone)
+    day_start_local = datetime.combine(
+        current_local.date(),
+        time.min,
+        tzinfo=day_timezone,
+    )
+    day_end_local = datetime.combine(
+        current_local.date(),
+        time.max,
+        tzinfo=day_timezone,
+    )
+    statement = (
+        select(func.count(BrokerOrder.id))
+        .select_from(BrokerOrder)
+        .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
+        .where(OrderIntent.strategy_id == strategy_id)
+        .where(BrokerOrder.submitted_at.is_not(None))
+        .where(BrokerOrder.submitted_at >= day_start_local.astimezone(timezone.utc))
+        .where(BrokerOrder.submitted_at <= day_end_local.astimezone(timezone.utc))
+    )
+    value = db.scalar(statement)
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _trading_day_timezone(submit_config: dict[str, Any]) -> ZoneInfo:
+    timezone_name = submit_config.get("trading_day_timezone", "America/New_York")
+    if not isinstance(timezone_name, str) or not timezone_name.strip():
+        raise ValueError("scanner.submit.trading_day_timezone must be a non-empty string")
+    try:
+        return ZoneInfo(timezone_name.strip())
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(
+            "scanner.submit.trading_day_timezone must be a valid timezone"
+        ) from exc

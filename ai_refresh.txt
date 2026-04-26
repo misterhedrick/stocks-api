@@ -187,7 +187,7 @@ Current repo structure and purpose:
   - Currently supports scan_signals and broker reconciliation.
   - Supports optional auto-preview for scanner-created signals when MARKET_CYCLE_PREVIEW_ENABLED=true and strategy config has scanner.preview.enabled=true.
   - Supports controlled paper auto-submit for same-cycle previewed order_intents when MARKET_CYCLE_SUBMIT_ENABLED=true and strategy config has scanner.submit.enabled=true.
-  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, optional max_contracts_per_cycle, optional max_notional_per_order, optional max_open_contracts_per_symbol, optional max_open_contracts_per_strategy, and allowed_sides.
+  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, optional max_contracts_per_cycle, optional max_notional_per_order, optional max_open_contracts_per_symbol, optional max_open_contracts_per_strategy, optional max_orders_per_trading_day, optional trade_windows, and allowed_sides.
   - Existing open-contract checks use broker_orders joined to the strategy order_intents.
   - Records job_runs and audit_logs for success/failure.
 - app/services/audit_logs.py
@@ -266,6 +266,7 @@ Current behavior implemented:
 - Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
 - Market-cycle endpoint can auto-submit only same-cycle previewed order intents when submit switches/config are enabled.
 - Auto-submit enforces strategy-level sizing and existing-exposure controls before broker submission.
+- Auto-submit enforces optional daily order caps and configured trading windows before broker submission.
 - Reconciliation upserts recent orders into broker_orders.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
@@ -332,12 +333,12 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add daily order caps and market-hours windows:
-  - max submitted orders per strategy per trading day.
-  - allowed trade windows in America/New_York.
-  - keep controls config-driven so paper aggressiveness can be adjusted without code changes.
+- Add a small admin/status endpoint for the active automation state:
+  - show market-cycle env switches.
+  - show active strategies and scanner/submit limits.
+  - show latest market_cycle/scan/reconcile job_run summaries.
 
-Likely next steps after daily/window controls:
+Likely next steps after status visibility:
 1. Improve broker-order/position linkage for more exact open position accounting.
 2. Add moving-average or simple indicator scanner rules.
 3. Add AI review tables only after closed-trade capture exists.
