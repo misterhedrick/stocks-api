@@ -116,6 +116,7 @@ Current repo structure and purpose:
 - scripts/run_render_job.py
   - Render cron helper that POSTs a protected API job endpoint.
   - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
+  - Retries retryable HTTP responses 429/500/502/503/504 using JOB_RETRY_DELAYS_SECONDS, default 10,30.
 - app/api/routes/automation.py
   - GET /api/v1/automation/status, bearer-protected.
   - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
@@ -217,7 +218,7 @@ Current repo structure and purpose:
 - tests/test_signal_scanner.py
   - unittest coverage for manual scanner success, inactive strategy filtering, price-threshold and percent-change rules, malformed specs, duplicate suppression, and failure recording.
 - tests/test_render_job_runner.py
-  - unittest coverage for the Render cron kill switch and job URL construction.
+  - unittest coverage for the Render cron kill switch, job URL construction, retryable HTTP errors, and non-retryable HTTP errors.
 - tests/test_market_cycle.py
   - unittest coverage for market-cycle orchestration, env switches, and failure recording.
 - tests/test_automation_status.py
@@ -268,6 +269,7 @@ Current behavior implemented:
 - Mark order_intent rejected and save rejection reason if Alpaca rejects.
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
 - Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
+- Actual Render cron service has been manually created/enabled and has returned successful market-cycle 200 responses.
 - Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
 - Signal scanning creates signal records; market-cycle handles optional preview/submit automation.
 - Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold/percent_change rules.
@@ -303,6 +305,7 @@ Current behavior implemented:
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
 - Route-level tests verify public health routes, readiness success/failure, protected route auth, automation status route mapping, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
 - Postman collection for smoke testing deployed/local API.
+  - Includes health/ready, automation status, reconcile, market-cycle, scan-signals, strategy/signal/order-intent flows, and option contract selection.
 
 Current important limitations/gaps:
 - Scanner/signal-generation logic supports first-pass quote-threshold and percent-change rules, but no moving-average/indicator scoring yet.
@@ -310,9 +313,9 @@ Current important limitations/gaps:
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
-- Broker reconciliation has a protected manual endpoint and a disabled-by-default Render cron blueprint.
+- Broker reconciliation runs as part of the market-cycle endpoint when MARKET_CYCLE_RECONCILE_ENABLED=true.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- Scheduled market-cycle is scaffolded in render.yaml but disabled by default.
+- Scheduled market-cycle is scaffolded in render.yaml as disabled by default, but the actual Render cron has been manually enabled for testing.
 - Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
 - No AI review tables yet.
 - No trade_cases, ai_trade_reviews, or strategy_change_suggestions tables yet.

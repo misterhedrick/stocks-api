@@ -168,14 +168,6 @@ def _disabled_step(step_name: str) -> dict[str, Any]:
     return {"status": "disabled", "step": step_name}
 
 
-def _not_implemented_step(step_name: str) -> dict[str, Any]:
-    return {
-        "status": "not_implemented",
-        "step": step_name,
-        "message": f"{step_name} automation is not implemented yet",
-    }
-
-
 def _preview_created_signals(
     db: Session,
     signal_ids: list[uuid.UUID],

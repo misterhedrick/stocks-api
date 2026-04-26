@@ -356,6 +356,14 @@ It is disabled by default with:
 SCHEDULED_JOBS_ENABLED=false
 ```
 
+The cron runner retries temporary HTTP failures by default:
+
+```text
+JOB_RETRY_DELAYS_SECONDS=10,30
+```
+
+Retryable responses are `429`, `500`, `502`, `503`, and `504`, giving the job up to three total attempts.
+
 To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
 
 Market-cycle behavior is controlled by these web-service env vars:
@@ -380,6 +388,7 @@ Audit logging currently records:
 - Alpaca order intent rejection
 - broker reconciliation success or failure
 - signal scan success or failure
+- market cycle success or failure
 
 ## Render
 
@@ -396,3 +405,4 @@ Set these environment variables in Render:
 - `MARKET_CYCLE_PREVIEW_ENABLED=false`
 - `MARKET_CYCLE_SUBMIT_ENABLED=false`
 - `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
+- `JOB_RETRY_DELAYS_SECONDS=10,30` on the cron service unless you want different retry timing

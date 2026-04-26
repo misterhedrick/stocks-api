@@ -191,6 +191,92 @@
       "response": []
     },
     {
+      "name": "Market Cycle",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Market cycle returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Market cycle records a job run\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.job_run.job_name).to.eql(\"market_cycle\");",
+              "  pm.expect(body.job_run.status).to.eql(\"succeeded\");",
+              "});",
+              "",
+              "pm.test(\"Market cycle includes automation steps\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"scan\");",
+              "  pm.expect(body).to.have.property(\"reconcile\");",
+              "  pm.expect(body).to.have.property(\"preview\");",
+              "  pm.expect(body).to.have.property(\"submit\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Scan Signals",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/jobs/scan-signals?limit=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Scan signals returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Scan signals records a job run\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.job_run.job_name).to.eql(\"scan_signals\");",
+              "  pm.expect(body.job_run.status).to.eql(\"succeeded\");",
+              "  pm.expect(body).to.have.property(\"strategies_seen\");",
+              "  pm.expect(body).to.have.property(\"signals_created\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Create Strategy",
       "request": {
         "auth": {
@@ -273,6 +359,60 @@
               "  const body = pm.response.json();",
               "  pm.expect(Array.isArray(body)).to.eql(true);",
               "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Create Paper Scanner Strategy",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"SPY Paper Momentum\",\n  \"description\": \"Paper-only scanner strategy\",\n  \"is_active\": true,\n  \"config\": {\n    \"scanner\": {\n      \"type\": \"percent_change\",\n      \"symbols\": [\"SPY\"],\n      \"lookback_minutes\": 30,\n      \"timeframe\": \"1Min\",\n      \"change_above_percent\": \"0.50\",\n      \"signal_type\": \"momentum_breakout\",\n      \"direction\": \"bullish\",\n      \"confidence\": \"0.6500\",\n      \"data_feed\": \"iex\",\n      \"dedupe_minutes\": 240,\n      \"preview\": {\n        \"enabled\": true,\n        \"option_type\": \"call\",\n        \"target_strike\": \"500\",\n        \"side\": \"buy\",\n        \"quantity\": 1,\n        \"order_type\": \"limit\",\n        \"time_in_force\": \"day\",\n        \"data_feed\": \"indicative\"\n      },\n      \"submit\": {\n        \"enabled\": false,\n        \"max_orders_per_cycle\": 1,\n        \"max_contracts_per_order\": 1,\n        \"max_contracts_per_cycle\": 1,\n        \"max_notional_per_order\": \"250.00\",\n        \"max_open_contracts_per_symbol\": 1,\n        \"max_open_contracts_per_strategy\": 2,\n        \"max_orders_per_trading_day\": 1,\n        \"trading_day_timezone\": \"America/New_York\",\n        \"trade_windows\": [\n          {\n            \"timezone\": \"America/New_York\",\n            \"start\": \"09:45\",\n            \"end\": \"15:45\"\n          }\n        ],\n        \"allowed_sides\": [\"buy\"]\n      }\n    }\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/strategies"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Create paper scanner strategy returns 201 or already exists\", function () {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});",
+              "",
+              "if (pm.response.code === 201) {",
+              "  pm.test(\"Create paper scanner strategy stores id\", function () {",
+              "    const body = pm.response.json();",
+              "    pm.expect(body).to.have.property(\"id\");",
+              "    pm.collectionVariables.set(\"last_strategy_id\", body.id);",
+              "  });",
+              "}"
             ]
           }
         }
@@ -463,6 +603,59 @@
               "pm.test(\"Update signal changes status\", function () {",
               "  const body = pm.response.json();",
               "  pm.expect(body.status).to.eql(\"rejected\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Select Option Contract",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"underlying_symbol\": \"SPY\",\n  \"option_type\": \"call\",\n  \"side\": \"buy\",\n  \"expiration_date_gte\": \"2026-04-17\",\n  \"expiration_date_lte\": \"2026-05-01\",\n  \"target_strike\": \"500\",\n  \"data_feed\": \"indicative\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/v1/options/select-contract"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Select option contract returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Select option contract returns selected contract\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"selected_contract\");",
+              "  pm.expect(body.selected_contract).to.have.property(\"symbol\");",
+              "  pm.expect(body).to.have.property(\"quote\");",
               "});"
             ]
           }
