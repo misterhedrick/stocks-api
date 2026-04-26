@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
+from app.services.automation_guard import can_auto_submit_order_intent
 from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.order_intents import preview_order_intent_from_signal, submit_order_intent
@@ -96,6 +97,7 @@ def run_market_cycle(
             submit = _submit_previewed_order_intents(
                 db,
                 _order_intent_ids_from_preview(preview),
+                cycle_id=str(job_run.id),
             )
 
         if reconcile_enabled:
@@ -220,6 +222,8 @@ def _preview_created_signals(
 def _submit_previewed_order_intents(
     db: Session,
     order_intent_ids: list[uuid.UUID],
+    *,
+    cycle_id: str | None = None,
 ) -> dict[str, Any]:
     submitted = 0
     rejected = 0
@@ -246,6 +250,30 @@ def _submit_previewed_order_intents(
 
         try:
             submit_config = _submit_config_for_strategy(strategy)
+            guard_decision = can_auto_submit_order_intent(
+                db,
+                order_intent,
+                cycle_id=cycle_id,
+            )
+            if not guard_decision.allowed:
+                skipped += 1
+                message = "; ".join(guard_decision.reasons)
+                errors.append(f"Order intent '{order_intent_id}': {message}")
+                record_audit_log(
+                    db,
+                    event_type="order_intent.auto_submit_skipped",
+                    entity_type="order_intent",
+                    entity_id=order_intent.id,
+                    message="Auto-submit skipped by automation guard",
+                    payload={
+                        "order_intent_id": str(order_intent.id),
+                        "strategy_id": str(strategy.id),
+                        "cycle_id": cycle_id,
+                        "reasons": guard_decision.reasons,
+                        "limits_snapshot": guard_decision.limits_snapshot,
+                    },
+                )
+                continue
             _validate_submit_limits(
                 db,
                 order_intent,

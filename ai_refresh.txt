@@ -298,6 +298,13 @@ Current behavior implemented:
   - signal_scan.failed
   - market_cycle.succeeded
   - market_cycle.failed
+- Automation Safety Gates were added for market-cycle auto-submit.
+  - New env/settings: TRADING_AUTOMATION_ENABLED=false, AUTO_SUBMIT_REQUIRES_PAPER=true, MAX_AUTO_ORDERS_PER_CYCLE=1, MAX_AUTO_ORDERS_PER_DAY=3, MAX_OPEN_POSITIONS=3, MAX_OPEN_POSITIONS_PER_SYMBOL=1, MAX_CONTRACTS_PER_ORDER=1, MAX_ESTIMATED_PREMIUM_PER_ORDER=250.
+  - Guard service: app/services/automation_guard.py with can_auto_submit_order_intent(db, order_intent, cycle_id=None).
+  - Market-cycle auto-submit now checks the guard before calling submit_order_intent; blocked intents are skipped, included in submit errors, and audited as order_intent.auto_submit_skipped.
+  - GET /api/v1/automation/status now includes the global safety fields and paper mode.
+  - Postman automation status and market-cycle coverage includes safety-field and skip-visibility assertions.
+  - Tests added/updated for guard decisions, market-cycle guard skips, and automation status response shape.
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Basic tests for option contract selection and selector-backed preview generation.

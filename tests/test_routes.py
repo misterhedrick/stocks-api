@@ -470,6 +470,15 @@ class RouteBehaviorTests(unittest.TestCase):
                 preview_enabled=False,
                 submit_enabled=False,
             ),
+            trading_automation_enabled=False,
+            auto_submit_requires_paper=True,
+            paper_mode=True,
+            max_auto_orders_per_cycle=1,
+            max_auto_orders_per_day=3,
+            max_open_positions=3,
+            max_open_positions_per_symbol=1,
+            max_contracts_per_order=1,
+            max_estimated_premium_per_order=Decimal("250"),
             active_strategies=[],
             latest_job_runs={
                 "market_cycle": None,
@@ -489,6 +498,8 @@ class RouteBehaviorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["switches"]["scan_enabled"])
+        self.assertFalse(response.json()["trading_automation_enabled"])
+        self.assertEqual(response.json()["max_auto_orders_per_day"], 3)
         self.assertEqual(response.json()["active_strategies"], [])
         automation_status.assert_called_once_with(db)
 

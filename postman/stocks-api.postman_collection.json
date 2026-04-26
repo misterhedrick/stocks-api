@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c33a068e-4384-4ef4-a2bd-57cbca5095db",
     "name": "stocks-api",
-    "description": "Single-user FastAPI trading API collection for health, readiness, preview-only order intents, and paper order submission.",
+    "description": "Single-user FastAPI trading API collection for health, readiness, automation safety status, preview-only order intents, and paper order submission.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -141,6 +141,17 @@
               "  pm.expect(body.switches).to.have.property(\"reconcile_enabled\");",
               "  pm.expect(body.switches).to.have.property(\"preview_enabled\");",
               "  pm.expect(body.switches).to.have.property(\"submit_enabled\");",
+              "  pm.expect(body).to.have.property(\"trading_automation_enabled\");",
+              "  pm.expect(body).to.have.property(\"auto_submit_requires_paper\");",
+              "  pm.expect(body).to.have.property(\"paper_mode\");",
+              "  pm.expect(body).to.have.property(\"max_auto_orders_per_cycle\");",
+              "  pm.expect(body).to.have.property(\"max_auto_orders_per_day\");",
+              "  pm.expect(body).to.have.property(\"max_open_positions\");",
+              "  pm.expect(body).to.have.property(\"max_open_positions_per_symbol\");",
+              "  pm.expect(body).to.have.property(\"max_contracts_per_order\");",
+              "  pm.expect(body).to.have.property(\"max_estimated_premium_per_order\");",
+              "  pm.expect(String(body.paper_mode)).to.eql(pm.environment.get(\"expected_paper_mode\"));",
+              "  pm.expect(String(body.trading_automation_enabled)).to.eql(pm.environment.get(\"expected_trading_automation_enabled\"));",
               "  pm.expect(Array.isArray(body.active_strategies)).to.eql(true);",
               "  pm.expect(body.latest_job_runs).to.have.property(\"market_cycle\");",
               "  pm.expect(body.latest_job_runs).to.have.property(\"scan_signals\");",
@@ -229,6 +240,14 @@
               "  pm.expect(body).to.have.property(\"reconcile\");",
               "  pm.expect(body).to.have.property(\"preview\");",
               "  pm.expect(body).to.have.property(\"submit\");",
+              "});",
+              "",
+              "pm.test(\"Market cycle exposes blocked or skipped submit behavior when observable\", function () {",
+              "  const body = pm.response.json();",
+              "  if (body.submit && body.submit.status !== \"disabled\") {",
+              "    pm.expect(body.submit).to.have.property(\"skipped\");",
+              "    pm.expect(body.submit).to.have.property(\"errors\");",
+              "  }",
               "});"
             ]
           }
@@ -800,6 +819,7 @@
               "  const body = pm.response.json();",
               "  pm.expect(body.order_intent.status).to.not.eql(\"previewed\");",
               "  pm.expect(body.broker_order).to.have.property(\"alpaca_order_id\");",
+              "  pm.expect(body.broker_order).to.have.property(\"status\");",
               "});"
             ]
           }

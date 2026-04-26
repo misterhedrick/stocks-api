@@ -245,7 +245,7 @@ curl -H "Authorization: Bearer change-me" \
   "http://127.0.0.1:8000/api/v1/automation/status"
 ```
 
-The automation status endpoint summarizes market-cycle switches, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
+The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
 
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 
@@ -342,6 +342,21 @@ When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
 Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, optional `max_orders_per_trading_day`, optional `trading_day_timezone`, optional `trade_windows`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
 
+Global automation safety gates apply in addition to strategy-level `scanner.submit` config:
+
+```text
+TRADING_AUTOMATION_ENABLED=false
+AUTO_SUBMIT_REQUIRES_PAPER=true
+MAX_AUTO_ORDERS_PER_CYCLE=1
+MAX_AUTO_ORDERS_PER_DAY=3
+MAX_OPEN_POSITIONS=3
+MAX_OPEN_POSITIONS_PER_SYMBOL=1
+MAX_CONTRACTS_PER_ORDER=1
+MAX_ESTIMATED_PREMIUM_PER_ORDER=250
+```
+
+Automated submit is intended for paper trading right now. To intentionally enable fully automated paper trading, set `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=true`, `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, keep `AUTO_SUBMIT_REQUIRES_PAPER=true`, and enable both `scanner.preview.enabled` and `scanner.submit.enabled` on the strategy. Manual order intent submit is unchanged.
+
 ## Scheduled jobs
 
 `render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 30 minutes and calls:
@@ -376,6 +391,7 @@ MARKET_CYCLE_SUBMIT_ENABLED=false
 ```
 
 Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
+Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.
 
 Audit logging currently records:
 - strategy creation
@@ -389,6 +405,21 @@ Audit logging currently records:
 - broker reconciliation success or failure
 - signal scan success or failure
 - market cycle success or failure
+- auto-submit skips blocked by automation safety gates
+
+Postman coverage includes automation status safety-field assertions, market-cycle submit skip visibility when observable, and the existing preview/manual submit flow.
+
+Run tests:
+
+```bash
+python -m pytest
+```
+
+If `pytest` is not installed in the environment, the current repo tests also run with:
+
+```bash
+python -m unittest discover -s tests
+```
 
 ## Render
 
@@ -404,5 +435,13 @@ Set these environment variables in Render:
 - `MARKET_CYCLE_RECONCILE_ENABLED=true`
 - `MARKET_CYCLE_PREVIEW_ENABLED=false`
 - `MARKET_CYCLE_SUBMIT_ENABLED=false`
+- `TRADING_AUTOMATION_ENABLED=false` until you are intentionally ready for automated paper submit
+- `AUTO_SUBMIT_REQUIRES_PAPER=true`
+- `MAX_AUTO_ORDERS_PER_CYCLE=1`
+- `MAX_AUTO_ORDERS_PER_DAY=3`
+- `MAX_OPEN_POSITIONS=3`
+- `MAX_OPEN_POSITIONS_PER_SYMBOL=1`
+- `MAX_CONTRACTS_PER_ORDER=1`
+- `MAX_ESTIMATED_PREMIUM_PER_ORDER=250`
 - `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
 - `JOB_RETRY_DELAYS_SECONDS=10,30` on the cron service unless you want different retry timing

@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, Strategy
+from app.services.automation_guard import AutomationDecision
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import run_market_cycle
 from app.services.signal_scanner import SignalScanResult
@@ -67,6 +68,10 @@ class FakeMarketCycleSession:
             if self.order_intent is None or self.order_intent.id != record_id:
                 return None
             return self.order_intent
+        if model is JobRun:
+            for item in self.added:
+                if isinstance(item, JobRun) and item.id == record_id:
+                    return item
         return None
 
 
@@ -196,6 +201,10 @@ def build_broker_order(order_intent: OrderIntent) -> BrokerOrder:
     )
 
 
+def allowed_automation_decision() -> AutomationDecision:
+    return AutomationDecision(allowed=True, reasons=[], limits_snapshot={})
+
+
 class MarketCycleTests(unittest.TestCase):
     def test_run_market_cycle_runs_enabled_scan_and_reconciliation_steps(self) -> None:
         db = FakeMarketCycleSession()
@@ -309,6 +318,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
             "app.services.market_cycle.submit_order_intent",
             return_value=(order_intent, broker_order),
         ) as submit:
@@ -348,6 +360,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
@@ -356,6 +371,54 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.submit["skipped"], 1)
         self.assertIn("scanner.submit config is required", result.submit["errors"][0])
         submit.assert_not_called()
+
+    def test_run_market_cycle_skips_auto_submit_when_guard_blocks(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+        blocked_decision = AutomationDecision(
+            allowed=False,
+            reasons=["TRADING_AUTOMATION_ENABLED is false"],
+            limits_snapshot={"trading_automation_enabled": False},
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=blocked_decision,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("TRADING_AUTOMATION_ENABLED is false", result.submit["errors"][0])
+        submit.assert_not_called()
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertIn(
+            "order_intent.auto_submit_skipped",
+            [audit_log.event_type for audit_log in audit_logs],
+        )
 
     def test_run_market_cycle_enforces_submit_max_contracts_per_order(self) -> None:
         strategy = build_strategy()
@@ -384,6 +447,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
@@ -423,6 +489,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
@@ -460,6 +529,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
@@ -496,6 +568,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
@@ -541,6 +616,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
@@ -588,6 +666,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
@@ -625,6 +706,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
         ) as submit:

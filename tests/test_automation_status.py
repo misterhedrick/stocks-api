@@ -90,6 +90,15 @@ class AutomationStatusTests(unittest.TestCase):
 
         self.assertTrue(result.switches.scan_enabled)
         self.assertTrue(result.switches.reconcile_enabled)
+        self.assertFalse(result.trading_automation_enabled)
+        self.assertTrue(result.auto_submit_requires_paper)
+        self.assertTrue(result.paper_mode)
+        self.assertEqual(result.max_auto_orders_per_cycle, 1)
+        self.assertEqual(result.max_auto_orders_per_day, 3)
+        self.assertEqual(result.max_open_positions, 3)
+        self.assertEqual(result.max_open_positions_per_symbol, 1)
+        self.assertEqual(result.max_contracts_per_order, 1)
+        self.assertEqual(str(result.max_estimated_premium_per_order), "250")
         self.assertEqual(len(result.active_strategies), 1)
         strategy = result.active_strategies[0]
         self.assertEqual(strategy.scanner_type, "percent_change")

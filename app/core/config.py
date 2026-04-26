@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator
@@ -29,6 +30,14 @@ class Settings(BaseSettings):
     market_cycle_reconcile_enabled: bool = True
     market_cycle_preview_enabled: bool = False
     market_cycle_submit_enabled: bool = False
+    trading_automation_enabled: bool = False
+    auto_submit_requires_paper: bool = True
+    max_auto_orders_per_cycle: int = 1
+    max_auto_orders_per_day: int = 3
+    max_open_positions: int = 3
+    max_open_positions_per_symbol: int = 1
+    max_contracts_per_order: int = 1
+    max_estimated_premium_per_order: Decimal = Decimal("250")
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

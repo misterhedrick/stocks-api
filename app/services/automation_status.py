@@ -45,6 +45,15 @@ def get_automation_status(db: Session) -> AutomationStatusRead:
             preview_enabled=settings.market_cycle_preview_enabled,
             submit_enabled=settings.market_cycle_submit_enabled,
         ),
+        trading_automation_enabled=settings.trading_automation_enabled,
+        auto_submit_requires_paper=settings.auto_submit_requires_paper,
+        paper_mode=settings.alpaca_paper,
+        max_auto_orders_per_cycle=settings.max_auto_orders_per_cycle,
+        max_auto_orders_per_day=settings.max_auto_orders_per_day,
+        max_open_positions=settings.max_open_positions,
+        max_open_positions_per_symbol=settings.max_open_positions_per_symbol,
+        max_contracts_per_order=settings.max_contracts_per_order,
+        max_estimated_premium_per_order=settings.max_estimated_premium_per_order,
         active_strategies=[
             _strategy_status(strategy) for strategy in active_strategies
         ],
