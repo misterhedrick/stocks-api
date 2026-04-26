@@ -82,6 +82,7 @@ def scan_signals_route(
         signals_created=result.signals_created,
         signals_skipped=result.signals_skipped,
         errors=result.errors,
+        created_signal_ids=result.created_signal_ids,
     )
 
 

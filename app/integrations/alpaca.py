@@ -127,6 +127,24 @@ class AlpacaLatestStockQuote:
     raw_response: dict[str, Any]
 
 
+class AlpacaStockBar(BaseModel):
+    open: Decimal = Field(alias="o")
+    high: Decimal = Field(alias="h")
+    low: Decimal = Field(alias="l")
+    close: Decimal = Field(alias="c")
+    volume: Decimal | None = Field(default=None, alias="v")
+    timestamp: datetime = Field(alias="t")
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+@dataclass(slots=True)
+class AlpacaStockBars:
+    symbol: str
+    bars: list[AlpacaStockBar]
+    raw_response: list[dict[str, Any]]
+
+
 @dataclass(slots=True)
 class AlpacaOptionContractsPage:
     contracts: list[AlpacaOptionContract]
@@ -459,6 +477,48 @@ class AlpacaMarketDataClient:
                 )
 
         return latest_quotes
+
+    def get_stock_bars(
+        self,
+        symbols: list[str],
+        *,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        feed: str = "iex",
+        limit: int = 1000,
+    ) -> dict[str, AlpacaStockBars]:
+        payload = self._get_json(
+            "/v2/stocks/bars",
+            params={
+                "symbols": ",".join(symbols),
+                "timeframe": timeframe,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "feed": feed,
+                "limit": str(limit),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise AlpacaTradingError("Unexpected Alpaca stock bars response")
+
+        bars_by_symbol = payload.get("bars")
+        if not isinstance(bars_by_symbol, dict):
+            raise AlpacaTradingError("Unexpected Alpaca stock bars response")
+
+        results: dict[str, AlpacaStockBars] = {}
+        for symbol in symbols:
+            raw_bars = bars_by_symbol.get(symbol)
+            if not isinstance(raw_bars, list):
+                continue
+            raw_bar_dicts = [item for item in raw_bars if isinstance(item, dict)]
+            results[symbol] = AlpacaStockBars(
+                symbol=symbol,
+                bars=[AlpacaStockBar.model_validate(item) for item in raw_bar_dicts],
+                raw_response=raw_bar_dicts,
+            )
+
+        return results
 
     def _get_json(
         self,
