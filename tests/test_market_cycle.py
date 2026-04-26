@@ -97,6 +97,7 @@ def build_signal_scan_result(signal_id: uuid.UUID | None = None) -> SignalScanRe
         signals_created=1,
         signals_skipped=0,
         errors=[],
+        no_signal_reasons=[],
         created_signal_ids=[signal_id or uuid.uuid4()],
     )
 
