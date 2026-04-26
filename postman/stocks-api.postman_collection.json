@@ -108,6 +108,51 @@
       "response": []
     },
     {
+      "name": "Automation Status",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/v1/automation/status"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Automation status returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Automation status includes switches and job runs\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property(\"switches\");",
+              "  pm.expect(body.switches).to.have.property(\"scan_enabled\");",
+              "  pm.expect(body.switches).to.have.property(\"reconcile_enabled\");",
+              "  pm.expect(body.switches).to.have.property(\"preview_enabled\");",
+              "  pm.expect(body.switches).to.have.property(\"submit_enabled\");",
+              "  pm.expect(Array.isArray(body.active_strategies)).to.eql(true);",
+              "  pm.expect(body.latest_job_runs).to.have.property(\"market_cycle\");",
+              "  pm.expect(body.latest_job_runs).to.have.property(\"scan_signals\");",
+              "  pm.expect(body.latest_job_runs).to.have.property(\"reconcile_broker\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
       "name": "Reconcile Broker",
       "request": {
         "auth": {
