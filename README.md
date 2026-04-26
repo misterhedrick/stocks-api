@@ -238,6 +238,15 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/scan-signals?limit=100" \
   -H "Authorization: Bearer change-me"
 ```
 
+Check automation status:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/status"
+```
+
+The automation status endpoint summarizes market-cycle switches, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
+
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 
 Example strategy config:

@@ -91,7 +91,7 @@ Current repo structure and purpose:
 - app/main.py
   - FastAPI app entrypoint.
   - Adds root and /health.
-  - Includes /api/v1 health, jobs, order-intents, options, signals, and strategies routers.
+  - Includes /api/v1 automation, health, jobs, order-intents, options, signals, and strategies routers.
   - Runs Alembic migrations on startup if settings.should_auto_migrate_on_startup is true.
 - app/core/config.py
   - Pydantic settings loaded from env/.env.
@@ -116,6 +116,9 @@ Current repo structure and purpose:
 - scripts/run_render_job.py
   - Render cron helper that POSTs a protected API job endpoint.
   - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
+- app/api/routes/automation.py
+  - GET /api/v1/automation/status, bearer-protected.
+  - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -161,6 +164,10 @@ Current repo structure and purpose:
   - Pydantic response schemas for job runs, broker reconciliation, signal scans, and market cycles.
 - app/schemas/options.py
   - Pydantic request/response schemas for option contract selection.
+- app/schemas/automation.py
+  - Pydantic response schemas for automation status.
+- app/services/automation_status.py
+  - Service logic for reading active strategy automation config and latest job_run summaries.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
   - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
@@ -213,6 +220,8 @@ Current repo structure and purpose:
   - unittest coverage for the Render cron kill switch and job URL construction.
 - tests/test_market_cycle.py
   - unittest coverage for market-cycle orchestration, env switches, and failure recording.
+- tests/test_automation_status.py
+  - unittest coverage for automation status summary shape.
 - tests/test_routes.py
   - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, signal scan route mapping, and market-cycle route mapping.
 
@@ -229,6 +238,7 @@ Current database tables implemented:
 Current behavior implemented:
 - Root endpoint.
 - Public health endpoints.
+- Protected automation status endpoint for market-cycle switches, active strategy automation config, and latest job runs.
 - Auth-protected readiness endpoint that checks DB connectivity and required tables.
 - Single admin bearer-token auth.
 - Environment-driven settings.
@@ -291,7 +301,7 @@ Current behavior implemented:
 - Basic tests for option contract selection and selector-backed preview generation.
 - Basic tests for manual signal scanning.
 - Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
-- Route-level tests verify public health routes, readiness success/failure, protected route auth, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
+- Route-level tests verify public health routes, readiness success/failure, protected route auth, automation status route mapping, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
 - Postman collection for smoke testing deployed/local API.
 
 Current important limitations/gaps:
@@ -333,12 +343,11 @@ AI review layer planned for later:
   - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation step:
-- Add a small admin/status endpoint for the active automation state:
-  - show market-cycle env switches.
-  - show active strategies and scanner/submit limits.
-  - show latest market_cycle/scan/reconcile job_run summaries.
+- Use the automation status endpoint against Render to confirm production has an active strategy config.
+- Then add or update one active paper strategy if status shows active_strategies=[].
+- After that, enable MARKET_CYCLE_PREVIEW_ENABLED=true while keeping MARKET_CYCLE_SUBMIT_ENABLED=false.
 
-Likely next steps after status visibility:
+Likely next steps after deployed preview verification:
 1. Improve broker-order/position linkage for more exact open position accounting.
 2. Add moving-average or simple indicator scanner rules.
 3. Add AI review tables only after closed-trade capture exists.
