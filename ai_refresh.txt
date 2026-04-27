@@ -305,6 +305,11 @@ Current behavior implemented:
   - GET /api/v1/automation/status now includes the global safety fields and paper mode.
   - Postman automation status and market-cycle coverage includes safety-field and skip-visibility assertions.
   - Tests added/updated for guard decisions, market-cycle guard skips, and automation status response shape.
+- Scanner no-op observability was added.
+  - scan_signals responses and job_runs.details now include no_signal_reasons.
+  - Market-cycle scan details carry through no_signal_reasons.
+  - Reasons explain successful scans with no signals, such as no recent bars, no usable quotes, or thresholds not crossed.
+  - This is observability only; scanner strategy thresholds and signal-generation behavior were not changed.
 - Basic tests for order submission success/rejection and order intent schema rules.
 - Basic tests for reconciliation success/failure service behavior.
 - Basic tests for option contract selection and selector-backed preview generation.

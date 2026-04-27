@@ -240,6 +240,10 @@
               "  pm.expect(body).to.have.property(\"reconcile\");",
               "  pm.expect(body).to.have.property(\"preview\");",
               "  pm.expect(body).to.have.property(\"submit\");",
+              "  if (body.scan && body.scan.status !== \"disabled\") {",
+              "    pm.expect(body.scan).to.have.property(\"no_signal_reasons\");",
+              "    pm.expect(Array.isArray(body.scan.no_signal_reasons)).to.eql(true);",
+              "  }",
               "});",
               "",
               "pm.test(\"Market cycle exposes blocked or skipped submit behavior when observable\", function () {",
@@ -288,6 +292,8 @@
               "  pm.expect(body.job_run.status).to.eql(\"succeeded\");",
               "  pm.expect(body).to.have.property(\"strategies_seen\");",
               "  pm.expect(body).to.have.property(\"signals_created\");",
+              "  pm.expect(body).to.have.property(\"no_signal_reasons\");",
+              "  pm.expect(Array.isArray(body.no_signal_reasons)).to.eql(true);",
               "});"
             ]
           }

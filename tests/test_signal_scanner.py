@@ -234,6 +234,7 @@ class SignalScannerTests(unittest.TestCase):
 
         self.assertEqual(result.strategies_seen, 0)
         self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.no_signal_reasons, [])
         self.assertFalse([item for item in db.added if isinstance(item, Signal)])
 
     def test_scan_signals_skips_malformed_signal_specs(self) -> None:
@@ -316,6 +317,11 @@ class SignalScannerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.signals_created, 0)
+        self.assertEqual(len(result.no_signal_reasons), 1)
+        self.assertIn(
+            "SPY: price 500.50 did not cross configured threshold",
+            result.no_signal_reasons[0],
+        )
         self.assertFalse([item for item in db.added if isinstance(item, Signal)])
 
     def test_scan_signals_records_malformed_scanner_config_as_skipped(self) -> None:
@@ -412,6 +418,11 @@ class SignalScannerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.signals_created, 0)
+        self.assertEqual(len(result.no_signal_reasons), 1)
+        self.assertIn(
+            "SPY: percent change 0.400 did not cross configured threshold",
+            result.no_signal_reasons[0],
+        )
         self.assertFalse([item for item in db.added if isinstance(item, Signal)])
 
     def test_scan_signals_creates_signal_when_percent_change_drops_below_threshold(

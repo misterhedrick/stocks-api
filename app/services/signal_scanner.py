@@ -29,6 +29,7 @@ class SignalScanResult:
     signals_created: int
     signals_skipped: int
     errors: list[str]
+    no_signal_reasons: list[str]
     created_signal_ids: list[uuid.UUID]
 
 
@@ -63,6 +64,7 @@ def scan_signals(
         signals_skipped = 0
         created_signal_ids: list[uuid.UUID] = []
         errors: list[str] = []
+        no_signal_reasons: list[str] = []
 
         for strategy in strategies:
             signal_specs = _signal_specs_from_strategy(strategy)
@@ -71,6 +73,7 @@ def scan_signals(
                     _signal_specs_from_scanner(
                         strategy,
                         market_data_client=market_data_client,
+                        no_signal_reasons=no_signal_reasons,
                     )
                 )
             except ValueError as exc:
@@ -81,6 +84,10 @@ def scan_signals(
                 errors.append(f"{strategy.name}.scanner: {exc.__class__.__name__}: {exc}")
 
             if not signal_specs:
+                if "scanner" not in strategy.config and "scan_signals" not in strategy.config:
+                    no_signal_reasons.append(
+                        f"{strategy.name}: no scan_signals or scanner config"
+                    )
                 continue
 
             strategies_scanned += 1
@@ -130,6 +137,7 @@ def scan_signals(
             "signals_created": signals_created,
             "signals_skipped": signals_skipped,
             "errors": errors,
+            "no_signal_reasons": no_signal_reasons,
             "created_signal_ids": [str(signal_id) for signal_id in created_signal_ids],
         }
         job_run.status = "succeeded"
@@ -155,6 +163,7 @@ def scan_signals(
             signals_created=signals_created,
             signals_skipped=signals_skipped,
             errors=errors,
+            no_signal_reasons=no_signal_reasons,
             created_signal_ids=created_signal_ids,
         )
     except Exception as exc:
@@ -188,6 +197,7 @@ def _signal_specs_from_scanner(
     strategy: Strategy,
     *,
     market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
 ) -> list[dict[str, Any]]:
     scanner_config = strategy.config.get("scanner")
     if scanner_config is None:
@@ -208,24 +218,30 @@ def _signal_specs_from_scanner(
 
     if scanner_type == "price_threshold":
         return _price_threshold_signal_specs(
+            strategy.name,
             scanner_config,
             clean_symbols,
             market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
         )
     if scanner_type == "percent_change":
         return _percent_change_signal_specs(
+            strategy.name,
             scanner_config,
             clean_symbols,
             market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
         )
     raise ValueError("scanner.type must be price_threshold or percent_change")
 
 
 def _price_threshold_signal_specs(
+    strategy_name: str,
     scanner_config: dict[str, Any],
     symbols: list[str],
     *,
     market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
 ) -> list[dict[str, Any]]:
     price_above = _optional_decimal(scanner_config, "price_above")
     price_below = _optional_decimal(scanner_config, "price_below")
@@ -243,10 +259,16 @@ def _price_threshold_signal_specs(
     for symbol in symbols:
         latest_quote = quotes.get(symbol)
         if latest_quote is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no latest stock quote returned"
+            )
             continue
 
         price = _price_from_quote(latest_quote)
         if price is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: stock quote had no usable bid or ask price"
+            )
             continue
 
         triggered = (
@@ -254,6 +276,9 @@ def _price_threshold_signal_specs(
             or (price_below is not None and price <= price_below)
         )
         if not triggered:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: price {price} did not cross configured threshold"
+            )
             continue
 
         signal_specs.append(
@@ -295,10 +320,12 @@ def _price_threshold_signal_specs(
 
 
 def _percent_change_signal_specs(
+    strategy_name: str,
     scanner_config: dict[str, Any],
     symbols: list[str],
     *,
     market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
 ) -> list[dict[str, Any]]:
     change_above = _optional_decimal(scanner_config, "change_above_percent")
     change_below = _optional_decimal(scanner_config, "change_below_percent")
@@ -326,12 +353,23 @@ def _percent_change_signal_specs(
 
     for symbol in symbols:
         stock_bars = bars_by_symbol.get(symbol)
-        if stock_bars is None or len(stock_bars.bars) < 2:
+        if stock_bars is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no stock bars returned for lookback window"
+            )
+            continue
+        if len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: fewer than 2 stock bars returned for lookback window"
+            )
             continue
 
         first_bar = stock_bars.bars[0]
         last_bar = stock_bars.bars[-1]
         if first_bar.close == Decimal("0"):
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: first close was 0, percent change unavailable"
+            )
             continue
 
         change_percent = (
@@ -342,6 +380,9 @@ def _percent_change_signal_specs(
             or (change_below is not None and change_percent <= change_below)
         )
         if not triggered:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: percent change {change_percent} did not cross configured threshold"
+            )
             continue
 
         signal_specs.append(
