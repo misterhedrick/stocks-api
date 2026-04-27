@@ -259,7 +259,9 @@ Current behavior implemented:
 - Generated previews can either use an explicit option_symbol or select a contract from contract_selection constraints.
 - Generated previews derive a limit price from midpoint when no limit_price is supplied.
 - Generated previews store bid/ask/midpoint/spread/estimated notional context and selection context in order_intents.preview.
+- Generated previews default to the global MAX_ESTIMATED_PREMIUM_PER_ORDER notional guard, with optional max_estimated_notional and max_spread overrides/constraints.
 - Select an option contract by underlying, call/put, expiration filters, and optional target strike/underlying price.
+- Option contract selection can skip quoted contracts that exceed optional max_estimated_notional or max_spread constraints.
 - Option contract selection returns selected contract details and latest quote context without creating an order.
 - Manual order_intent creation validates provided strategy_id and signal_id exist.
 - Manual order_intent creation rejects strategy_id/signal_id combinations that do not match.
@@ -267,6 +269,8 @@ Current behavior implemented:
 - Store returned Alpaca order as broker_orders.
 - Update order_intent status/submitted_at after submission.
 - Mark order_intent rejected and save rejection reason if Alpaca rejects.
+- Request broker order cancellation through POST /api/v1/order-intents/{id}/cancel.
+- Cancel requests mark the local order_intent and broker_order as cancel_requested; reconciliation remains responsible for final broker status.
 - Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
 - Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
 - Actual Render cron service has been manually created/enabled and has returned successful market-cycle 200 responses.
@@ -280,6 +284,7 @@ Current behavior implemented:
 - Auto-submit enforces strategy-level sizing and existing-exposure controls before broker submission.
 - Auto-submit enforces optional daily order caps and configured trading windows before broker submission.
 - Reconciliation upserts recent orders into broker_orders.
+- Reconciliation mirrors linked broker order status/submitted_at back to order_intents when it can identify the intent.
 - Reconciliation inserts new fill activities into fills.
 - Reconciliation snapshots current positions into position_snapshots.
 - Reconciliation records success/failure metadata in job_runs.
@@ -287,6 +292,7 @@ Current behavior implemented:
   - order_intent.created
   - order_intent.submitted
   - order_intent.rejected
+  - order_intent.cancel_requested
   - strategy.created
   - strategy.updated
   - signal.created

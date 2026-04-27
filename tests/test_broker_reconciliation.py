@@ -4,7 +4,7 @@ import unittest
 import uuid
 from types import SimpleNamespace
 
-from app.db.models import AuditLog, BrokerOrder, Fill, JobRun, PositionSnapshot
+from app.db.models import AuditLog, BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot
 from app.integrations.alpaca import (
     AlpacaFillActivity,
     AlpacaPosition,
@@ -15,8 +15,13 @@ from app.services.broker_reconciliation import reconcile_broker_state
 
 
 class FakeReconciliationSession:
-    def __init__(self, scalar_results: list[object | None] | None = None) -> None:
+    def __init__(
+        self,
+        scalar_results: list[object | None] | None = None,
+        records: dict[tuple[type, uuid.UUID], object] | None = None,
+    ) -> None:
         self.scalar_results = scalar_results or []
+        self.records = records or {}
         self.added: list[object] = []
         self.commit_count = 0
         self.rollback_count = 0
@@ -32,6 +37,9 @@ class FakeReconciliationSession:
         if self.scalar_results:
             return self.scalar_results.pop(0)
         return None
+
+    def get(self, model: type, record_id: uuid.UUID) -> object | None:
+        return self.records.get((model, record_id))
 
     def commit(self) -> None:
         self.commit_count += 1
@@ -150,6 +158,47 @@ class BrokerReconciliationTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "broker_reconciliation.succeeded")
         self.assertEqual(audit_logs[-1].payload["orders_seen"], 1)
+
+    def test_reconcile_broker_state_updates_linked_order_intent_status(self) -> None:
+        order_intent = OrderIntent(
+            id=uuid.uuid4(),
+            underlying_symbol="SPY",
+            option_symbol="SPY260417C00500000",
+            side="buy",
+            quantity=1,
+            order_type="limit",
+            status="pending_new",
+            preview={},
+        )
+        broker_order = BrokerOrder(
+            id=uuid.uuid4(),
+            order_intent_id=order_intent.id,
+            alpaca_order_id="alpaca-order-123",
+            symbol="SPY260417C00500000",
+            side="buy",
+            quantity=1,
+            order_type="limit",
+            status="pending_new",
+            raw_response={},
+        )
+        db = FakeReconciliationSession(
+            scalar_results=[
+                broker_order,
+                None,
+                SimpleNamespace(id=uuid.uuid4()),
+            ],
+            records={(OrderIntent, order_intent.id): order_intent},
+        )
+
+        reconcile_broker_state(
+            db,
+            trading_client=SuccessfulReconciliationClient(),
+        )
+
+        self.assertEqual(order_intent.status, "filled")
+        self.assertEqual(order_intent.submitted_at.isoformat(), "2026-04-23T16:00:00+00:00")
+        self.assertEqual(broker_order.status, "filled")
+        self.assertIn(order_intent, db.added)
 
     def test_reconcile_broker_state_records_failed_job_run(self) -> None:
         db = FakeReconciliationSession()

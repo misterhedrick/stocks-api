@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import BrokerOrder, OrderIntent, Signal
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
@@ -38,6 +40,18 @@ class OrderIntentPreviewError(RuntimeError):
     pass
 
 
+class BrokerOrderNotFoundError(LookupError):
+    pass
+
+
+NON_CANCELABLE_ORDER_STATUSES = {
+    "canceled",
+    "expired",
+    "filled",
+    "rejected",
+}
+
+
 def preview_order_intent_from_signal(
     db: Session,
     payload: OrderIntentPreviewCreate,
@@ -51,12 +65,16 @@ def preview_order_intent_from_signal(
 
     option_symbol = payload.option_symbol
     selection = None
+    max_estimated_notional = _effective_max_estimated_notional(payload)
+    max_spread = _effective_max_spread(payload)
     if payload.contract_selection is not None:
         selection = select_option_contract(
             payload.contract_selection.model_copy(
                 update={
                     "side": payload.side,
                     "data_feed": payload.data_feed,
+                    "max_estimated_notional": max_estimated_notional,
+                    "max_spread": max_spread,
                 }
             ),
             trading_client=trading_client,
@@ -77,6 +95,11 @@ def preview_order_intent_from_signal(
         side=payload.side,
         quantity=payload.quantity,
         supplied_limit_price=payload.limit_price,
+    )
+    _validate_preview_quote_constraints(
+        quote_preview,
+        max_estimated_notional=max_estimated_notional,
+        max_spread=max_spread,
     )
 
     limit_price = payload.limit_price
@@ -234,6 +257,81 @@ def submit_order_intent(
     return order_intent, broker_order
 
 
+def cancel_order_intent(
+    db: Session,
+    order_intent_id: uuid.UUID,
+    *,
+    trading_client: AlpacaTradingClient | None = None,
+) -> tuple[OrderIntent, BrokerOrder]:
+    order_intent = db.get(OrderIntent, order_intent_id)
+    if order_intent is None:
+        raise OrderIntentNotFoundError(f"Order intent '{order_intent_id}' was not found")
+
+    broker_order = _latest_broker_order(db, order_intent)
+    if broker_order is None:
+        raise BrokerOrderNotFoundError(
+            f"Order intent '{order_intent_id}' does not have a broker order"
+        )
+
+    if broker_order.status in NON_CANCELABLE_ORDER_STATUSES:
+        raise OrderIntentStateError(broker_order.status)
+
+    client = trading_client or AlpacaTradingClient.from_settings()
+    cancellation = client.cancel_order(broker_order.alpaca_order_id)
+
+    existing_raw_response = broker_order.raw_response or {}
+    broker_order.raw_response = {
+        **existing_raw_response,
+        "cancel_response": cancellation.raw_response,
+    }
+    broker_order.status = "cancel_requested"
+    order_intent.status = "cancel_requested"
+
+    db.add(broker_order)
+    db.add(order_intent)
+    db.flush()
+    record_audit_log(
+        db,
+        event_type="order_intent.cancel_requested",
+        entity_type="order_intent",
+        entity_id=order_intent.id,
+        message="Order intent cancel requested through Alpaca",
+        payload={
+            "broker_order_id": str(broker_order.id),
+            "alpaca_order_id": broker_order.alpaca_order_id,
+            "option_symbol": order_intent.option_symbol,
+            "side": order_intent.side,
+            "quantity": order_intent.quantity,
+            "previous_status": existing_raw_response.get("status"),
+            "status": order_intent.status,
+        },
+    )
+    db.commit()
+    db.refresh(order_intent)
+    db.refresh(broker_order)
+    return order_intent, broker_order
+
+
+def _latest_broker_order(
+    db: Session,
+    order_intent: OrderIntent,
+) -> BrokerOrder | None:
+    broker_orders = getattr(order_intent, "broker_orders", None)
+    if broker_orders:
+        return max(
+            broker_orders,
+            key=lambda broker_order: broker_order.created_at
+            or datetime.min.replace(tzinfo=timezone.utc),
+        )
+
+    return db.scalar(
+        select(BrokerOrder)
+        .where(BrokerOrder.order_intent_id == order_intent.id)
+        .order_by(BrokerOrder.created_at.desc())
+        .limit(1)
+    )
+
+
 def _build_quote_preview(
     latest_quote: AlpacaLatestOptionQuote,
     *,
@@ -276,6 +374,54 @@ def _build_quote_preview(
         else None,
         "raw_quote": _json_safe_value(latest_quote.raw_response),
     }
+
+
+def _effective_max_estimated_notional(
+    payload: OrderIntentPreviewCreate,
+) -> Decimal | None:
+    if payload.max_estimated_notional is not None:
+        return payload.max_estimated_notional
+    if (
+        payload.contract_selection is not None
+        and payload.contract_selection.max_estimated_notional is not None
+    ):
+        return payload.contract_selection.max_estimated_notional
+    return settings.max_estimated_premium_per_order
+
+
+def _effective_max_spread(payload: OrderIntentPreviewCreate) -> Decimal | None:
+    if payload.max_spread is not None:
+        return payload.max_spread
+    if (
+        payload.contract_selection is not None
+        and payload.contract_selection.max_spread is not None
+    ):
+        return payload.contract_selection.max_spread
+    return None
+
+
+def _validate_preview_quote_constraints(
+    quote_preview: dict[str, object],
+    *,
+    max_estimated_notional: Decimal | None,
+    max_spread: Decimal | None,
+) -> None:
+    estimated_notional = _decimal_from_preview(quote_preview.get("estimated_notional"))
+    spread = _decimal_from_preview(quote_preview.get("spread"))
+
+    if (
+        max_estimated_notional is not None
+        and estimated_notional is not None
+        and estimated_notional > max_estimated_notional
+    ):
+        raise OrderIntentPreviewError(
+            "Estimated notional "
+            f"{estimated_notional} exceeds max {max_estimated_notional}"
+        )
+    if max_spread is not None and spread is not None and spread > max_spread:
+        raise OrderIntentPreviewError(
+            f"Quote spread {spread} exceeds max {max_spread}"
+        )
 
 
 def _selection_preview(

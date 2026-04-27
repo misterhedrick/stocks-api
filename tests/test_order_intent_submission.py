@@ -9,9 +9,10 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.routes.order_intents import create_order_intent, preview_order_intent
-from app.db.models import AuditLog, OrderIntent, Signal, Strategy
+from app.db.models import AuditLog, BrokerOrder, OrderIntent, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
+    AlpacaOrderCancellation,
     AlpacaOptionContract,
     AlpacaOptionContractsPage,
     AlpacaOrderRejectedError,
@@ -22,7 +23,10 @@ from app.integrations.alpaca import (
 from app.schemas.order_intents import OrderIntentCreate, OrderIntentPreviewCreate
 from app.schemas.options import OptionContractSelectionCreate
 from app.services.order_intents import (
+    BrokerOrderNotFoundError,
+    OrderIntentPreviewError,
     SignalNotFoundError,
+    cancel_order_intent,
     preview_order_intent_from_signal,
     submit_order_intent,
 )
@@ -35,10 +39,12 @@ class FakeSession:
         order_intent: OrderIntent | None,
         signal: Signal | None = None,
         strategy: Strategy | None = None,
+        broker_order: BrokerOrder | None = None,
     ) -> None:
         self.order_intent = order_intent
         self.signal = signal
         self.strategy = strategy
+        self.broker_order = broker_order
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -58,10 +64,15 @@ class FakeSession:
             return self.strategy
         return None
 
+    def scalar(self, _: object) -> object | None:
+        return self.broker_order
+
     def add(self, obj: object) -> None:
         self.added.append(obj)
         if isinstance(obj, OrderIntent):
             self.order_intent = obj
+        if isinstance(obj, BrokerOrder):
+            self.broker_order = obj
 
     def commit(self) -> None:
         self.commit_count += 1
@@ -114,6 +125,14 @@ class RejectedTradingClient:
         )
 
 
+class SuccessfulCancelTradingClient:
+    def cancel_order(self, alpaca_order_id: str) -> AlpacaOrderCancellation:
+        return AlpacaOrderCancellation(
+            alpaca_order_id=alpaca_order_id,
+            raw_response={"status_code": 204},
+        )
+
+
 class SuccessfulMarketDataClient:
     def get_latest_option_quote(
         self,
@@ -137,6 +156,34 @@ class SuccessfulMarketDataClient:
                 "bs": "10",
                 "ap": "1.30",
                 "as": "12",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
+class ExpensiveMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "209.14",
+                    "bs": "3",
+                    "ap": "212.47",
+                    "as": "2",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "209.14",
+                "bs": "3",
+                "ap": "212.47",
+                "as": "2",
                 "t": "2026-04-23T16:00:00Z",
             },
         )
@@ -181,6 +228,36 @@ def build_previewed_order_intent() -> OrderIntent:
         time_in_force="day",
         status="previewed",
         preview={"source": "test"},
+    )
+
+
+def build_submitted_order_intent() -> OrderIntent:
+    return OrderIntent(
+        id=uuid.uuid4(),
+        underlying_symbol="SPY",
+        option_symbol="SPY260417C00500000",
+        side="buy",
+        quantity=1,
+        order_type="limit",
+        limit_price=Decimal("1.25"),
+        time_in_force="day",
+        status="new",
+        preview={"source": "test"},
+    )
+
+
+def build_broker_order(order_intent: OrderIntent) -> BrokerOrder:
+    return BrokerOrder(
+        id=uuid.uuid4(),
+        order_intent_id=order_intent.id,
+        alpaca_order_id="alpaca-order-123",
+        symbol=order_intent.option_symbol,
+        side=order_intent.side,
+        quantity=Decimal("1"),
+        order_type=order_intent.order_type,
+        limit_price=order_intent.limit_price,
+        status="new",
+        raw_response={"id": "alpaca-order-123", "status": "new"},
     )
 
 
@@ -397,6 +474,26 @@ class OrderIntentSubmissionTests(unittest.TestCase):
                 market_data_client=SuccessfulMarketDataClient(),
             )
 
+    def test_preview_order_intent_blocks_default_expensive_notional(self) -> None:
+        signal = build_signal()
+        db = FakeSession(None, signal)
+
+        with self.assertRaises(OrderIntentPreviewError):
+            preview_order_intent_from_signal(
+                db,
+                OrderIntentPreviewCreate(
+                    signal_id=signal.id,
+                    option_symbol="SPY260417C00500000",
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    time_in_force="day",
+                ),
+                market_data_client=ExpensiveMarketDataClient(),
+            )
+
+        self.assertEqual(db.commit_count, 0)
+
     def test_preview_order_intent_schema_requires_one_contract_source(self) -> None:
         signal_id = uuid.uuid4()
 
@@ -483,6 +580,42 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "order_intent.rejected")
         self.assertEqual(audit_logs[-1].payload["rejection_reason"], "insufficient options buying power")
+
+    def test_cancel_order_intent_requests_broker_cancel(self) -> None:
+        order_intent = build_submitted_order_intent()
+        broker_order = build_broker_order(order_intent)
+        order_intent.broker_orders = [broker_order]
+        db = FakeSession(order_intent, broker_order=broker_order)
+
+        updated_order_intent, updated_broker_order = cancel_order_intent(
+            db,
+            order_intent.id,
+            trading_client=SuccessfulCancelTradingClient(),
+        )
+
+        self.assertEqual(updated_order_intent.status, "cancel_requested")
+        self.assertEqual(updated_broker_order.status, "cancel_requested")
+        self.assertEqual(
+            updated_broker_order.raw_response["cancel_response"]["status_code"],
+            204,
+        )
+        self.assertEqual(db.commit_count, 1)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].event_type, "order_intent.cancel_requested")
+        self.assertEqual(audit_logs[-1].payload["alpaca_order_id"], "alpaca-order-123")
+
+    def test_cancel_order_intent_requires_broker_order(self) -> None:
+        order_intent = build_submitted_order_intent()
+        db = FakeSession(order_intent)
+
+        with self.assertRaises(BrokerOrderNotFoundError):
+            cancel_order_intent(
+                db,
+                order_intent.id,
+                trading_client=SuccessfulCancelTradingClient(),
+            )
+
+        self.assertEqual(db.commit_count, 0)
 
     def test_order_intent_create_matches_supported_options_rules(self) -> None:
         valid_payload = OrderIntentCreate(

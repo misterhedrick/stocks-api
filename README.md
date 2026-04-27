@@ -145,17 +145,22 @@ curl -X POST http://127.0.0.1:8000/api/v1/order-intents/preview \
       "option_type": "call",
       "expiration_date_gte": "2026-04-17",
       "expiration_date_lte": "2026-05-01",
-      "target_strike": "500"
+      "target_strike": "500",
+      "max_estimated_notional": "250",
+      "max_spread": "0.20"
     },
     "side": "buy",
     "quantity": 1,
     "order_type": "limit",
     "time_in_force": "day",
-    "data_feed": "indicative"
+    "data_feed": "indicative",
+    "max_estimated_notional": "250",
+    "max_spread": "0.20"
   }'
 ```
 
 Preview requests must provide exactly one of `option_symbol` or `contract_selection`.
+Generated previews default to `MAX_ESTIMATED_PREMIUM_PER_ORDER` as a max notional guard unless `max_estimated_notional` is supplied. Optional `max_spread` can also reject wide quotes. Contract selection applies these quote constraints while choosing a contract, which helps avoid accidentally selecting deep ITM contracts for small paper tests.
 
 Select an option contract:
 
@@ -170,6 +175,8 @@ curl -X POST http://127.0.0.1:8000/api/v1/options/select-contract \
     "expiration_date_gte": "2026-04-17",
     "expiration_date_lte": "2026-05-01",
     "target_strike": "500",
+    "max_estimated_notional": "250",
+    "max_spread": "0.20",
     "data_feed": "indicative"
   }'
 ```
@@ -217,6 +224,15 @@ Submit a previewed order intent to Alpaca paper trading:
 curl -X POST http://127.0.0.1:8000/api/v1/order-intents/<order_intent_id>/submit \
   -H "Authorization: Bearer change-me"
 ```
+
+Request cancellation for a submitted broker order:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/order-intents/<order_intent_id>/cancel \
+  -H "Authorization: Bearer change-me"
+```
+
+The cancel endpoint sends a cancel request to Alpaca for the linked broker order and marks the local order intent and broker order as `cancel_requested`. Run broker reconciliation afterward to pull the final broker status such as `canceled` or `filled`.
 
 Manually reconcile broker state from Alpaca:
 
