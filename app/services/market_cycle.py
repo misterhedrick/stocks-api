@@ -362,6 +362,8 @@ def _preview_payload_for_signal(
         if isinstance(preview_config.get("rationale"), str)
         else signal.rationale,
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
+        max_estimated_notional=preview_config.get("max_estimated_notional"),
+        max_spread=preview_config.get("max_spread"),
     )
 
 
@@ -526,6 +528,8 @@ def _contract_selection_for_signal(
         expiration_date_lte=preview_config.get("expiration_date_lte"),
         target_strike=preview_config.get("target_strike"),
         underlying_price=preview_config.get("underlying_price"),
+        max_estimated_notional=preview_config.get("max_estimated_notional"),
+        max_spread=preview_config.get("max_spread"),
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
         limit=_int_config(preview_config, "limit", default=100),
     )
