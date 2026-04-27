@@ -83,6 +83,7 @@ def run_market_cycle(
                 "signals_created": scan_result.signals_created,
                 "signals_skipped": scan_result.signals_skipped,
                 "errors": scan_result.errors,
+                "no_signal_reasons": scan_result.no_signal_reasons,
                 "created_signal_ids": [
                     str(signal_id) for signal_id in scan_result.created_signal_ids
                 ],

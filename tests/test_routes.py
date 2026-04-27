@@ -424,6 +424,7 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["strategies_seen"], 2)
         self.assertEqual(response.json()["signals_created"], 1)
+        self.assertEqual(response.json()["no_signal_reasons"], ["No trigger"])
         scanner.assert_called_once_with(db, limit=25)
 
     def test_market_cycle_route_returns_service_result(self) -> None:
@@ -549,6 +550,7 @@ def build_signal_scan_result() -> SignalScanResult:
         signals_created=1,
         signals_skipped=1,
         errors=["Strategy skipped"],
+        no_signal_reasons=["No trigger"],
         created_signal_ids=[uuid.uuid4()],
     )
 

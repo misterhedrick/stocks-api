@@ -248,6 +248,7 @@ curl -H "Authorization: Bearer change-me" \
 The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
 
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
+When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 
 Example strategy config:
 
@@ -392,6 +393,7 @@ MARKET_CYCLE_SUBMIT_ENABLED=false
 
 Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.
+Market-cycle scan details include `no_signal_reasons` from the scanner, which is useful when Render cron runs succeed but create no previews.
 
 Audit logging currently records:
 - strategy creation
@@ -407,7 +409,7 @@ Audit logging currently records:
 - market cycle success or failure
 - auto-submit skips blocked by automation safety gates
 
-Postman coverage includes automation status safety-field assertions, market-cycle submit skip visibility when observable, and the existing preview/manual submit flow.
+Postman coverage includes automation status safety-field assertions, scanner no-op visibility, market-cycle submit skip visibility when observable, and the existing preview/manual submit flow.
 
 Run tests:
 
