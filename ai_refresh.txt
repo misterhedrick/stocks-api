@@ -168,6 +168,8 @@ Current repo structure and purpose:
   - Manually scans active strategy configs and creates signals only.
   - POST /api/v1/jobs/evaluate-exits, bearer-protected.
   - Evaluates latest reconciled positions against strategy scanner.exit rules and creates previewed sell order intents.
+  - POST /api/v1/jobs/preview-unmanaged-exits, bearer-protected.
+  - Creates previewed sell order intents for unmanaged long positions without submitting orders.
   - POST /api/v1/jobs/check-news, bearer-protected.
   - Checks configured market RSS feeds plus owned-ticker RSS searches and records results in job_runs.
   - POST /api/v1/jobs/market-cycle, bearer-protected.
@@ -229,7 +231,9 @@ Current repo structure and purpose:
   - Small helper for writing audit_logs records consistently.
 - app/services/position_exits.py
   - Evaluates latest position_snapshots for exit rules.
-  - Links positions back to the latest active strategy with a buy broker_order for the held symbol.
+  - Links positions back to the latest entry order_intent/strategy for the held symbol when possible.
+  - Reports position_ownership with managed/unmanaged status and reasons such as no linked entry, inactive strategy, or missing exit config.
+  - Supports manual preview_unmanaged_position_exits for creating sell previews on unmanaged long positions.
   - Supports scanner.exit profit_target_percent, stop_loss_percent, and max_days_to_expiration.
   - Creates previewed sell order_intents with quote context and audit logs.
 - app/services/news_scanner.py

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from app.db.models import JobRun, Strategy
 from app.services.automation_status import get_automation_status
@@ -94,7 +95,11 @@ class AutomationStatusTests(unittest.TestCase):
             ],
         )
 
-        result = get_automation_status(db)
+        with patch(
+            "app.services.automation_status.settings.market_cycle_news_enabled",
+            False,
+        ):
+            result = get_automation_status(db)
 
         self.assertTrue(result.switches.scan_enabled)
         self.assertTrue(result.switches.reconcile_enabled)

@@ -21,6 +21,7 @@ from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
 from app.services.news_scanner import NewsFetchError, scan_market_news
 from app.services.position_exits import evaluate_position_exits
+from app.services.position_exits import preview_unmanaged_position_exits
 from app.services.signal_scanner import scan_signals
 
 router = APIRouter(
@@ -120,6 +121,42 @@ def evaluate_exits_route(
         exits_skipped=result.exits_skipped,
         errors=result.errors,
         no_exit_reasons=result.no_exit_reasons,
+        position_ownership=result.position_ownership,
+        order_intent_ids=result.order_intent_ids,
+    )
+
+
+@router.post(
+    "/preview-unmanaged-exits",
+    response_model=PositionExitEvaluationRead,
+    status_code=status.HTTP_200_OK,
+)
+def preview_unmanaged_exits_route(
+    db: Annotated[Session, Depends(get_db)],
+    symbol: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> PositionExitEvaluationRead:
+    try:
+        result = preview_unmanaged_position_exits(db, symbol=symbol, limit=limit)
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return PositionExitEvaluationRead(
+        positions_seen=result.positions_seen,
+        positions_evaluated=result.positions_evaluated,
+        exits_created=result.exits_created,
+        exits_skipped=result.exits_skipped,
+        errors=result.errors,
+        no_exit_reasons=result.no_exit_reasons,
+        position_ownership=result.position_ownership,
         order_intent_ids=result.order_intent_ids,
     )
 

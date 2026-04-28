@@ -147,6 +147,7 @@ def run_market_cycle(
                 "exits_skipped": exit_result.exits_skipped,
                 "errors": exit_result.errors,
                 "no_exit_reasons": exit_result.no_exit_reasons,
+                "position_ownership": exit_result.position_ownership,
                 "order_intent_ids": [
                     str(order_intent_id)
                     for order_intent_id in exit_result.order_intent_ids

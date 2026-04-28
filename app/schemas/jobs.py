@@ -47,6 +47,7 @@ class PositionExitEvaluationRead(BaseModel):
     exits_skipped: int
     errors: list[str]
     no_exit_reasons: list[str]
+    position_ownership: list[dict[str, Any]]
     order_intent_ids: list[uuid.UUID]
 
 

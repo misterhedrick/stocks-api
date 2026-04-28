@@ -27,7 +27,31 @@ class ExitEvaluationResult:
     exits_skipped: int
     errors: list[str]
     no_exit_reasons: list[str]
+    position_ownership: list[dict[str, Any]]
     order_intent_ids: list[uuid.UUID]
+
+
+@dataclass(slots=True)
+class PositionOwnership:
+    symbol: str
+    managed: bool
+    reason: str
+    strategy: Strategy | None = None
+    strategy_id: uuid.UUID | None = None
+    strategy_name: str | None = None
+    order_intent_id: uuid.UUID | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "managed": self.managed,
+            "reason": self.reason,
+            "strategy_id": str(self.strategy_id) if self.strategy_id else None,
+            "strategy_name": self.strategy_name,
+            "order_intent_id": str(self.order_intent_id)
+            if self.order_intent_id
+            else None,
+        }
 
 
 ACTIVE_EXIT_ORDER_STATUSES = {
@@ -56,6 +80,7 @@ def evaluate_position_exits(
     exits_skipped = 0
     errors: list[str] = []
     no_exit_reasons: list[str] = []
+    position_ownership: list[dict[str, Any]] = []
     order_intent_ids: list[uuid.UUID] = []
 
     for position in positions:
@@ -63,14 +88,18 @@ def evaluate_position_exits(
             no_exit_reasons.append(f"{position.symbol}: quantity is not long")
             continue
 
-        strategy = _strategy_for_position(db, position.symbol)
-        if strategy is None:
-            no_exit_reasons.append(f"{position.symbol}: no linked strategy found")
+        ownership = resolve_position_ownership(db, position)
+        position_ownership.append(ownership.as_dict())
+        if not ownership.managed or ownership.strategy is None:
+            no_exit_reasons.append(f"{position.symbol}: {ownership.reason}")
             continue
 
+        strategy = ownership.strategy
         exit_config = _exit_config_for_strategy(strategy)
         if exit_config is None:
-            no_exit_reasons.append(f"{position.symbol}: scanner.exit is not enabled")
+            no_exit_reasons.append(
+                f"{position.symbol}: linked strategy '{strategy.name}' scanner.exit is not enabled"
+            )
             continue
 
         positions_evaluated += 1
@@ -108,6 +137,78 @@ def evaluate_position_exits(
         exits_skipped=exits_skipped,
         errors=errors,
         no_exit_reasons=no_exit_reasons,
+        position_ownership=position_ownership,
+        order_intent_ids=order_intent_ids,
+    )
+
+
+def preview_unmanaged_position_exits(
+    db: Session,
+    *,
+    symbol: str | None = None,
+    limit: int = 100,
+    market_data_client: AlpacaMarketDataClient | None = None,
+) -> ExitEvaluationResult:
+    positions = _latest_position_snapshots(db, limit=limit)
+    if symbol is not None:
+        normalized_symbol = symbol.strip().upper()
+        positions = [
+            position
+            for position in positions
+            if position.symbol.upper() == normalized_symbol
+        ]
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    positions_evaluated = 0
+    exits_created = 0
+    exits_skipped = 0
+    errors: list[str] = []
+    no_exit_reasons: list[str] = []
+    position_ownership: list[dict[str, Any]] = []
+    order_intent_ids: list[uuid.UUID] = []
+
+    for position in positions:
+        if position.quantity <= 0:
+            no_exit_reasons.append(f"{position.symbol}: quantity is not long")
+            continue
+
+        ownership = resolve_position_ownership(db, position)
+        position_ownership.append(ownership.as_dict())
+        if ownership.managed:
+            no_exit_reasons.append(f"{position.symbol}: position is already managed")
+            continue
+
+        positions_evaluated += 1
+        if _has_active_exit_order(db, position.symbol):
+            exits_skipped += 1
+            no_exit_reasons.append(f"{position.symbol}: active exit order already exists")
+            continue
+
+        try:
+            order_intent = _create_exit_order_intent(
+                db,
+                position,
+                None,
+                _default_unmanaged_exit_config(),
+                trigger_reason=f"manual unmanaged exit preview: {ownership.reason}",
+                market_data_client=client,
+            )
+        except Exception as exc:
+            exits_skipped += 1
+            errors.append(f"{position.symbol}: {exc.__class__.__name__}: {exc}")
+            continue
+
+        exits_created += 1
+        order_intent_ids.append(order_intent.id)
+
+    return ExitEvaluationResult(
+        positions_seen=len(positions),
+        positions_evaluated=positions_evaluated,
+        exits_created=exits_created,
+        exits_skipped=exits_skipped,
+        errors=errors,
+        no_exit_reasons=no_exit_reasons,
+        position_ownership=position_ownership,
         order_intent_ids=order_intent_ids,
     )
 
@@ -137,15 +238,68 @@ def _latest_position_snapshots(db: Session, *, limit: int) -> list[PositionSnaps
     return list(db.scalars(statement))
 
 
-def _strategy_for_position(db: Session, symbol: str) -> Strategy | None:
+def resolve_position_ownership(
+    db: Session,
+    position: PositionSnapshot,
+) -> PositionOwnership:
+    order_intent = _latest_entry_order_intent_for_position(db, position.symbol)
+    if order_intent is None:
+        return PositionOwnership(
+            symbol=position.symbol,
+            managed=False,
+            reason="no linked entry order intent found",
+        )
+
+    if order_intent.strategy_id is None:
+        return PositionOwnership(
+            symbol=position.symbol,
+            managed=False,
+            reason="linked order intent has no strategy",
+            order_intent_id=order_intent.id,
+        )
+
+    strategy = db.get(Strategy, order_intent.strategy_id)
+    if strategy is None:
+        return PositionOwnership(
+            symbol=position.symbol,
+            managed=False,
+            reason="linked strategy was not found",
+            strategy_id=order_intent.strategy_id,
+            order_intent_id=order_intent.id,
+        )
+
+    if not strategy.is_active:
+        return PositionOwnership(
+            symbol=position.symbol,
+            managed=False,
+            reason=f"linked strategy '{strategy.name}' is inactive",
+            strategy=strategy,
+            strategy_id=strategy.id,
+            strategy_name=strategy.name,
+            order_intent_id=order_intent.id,
+        )
+
+    return PositionOwnership(
+        symbol=position.symbol,
+        managed=True,
+        reason=f"linked to active strategy '{strategy.name}'",
+        strategy=strategy,
+        strategy_id=strategy.id,
+        strategy_name=strategy.name,
+        order_intent_id=order_intent.id,
+    )
+
+
+def _latest_entry_order_intent_for_position(
+    db: Session,
+    symbol: str,
+) -> OrderIntent | None:
     statement = (
-        select(Strategy)
+        select(OrderIntent)
         .select_from(BrokerOrder)
         .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
-        .join(Strategy, OrderIntent.strategy_id == Strategy.id)
         .where(BrokerOrder.symbol == symbol)
         .where(func.lower(BrokerOrder.side) == "buy")
-        .where(Strategy.is_active.is_(True))
         .order_by(BrokerOrder.submitted_at.desc().nullslast(), BrokerOrder.created_at.desc())
         .limit(1)
     )
@@ -201,7 +355,7 @@ def _exit_trigger_reason(
 def _create_exit_order_intent(
     db: Session,
     position: PositionSnapshot,
-    strategy: Strategy,
+    strategy: Strategy | None,
     exit_config: dict[str, Any],
     *,
     trigger_reason: str,
@@ -243,7 +397,7 @@ def _create_exit_order_intent(
             raise ValueError("unable to derive exit limit price from quote")
 
     order_intent = OrderIntent(
-        strategy_id=strategy.id,
+        strategy_id=strategy.id if strategy is not None else None,
         signal_id=None,
         underlying_symbol=_underlying_from_position(position),
         option_symbol=position.symbol,
@@ -272,6 +426,10 @@ def _create_exit_order_intent(
                 else None,
                 "captured_at": position.captured_at.isoformat(),
             },
+            "position_ownership": {
+                "strategy_id": str(strategy.id) if strategy is not None else None,
+                "strategy_name": strategy.name if strategy is not None else None,
+            },
             "quote": quote_preview,
         },
     )
@@ -285,7 +443,7 @@ def _create_exit_order_intent(
         entity_id=order_intent.id,
         message="Exit order intent preview generated from current position",
         payload={
-            "strategy_id": str(strategy.id),
+            "strategy_id": str(strategy.id) if strategy is not None else None,
             "option_symbol": order_intent.option_symbol,
             "side": order_intent.side,
             "quantity": order_intent.quantity,
@@ -299,6 +457,15 @@ def _create_exit_order_intent(
     db.commit()
     db.refresh(order_intent)
     return order_intent
+
+
+def _default_unmanaged_exit_config() -> dict[str, Any]:
+    return {
+        "order_type": "limit",
+        "limit_price_source": "bid",
+        "time_in_force": "day",
+        "data_feed": "indicative",
+    }
 
 
 def _has_active_exit_order(db: Session, symbol: str) -> bool:

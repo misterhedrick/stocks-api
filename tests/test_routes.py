@@ -473,6 +473,13 @@ class RouteBehaviorTests(unittest.TestCase):
             exits_skipped=0,
             errors=[],
             no_exit_reasons=[],
+            position_ownership=[
+                {
+                    "symbol": "SPY260429C00500000",
+                    "managed": True,
+                    "reason": "linked to active strategy",
+                }
+            ],
             order_intent_ids=[uuid.uuid4()],
         )
 
@@ -488,7 +495,47 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["positions_seen"], 1)
         self.assertEqual(response.json()["exits_created"], 1)
+        self.assertTrue(response.json()["position_ownership"][0]["managed"])
         exits.assert_called_once_with(db, limit=25)
+
+    def test_preview_unmanaged_exits_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = ExitEvaluationResult(
+            positions_seen=1,
+            positions_evaluated=1,
+            exits_created=1,
+            exits_skipped=0,
+            errors=[],
+            no_exit_reasons=[],
+            position_ownership=[
+                {
+                    "symbol": "SPY",
+                    "managed": False,
+                    "reason": "no linked entry order intent found",
+                }
+            ],
+            order_intent_ids=[uuid.uuid4()],
+        )
+
+        with patch(
+            "app.api.routes.jobs.preview_unmanaged_position_exits",
+            return_value=result,
+        ) as unmanaged_exits:
+            response = client.post(
+                "/api/v1/jobs/preview-unmanaged-exits?symbol=SPY&limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["exits_created"], 1)
+        self.assertFalse(response.json()["position_ownership"][0]["managed"])
+        unmanaged_exits.assert_called_once_with(db, symbol="SPY", limit=25)
 
     def test_check_news_route_returns_service_result(self) -> None:
         db = FakeRouteSession()

@@ -270,7 +270,16 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/evaluate-exits?limit=100" \
   -H "Authorization: Bearer change-me"
 ```
 
-The exit evaluator reads the latest reconciled position snapshots, links each position back to its most recent active strategy order, checks `scanner.exit` rules, and creates previewed sell order intents when a rule triggers. It supports profit target, stop loss, and days-to-expiration rules. Market-cycle exit evaluation is controlled by `MARKET_CYCLE_EXIT_ENABLED`; auto-submit of exit intents still requires `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and a strategy `scanner.exit.submit.enabled=true`.
+The exit evaluator reads the latest reconciled position snapshots, links each position back to its most recent entry order intent and strategy when possible, checks `scanner.exit` rules, and creates previewed sell order intents when a rule triggers. It supports profit target, stop loss, and days-to-expiration rules. The response includes `position_ownership` so unmanaged positions are visible with reasons such as no linked entry order, inactive strategy, or missing exit config. Market-cycle exit evaluation is controlled by `MARKET_CYCLE_EXIT_ENABLED`; auto-submit of exit intents still requires `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and a strategy `scanner.exit.submit.enabled=true`.
+
+Preview exits for unmanaged positions:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/preview-unmanaged-exits?symbol=SPY" \
+  -H "Authorization: Bearer change-me"
+```
+
+This creates previewed sell order intents only for positions that are not already linked to an active managed strategy. It does not submit the orders. Omit `symbol` to preview exits for all currently unmanaged long positions.
 
 Check market and owned-ticker news:
 

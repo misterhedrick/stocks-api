@@ -125,6 +125,13 @@ def build_exit_evaluation_result(order_intent_id: uuid.UUID | None = None) -> Ex
         exits_skipped=0,
         errors=[],
         no_exit_reasons=[],
+        position_ownership=[
+            {
+                "symbol": "SPY260429C00500000",
+                "managed": True,
+                "reason": "linked to active strategy",
+            }
+        ],
         order_intent_ids=[order_intent_id or uuid.uuid4()],
     )
 
@@ -424,6 +431,7 @@ class MarketCycleTests(unittest.TestCase):
         self.assertTrue(result.exit_enabled)
         self.assertEqual(result.exits["positions_seen"], 1)
         self.assertEqual(result.exits["exits_created"], 1)
+        self.assertTrue(result.exits["position_ownership"][0]["managed"])
         self.assertEqual(result.exits["order_intent_ids"], [str(order_intent_id)])
         exits.assert_called_once_with(db, limit=25)
 
