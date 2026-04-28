@@ -47,6 +47,14 @@ def build_strategy() -> Strategy:
                 "type": "percent_change",
                 "symbols": ["spy", " QQQ "],
                 "preview": {"enabled": True},
+                "exit": {
+                    "enabled": True,
+                    "profit_target_percent": "30",
+                    "submit": {
+                        "enabled": True,
+                        "allowed_sides": ["sell"],
+                    },
+                },
                 "submit": {
                     "enabled": True,
                     "max_orders_per_cycle": 1,
@@ -90,6 +98,7 @@ class AutomationStatusTests(unittest.TestCase):
 
         self.assertTrue(result.switches.scan_enabled)
         self.assertTrue(result.switches.reconcile_enabled)
+        self.assertFalse(result.switches.news_enabled)
         self.assertFalse(result.trading_automation_enabled)
         self.assertTrue(result.auto_submit_requires_paper)
         self.assertTrue(result.paper_mode)
@@ -104,7 +113,10 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(strategy.scanner_type, "percent_change")
         self.assertEqual(strategy.scanner_symbols, ["SPY", "QQQ"])
         self.assertTrue(strategy.preview_enabled)
+        self.assertTrue(strategy.exit_enabled)
         self.assertTrue(strategy.submit_enabled)
+        self.assertEqual(strategy.exit_limits["profit_target_percent"], "30")
+        self.assertEqual(strategy.exit_limits["submit"]["allowed_sides"], ["sell"])
         self.assertEqual(strategy.submit_limits["max_orders_per_cycle"], 1)
         self.assertNotIn("ignored_setting", strategy.submit_limits)
         self.assertEqual(result.latest_job_runs["market_cycle"].job_name, "market_cycle")

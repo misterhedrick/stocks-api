@@ -263,6 +263,24 @@ curl -H "Authorization: Bearer change-me" \
 
 The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
 
+Evaluate current positions for exits:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/evaluate-exits?limit=100" \
+  -H "Authorization: Bearer change-me"
+```
+
+The exit evaluator reads the latest reconciled position snapshots, links each position back to its most recent active strategy order, checks `scanner.exit` rules, and creates previewed sell order intents when a rule triggers. It supports profit target, stop loss, and days-to-expiration rules. Market-cycle exit evaluation is controlled by `MARKET_CYCLE_EXIT_ENABLED`; auto-submit of exit intents still requires `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and a strategy `scanner.exit.submit.enabled=true`.
+
+Check market and owned-ticker news:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/check-news?market_limit=10&ticker_limit=5" \
+  -H "Authorization: Bearer change-me"
+```
+
+The news scan checks configured market RSS feeds plus a deeper feed search for each currently owned ticker. Option contract symbols are reduced to their underlying ticker for news searches. Results are stored in the `news_scan` job run details with headline, URL, source, publish time, and simple impact keywords such as Fed, rates, inflation, earnings, downgrade, lawsuit, merger, oil, yields, and volatility. Market-cycle news checks are controlled by `MARKET_CYCLE_NEWS_ENABLED`.
+
 Seed preview-first paper strategies:
 
 ```powershell
@@ -425,10 +443,15 @@ Market-cycle behavior is controlled by these web-service env vars:
 MARKET_CYCLE_SCAN_ENABLED=true
 MARKET_CYCLE_RECONCILE_ENABLED=true
 MARKET_CYCLE_PREVIEW_ENABLED=false
+MARKET_CYCLE_EXIT_ENABLED=false
+MARKET_CYCLE_NEWS_ENABLED=false
 MARKET_CYCLE_SUBMIT_ENABLED=false
+NEWS_REQUEST_TIMEOUT_SECONDS=10
+NEWS_MARKET_RSS_FEEDS=https://news.google.com/rss/search?q=stock%20market%20OR%20Federal%20Reserve%20OR%20inflation%20OR%20earnings&hl=en-US&gl=US&ceid=US:en
+NEWS_TICKER_RSS_TEMPLATE=https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en
 ```
 
-Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
+Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, evaluate current positions for exit previews, check market/owned-ticker news, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.
 Market-cycle scan details include `no_signal_reasons` from the scanner, which is useful when Render cron runs succeed but create no previews.
 
@@ -473,6 +496,8 @@ Set these environment variables in Render:
 - `MARKET_CYCLE_SCAN_ENABLED=true`
 - `MARKET_CYCLE_RECONCILE_ENABLED=true`
 - `MARKET_CYCLE_PREVIEW_ENABLED=false`
+- `MARKET_CYCLE_EXIT_ENABLED=false`
+- `MARKET_CYCLE_NEWS_ENABLED=false`
 - `MARKET_CYCLE_SUBMIT_ENABLED=false`
 - `TRADING_AUTOMATION_ENABLED=false` until you are intentionally ready for automated paper submit
 - `AUTO_SUBMIT_REQUIRES_PAPER=true`

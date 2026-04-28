@@ -90,6 +90,7 @@ def _price_threshold_payload(
                     target_strike=target_strike,
                     rationale=f"{name}: preview only; does not submit.",
                 ),
+                "exit": _exit_config(),
                 "submit": _disabled_submit_config(),
             }
         },
@@ -126,6 +127,7 @@ def _percent_change_payload(
                     target_strike=target_strike,
                     rationale=f"{name}: preview only; does not submit.",
                 ),
+                "exit": _exit_config(),
                 "submit": _disabled_submit_config(),
             }
         },
@@ -175,6 +177,38 @@ def _disabled_submit_config() -> dict[str, Any]:
             }
         ],
         "allowed_sides": ["buy"],
+    }
+
+
+def _exit_config() -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "profit_target_percent": "30",
+        "stop_loss_percent": "20",
+        "max_days_to_expiration": 1,
+        "max_contracts_per_exit": 1,
+        "order_type": "limit",
+        "limit_price_source": "bid",
+        "time_in_force": "day",
+        "data_feed": "indicative",
+        "max_spread": "0.30",
+        "submit": {
+            "enabled": True,
+            "max_orders_per_cycle": 1,
+            "max_contracts_per_order": 1,
+            "max_contracts_per_cycle": 1,
+            "max_notional_per_order": "100000.00",
+            "max_orders_per_trading_day": 3,
+            "trading_day_timezone": "America/New_York",
+            "trade_windows": [
+                {
+                    "timezone": "America/New_York",
+                    "start": "09:45",
+                    "end": "15:45",
+                }
+            ],
+            "allowed_sides": ["sell"],
+        },
     }
 
 

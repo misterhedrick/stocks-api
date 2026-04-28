@@ -10,6 +10,8 @@ from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, St
 from app.services.automation_guard import AutomationDecision
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import run_market_cycle
+from app.services.news_scanner import NewsScanResult
+from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 
 
@@ -115,6 +117,37 @@ def build_reconciliation_result() -> BrokerReconciliationResult:
     )
 
 
+def build_exit_evaluation_result(order_intent_id: uuid.UUID | None = None) -> ExitEvaluationResult:
+    return ExitEvaluationResult(
+        positions_seen=1,
+        positions_evaluated=1,
+        exits_created=1,
+        exits_skipped=0,
+        errors=[],
+        no_exit_reasons=[],
+        order_intent_ids=[order_intent_id or uuid.uuid4()],
+    )
+
+
+def build_news_scan_result() -> NewsScanResult:
+    return NewsScanResult(
+        job_run=build_job_run("news_scan"),
+        market_items=[
+            {
+                "title": "Fed rate news",
+                "url": "https://example.test/news",
+                "source": "Example",
+                "published_at": None,
+                "impact_keywords": ["fed", "rate"],
+            }
+        ],
+        ticker_items={"SPY": []},
+        owned_symbols=["SPY"],
+        sources_checked=2,
+        errors=[],
+    )
+
+
 def build_strategy() -> Strategy:
     now = datetime.now(timezone.utc)
     return Strategy(
@@ -207,6 +240,20 @@ def allowed_automation_decision() -> AutomationDecision:
 
 
 class MarketCycleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.switch_patches = [
+            patch("app.services.market_cycle.settings.market_cycle_preview_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_exit_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_news_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_submit_enabled", False),
+        ]
+        for switch_patch in self.switch_patches:
+            switch_patch.start()
+
+    def tearDown(self) -> None:
+        for switch_patch in reversed(self.switch_patches):
+            switch_patch.stop()
+
     def test_run_market_cycle_runs_enabled_scan_and_reconciliation_steps(self) -> None:
         db = FakeMarketCycleSession()
 
@@ -228,10 +275,14 @@ class MarketCycleTests(unittest.TestCase):
         self.assertTrue(result.scan_enabled)
         self.assertTrue(result.reconcile_enabled)
         self.assertFalse(result.preview_enabled)
+        self.assertFalse(result.exit_enabled)
+        self.assertFalse(result.news_enabled)
         self.assertFalse(result.submit_enabled)
         self.assertEqual(result.scan["signals_created"], 1)
         self.assertEqual(result.reconcile["orders_seen"], 2)
         self.assertEqual(result.preview["status"], "disabled")
+        self.assertEqual(result.exits["status"], "disabled")
+        self.assertEqual(result.news["status"], "disabled")
         self.assertEqual(result.submit["status"], "disabled")
         scanner.assert_called_once_with(db, limit=25)
         reconcile.assert_called_once_with(db, order_limit=50, fill_page_size=75)
@@ -333,6 +384,54 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.submit["skipped"], 0)
         self.assertEqual(result.submit["broker_order_ids"], [str(broker_order.id)])
         submit.assert_called_once_with(db, order_intent.id)
+
+    def test_run_market_cycle_evaluates_exits_when_enabled(self) -> None:
+        db = FakeMarketCycleSession()
+        order_intent_id = uuid.uuid4()
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_exit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.evaluate_position_exits",
+            return_value=build_exit_evaluation_result(order_intent_id),
+        ) as exits:
+            result = run_market_cycle(db, scan_limit=25)
+
+        self.assertTrue(result.exit_enabled)
+        self.assertEqual(result.exits["positions_seen"], 1)
+        self.assertEqual(result.exits["exits_created"], 1)
+        self.assertEqual(result.exits["order_intent_ids"], [str(order_intent_id)])
+        exits.assert_called_once_with(db, limit=25)
+
+    def test_run_market_cycle_checks_news_when_enabled(self) -> None:
+        db = FakeMarketCycleSession()
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_news_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.scan_market_news",
+            return_value=build_news_scan_result(),
+        ) as news_scan:
+            result = run_market_cycle(db)
+
+        self.assertTrue(result.news_enabled)
+        self.assertEqual(result.news["owned_symbols"], ["SPY"])
+        self.assertEqual(result.news["sources_checked"], 2)
+        news_scan.assert_called_once_with(db)
 
     def test_run_market_cycle_skips_auto_submit_without_strategy_submit_config(self) -> None:
         strategy = build_strategy()

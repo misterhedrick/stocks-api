@@ -20,6 +20,8 @@ from app.schemas.automation import (
 )
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
+from app.services.news_scanner import NewsScanResult
+from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 
 
@@ -456,6 +458,62 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_evaluate_exits_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = ExitEvaluationResult(
+            positions_seen=1,
+            positions_evaluated=1,
+            exits_created=1,
+            exits_skipped=0,
+            errors=[],
+            no_exit_reasons=[],
+            order_intent_ids=[uuid.uuid4()],
+        )
+
+        with patch(
+            "app.api.routes.jobs.evaluate_position_exits",
+            return_value=result,
+        ) as exits:
+            response = client.post(
+                "/api/v1/jobs/evaluate-exits?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["positions_seen"], 1)
+        self.assertEqual(response.json()["exits_created"], 1)
+        exits.assert_called_once_with(db, limit=25)
+
+    def test_check_news_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_news_scan_result()
+
+        with patch(
+            "app.api.routes.jobs.scan_market_news",
+            return_value=result,
+        ) as news_scan:
+            response = client.post(
+                "/api/v1/jobs/check-news?market_limit=3&ticker_limit=2",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["owned_symbols"], ["SPY"])
+        self.assertEqual(response.json()["sources_checked"], 2)
+        news_scan.assert_called_once_with(db, market_limit=3, ticker_limit=2)
+
     def test_automation_status_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -469,6 +527,8 @@ class RouteBehaviorTests(unittest.TestCase):
                 scan_enabled=True,
                 reconcile_enabled=True,
                 preview_enabled=False,
+                exit_enabled=False,
+                news_enabled=False,
                 submit_enabled=False,
             ),
             trading_automation_enabled=False,
@@ -573,11 +633,45 @@ def build_market_cycle_result() -> MarketCycleResult:
         scan_enabled=True,
         reconcile_enabled=True,
         preview_enabled=False,
+        exit_enabled=False,
+        news_enabled=False,
         submit_enabled=False,
         scan={"signals_created": 1},
         reconcile={"orders_seen": 2},
         preview={"status": "disabled"},
+        exits={"status": "disabled"},
+        news={"status": "disabled"},
         submit={"status": "disabled"},
+    )
+
+
+def build_news_scan_result() -> NewsScanResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="news_scan",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+    return NewsScanResult(
+        job_run=job_run,
+        market_items=[
+            {
+                "title": "Fed rates move stocks",
+                "url": "https://example.test/market",
+                "source": "Example",
+                "published_at": now.isoformat(),
+                "impact_keywords": ["fed", "rate"],
+            }
+        ],
+        ticker_items={"SPY": []},
+        owned_symbols=["SPY"],
+        sources_checked=2,
+        errors=[],
     )
 
 

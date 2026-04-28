@@ -13,10 +13,14 @@ from app.schemas.jobs import (
     BrokerReconciliationRead,
     JobRunRead,
     MarketCycleRead,
+    NewsScanRead,
+    PositionExitEvaluationRead,
     SignalScanRead,
 )
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
+from app.services.news_scanner import NewsFetchError, scan_market_news
+from app.services.position_exits import evaluate_position_exits
 from app.services.signal_scanner import scan_signals
 
 router = APIRouter(
@@ -88,6 +92,71 @@ def scan_signals_route(
 
 
 @router.post(
+    "/evaluate-exits",
+    response_model=PositionExitEvaluationRead,
+    status_code=status.HTTP_200_OK,
+)
+def evaluate_exits_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> PositionExitEvaluationRead:
+    try:
+        result = evaluate_position_exits(db, limit=limit)
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return PositionExitEvaluationRead(
+        positions_seen=result.positions_seen,
+        positions_evaluated=result.positions_evaluated,
+        exits_created=result.exits_created,
+        exits_skipped=result.exits_skipped,
+        errors=result.errors,
+        no_exit_reasons=result.no_exit_reasons,
+        order_intent_ids=result.order_intent_ids,
+    )
+
+
+@router.post(
+    "/check-news",
+    response_model=NewsScanRead,
+    status_code=status.HTTP_200_OK,
+)
+def check_news_route(
+    db: Annotated[Session, Depends(get_db)],
+    market_limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    ticker_limit: Annotated[int, Query(ge=1, le=25)] = 5,
+) -> NewsScanRead:
+    try:
+        result = scan_market_news(
+            db,
+            market_limit=market_limit,
+            ticker_limit=ticker_limit,
+        )
+    except NewsFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return NewsScanRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        market_items=result.market_items,
+        ticker_items=result.ticker_items,
+        owned_symbols=result.owned_symbols,
+        sources_checked=result.sources_checked,
+        errors=result.errors,
+    )
+
+
+@router.post(
     "/market-cycle",
     response_model=MarketCycleRead,
     status_code=status.HTTP_200_OK,
@@ -121,9 +190,13 @@ def market_cycle_route(
         scan_enabled=result.scan_enabled,
         reconcile_enabled=result.reconcile_enabled,
         preview_enabled=result.preview_enabled,
+        exit_enabled=result.exit_enabled,
+        news_enabled=result.news_enabled,
         submit_enabled=result.submit_enabled,
         scan=result.scan,
         reconcile=result.reconcile,
         preview=result.preview,
+        exits=result.exits,
+        news=result.news,
         submit=result.submit,
     )

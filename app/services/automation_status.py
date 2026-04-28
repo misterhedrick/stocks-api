@@ -27,6 +27,17 @@ SUBMIT_LIMIT_KEYS = (
     "trade_windows",
     "allowed_sides",
 )
+EXIT_LIMIT_KEYS = (
+    "profit_target_percent",
+    "stop_loss_percent",
+    "max_days_to_expiration",
+    "max_contracts_per_exit",
+    "order_type",
+    "limit_price_source",
+    "time_in_force",
+    "data_feed",
+    "max_spread",
+)
 
 
 def get_automation_status(db: Session) -> AutomationStatusRead:
@@ -43,6 +54,8 @@ def get_automation_status(db: Session) -> AutomationStatusRead:
             scan_enabled=settings.market_cycle_scan_enabled,
             reconcile_enabled=settings.market_cycle_reconcile_enabled,
             preview_enabled=settings.market_cycle_preview_enabled,
+            exit_enabled=settings.market_cycle_exit_enabled,
+            news_enabled=settings.market_cycle_news_enabled,
             submit_enabled=settings.market_cycle_submit_enabled,
         ),
         trading_automation_enabled=settings.trading_automation_enabled,
@@ -67,6 +80,7 @@ def _strategy_status(strategy: Strategy) -> AutomationStrategyRead:
         scanner_config = {}
 
     preview_config = scanner_config.get("preview")
+    exit_config = scanner_config.get("exit")
     submit_config = scanner_config.get("submit")
 
     return AutomationStrategyRead(
@@ -76,7 +90,9 @@ def _strategy_status(strategy: Strategy) -> AutomationStrategyRead:
         scanner_type=_optional_string(scanner_config.get("type")),
         scanner_symbols=_scanner_symbols(scanner_config),
         preview_enabled=_enabled_config(preview_config),
+        exit_enabled=_enabled_config(exit_config),
         submit_enabled=_enabled_config(submit_config),
+        exit_limits=_exit_limits(exit_config),
         submit_limits=_submit_limits(submit_config),
         updated_at=strategy.updated_at,
     )
@@ -120,6 +136,20 @@ def _submit_limits(config: object) -> dict[str, Any]:
         for key in SUBMIT_LIMIT_KEYS
         if key in config
     }
+
+
+def _exit_limits(config: object) -> dict[str, Any]:
+    if not isinstance(config, dict):
+        return {}
+    limits = {
+        key: config[key]
+        for key in EXIT_LIMIT_KEYS
+        if key in config
+    }
+    submit_config = config.get("submit")
+    if isinstance(submit_config, dict):
+        limits["submit"] = _submit_limits(submit_config)
+    return limits
 
 
 def _optional_string(value: object) -> str | None:

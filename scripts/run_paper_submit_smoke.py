@@ -24,6 +24,7 @@ from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.order_intents import (
     cancel_order_intent,
+    OrderIntentStateError,
     preview_order_intent_from_signal,
     submit_order_intent,
 )
@@ -137,17 +138,26 @@ def main() -> None:
             _print_reconciliation(db, "post_submit_reconciliation")
 
         if not args.skip_cancel:
-            canceled_intent, canceled_broker = cancel_order_intent(
-                db,
-                submitted_intent.id,
-                trading_client=trading_client,
-            )
-            print(
-                "cancel_requested",
-                f"order_intent_id={canceled_intent.id}",
-                f"broker_order_id={canceled_broker.id}",
-                f"status={canceled_intent.status}",
-            )
+            try:
+                canceled_intent, canceled_broker = cancel_order_intent(
+                    db,
+                    submitted_intent.id,
+                    trading_client=trading_client,
+                )
+                print(
+                    "cancel_requested",
+                    f"order_intent_id={canceled_intent.id}",
+                    f"broker_order_id={canceled_broker.id}",
+                    f"status={canceled_intent.status}",
+                )
+            except OrderIntentStateError as exc:
+                if exc.current_status != "filled":
+                    raise
+                print(
+                    "cancel_skipped_terminal",
+                    f"order_intent_id={submitted_intent.id}",
+                    f"status={exc.current_status}",
+                )
             if not args.skip_reconcile:
                 _print_reconciliation(db, "post_cancel_reconciliation")
 

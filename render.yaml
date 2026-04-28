@@ -33,8 +33,14 @@ services:
         value: true
       - key: MARKET_CYCLE_PREVIEW_ENABLED
         value: false
+      - key: MARKET_CYCLE_EXIT_ENABLED
+        value: false
+      - key: MARKET_CYCLE_NEWS_ENABLED
+        value: false
       - key: MARKET_CYCLE_SUBMIT_ENABLED
         value: false
+      - key: NEWS_REQUEST_TIMEOUT_SECONDS
+        value: 10
       - key: TRADING_AUTOMATION_ENABLED
         value: false
       - key: AUTO_SUBMIT_REQUIRES_PAPER

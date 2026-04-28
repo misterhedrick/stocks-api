@@ -29,7 +29,16 @@ class Settings(BaseSettings):
     market_cycle_scan_enabled: bool = True
     market_cycle_reconcile_enabled: bool = True
     market_cycle_preview_enabled: bool = False
+    market_cycle_exit_enabled: bool = False
+    market_cycle_news_enabled: bool = False
     market_cycle_submit_enabled: bool = False
+    news_request_timeout_seconds: int = 10
+    news_market_rss_feeds: str = (
+        "https://news.google.com/rss/search?q=stock%20market%20OR%20Federal%20Reserve%20OR%20inflation%20OR%20earnings&hl=en-US&gl=US&ceid=US:en"
+    )
+    news_ticker_rss_template: str = (
+        "https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en"
+    )
     trading_automation_enabled: bool = False
     auto_submit_requires_paper: bool = True
     max_auto_orders_per_cycle: int = 1

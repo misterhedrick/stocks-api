@@ -17,7 +17,9 @@ from app.schemas.order_intents import OrderIntentPreviewCreate
 from app.services.automation_guard import can_auto_submit_order_intent
 from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
+from app.services.news_scanner import scan_market_news
 from app.services.order_intents import preview_order_intent_from_signal, submit_order_intent
+from app.services.position_exits import evaluate_position_exits
 from app.services.signal_scanner import scan_signals
 
 
@@ -27,10 +29,14 @@ class MarketCycleResult:
     scan_enabled: bool
     reconcile_enabled: bool
     preview_enabled: bool
+    exit_enabled: bool
+    news_enabled: bool
     submit_enabled: bool
     scan: dict[str, Any] | None
     reconcile: dict[str, Any] | None
     preview: dict[str, Any] | None
+    exits: dict[str, Any] | None
+    news: dict[str, Any] | None
     submit: dict[str, Any] | None
 
 
@@ -64,15 +70,20 @@ def run_market_cycle(
     scan_enabled = settings.market_cycle_scan_enabled
     reconcile_enabled = settings.market_cycle_reconcile_enabled
     preview_enabled = settings.market_cycle_preview_enabled
+    exit_enabled = settings.market_cycle_exit_enabled
+    news_enabled = settings.market_cycle_news_enabled
     submit_enabled = settings.market_cycle_submit_enabled
 
     scan = None
     reconcile = None
     preview = _disabled_step("preview")
+    exits = _disabled_step("exits")
+    news = _disabled_step("news")
     submit = _disabled_step("submit")
 
     try:
         created_signal_ids: list[uuid.UUID] = []
+        submittable_order_intent_ids: list[uuid.UUID] = []
         if scan_enabled:
             scan_result = scan_signals(db, limit=scan_limit)
             created_signal_ids = scan_result.created_signal_ids
@@ -93,11 +104,40 @@ def run_market_cycle(
 
         if preview_enabled:
             preview = _preview_created_signals(db, created_signal_ids)
+            submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
+
+        if exit_enabled:
+            exit_result = evaluate_position_exits(db, limit=scan_limit)
+            exits = {
+                "status": "completed",
+                "positions_seen": exit_result.positions_seen,
+                "positions_evaluated": exit_result.positions_evaluated,
+                "exits_created": exit_result.exits_created,
+                "exits_skipped": exit_result.exits_skipped,
+                "errors": exit_result.errors,
+                "no_exit_reasons": exit_result.no_exit_reasons,
+                "order_intent_ids": [
+                    str(order_intent_id)
+                    for order_intent_id in exit_result.order_intent_ids
+                ],
+            }
+            submittable_order_intent_ids.extend(exit_result.order_intent_ids)
+
+        if news_enabled:
+            news_result = scan_market_news(db)
+            news = {
+                "job_run_id": str(news_result.job_run.id),
+                "market_items": news_result.market_items,
+                "ticker_items": news_result.ticker_items,
+                "owned_symbols": news_result.owned_symbols,
+                "sources_checked": news_result.sources_checked,
+                "errors": news_result.errors,
+            }
 
         if submit_enabled:
             submit = _submit_previewed_order_intents(
                 db,
-                _order_intent_ids_from_preview(preview),
+                submittable_order_intent_ids,
                 cycle_id=str(job_run.id),
             )
 
@@ -124,10 +164,14 @@ def run_market_cycle(
             "scan_enabled": scan_enabled,
             "reconcile_enabled": reconcile_enabled,
             "preview_enabled": preview_enabled,
+            "exit_enabled": exit_enabled,
+            "news_enabled": news_enabled,
             "submit_enabled": submit_enabled,
             "scan": scan,
             "reconcile": reconcile,
             "preview": preview,
+            "exits": exits,
+            "news": news,
             "submit": submit,
         }
         job_run.status = "succeeded"
@@ -250,7 +294,7 @@ def _submit_previewed_order_intents(
             continue
 
         try:
-            submit_config = _submit_config_for_strategy(strategy)
+            submit_config = _submit_config_for_order_intent(strategy, order_intent)
             guard_decision = can_auto_submit_order_intent(
                 db,
                 order_intent,
@@ -380,6 +424,26 @@ def _preview_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
     return preview_config
 
 
+def _submit_config_for_order_intent(
+    strategy: Strategy,
+    order_intent: OrderIntent,
+) -> dict[str, Any]:
+    preview = order_intent.preview if isinstance(order_intent.preview, dict) else {}
+    if (
+        order_intent.side.lower() == "sell"
+        and preview.get("source") == "position_exit_evaluator"
+    ):
+        exit_config = _exit_config_for_strategy(strategy)
+        submit_config = exit_config.get("submit")
+        if not isinstance(submit_config, dict):
+            raise ValueError("scanner.exit.submit config is required")
+        if submit_config.get("enabled") is not True:
+            raise ValueError("scanner.exit.submit.enabled must be true")
+        return submit_config
+
+    return _submit_config_for_strategy(strategy)
+
+
 def _submit_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
     scanner_config = strategy.config.get("scanner")
     if not isinstance(scanner_config, dict):
@@ -391,6 +455,19 @@ def _submit_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
     if submit_config.get("enabled") is not True:
         raise ValueError("scanner.submit.enabled must be true")
     return submit_config
+
+
+def _exit_config_for_strategy(strategy: Strategy) -> dict[str, Any]:
+    scanner_config = strategy.config.get("scanner")
+    if not isinstance(scanner_config, dict):
+        raise ValueError("strategy scanner config is required for exit submit")
+
+    exit_config = scanner_config.get("exit")
+    if not isinstance(exit_config, dict):
+        raise ValueError("scanner.exit config is required")
+    if exit_config.get("enabled") is not True:
+        raise ValueError("scanner.exit.enabled must be true")
+    return exit_config
 
 
 def _validate_submit_limits(

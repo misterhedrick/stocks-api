@@ -12,6 +12,8 @@ class AutomationSwitchesRead(BaseModel):
     scan_enabled: bool
     reconcile_enabled: bool
     preview_enabled: bool
+    exit_enabled: bool
+    news_enabled: bool
     submit_enabled: bool
 
 
@@ -22,7 +24,9 @@ class AutomationStrategyRead(BaseModel):
     scanner_type: str | None
     scanner_symbols: list[str]
     preview_enabled: bool
+    exit_enabled: bool
     submit_enabled: bool
+    exit_limits: dict[str, Any]
     submit_limits: dict[str, Any]
     updated_at: datetime
 
