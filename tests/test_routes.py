@@ -511,6 +511,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["owned_symbols"], ["SPY"])
+        self.assertEqual(response.json()["risk_assessment"]["market_risk_level"], "medium")
         self.assertEqual(response.json()["sources_checked"], 2)
         news_scan.assert_called_once_with(db, market_limit=3, ticker_limit=2)
 
@@ -670,6 +671,14 @@ def build_news_scan_result() -> NewsScanResult:
         ],
         ticker_items={"SPY": []},
         owned_symbols=["SPY"],
+        risk_assessment={
+            "market_risk_level": "medium",
+            "market_impact_keywords": ["fed", "rate"],
+            "should_block_new_entries": False,
+            "manual_review_symbols": [],
+            "ticker_risks": {"SPY": {"risk_level": "low", "impact_keywords": [], "reasons": []}},
+            "reasons": ["market: Fed rates move stocks"],
+        },
         sources_checked=2,
         errors=[],
     )

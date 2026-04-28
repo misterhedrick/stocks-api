@@ -32,6 +32,7 @@ class NewsScanResult:
     market_items: list[dict[str, Any]]
     ticker_items: dict[str, list[dict[str, Any]]]
     owned_symbols: list[str]
+    risk_assessment: dict[str, Any]
     sources_checked: int
     errors: list[str]
 
@@ -62,6 +63,35 @@ IMPACT_KEYWORDS = (
     "yields",
     "volatility",
 )
+HIGH_RISK_KEYWORDS = {
+    "war",
+    "tariff",
+    "lawsuit",
+    "sec",
+    "fda",
+    "downgrade",
+    "volatility",
+    "recession",
+    "oil",
+}
+MEDIUM_RISK_KEYWORDS = {
+    "fed",
+    "federal reserve",
+    "rate",
+    "rates",
+    "inflation",
+    "cpi",
+    "ppi",
+    "jobs report",
+    "unemployment",
+    "gdp",
+    "earnings",
+    "guidance",
+    "upgrade",
+    "merger",
+    "acquisition",
+    "yields",
+}
 OPTION_SYMBOL_PATTERN = re.compile(r"^([A-Z]{1,6})\d{6}[CP]\d{8}$")
 
 
@@ -139,13 +169,21 @@ def scan_market_news(
                 errors.append(f"{symbol}: {exc}")
                 ticker_items[symbol] = []
 
-        details = {
-            "market_items": _dedupe_items(market_items, limit=market_limit),
-            "ticker_items": {
+        deduped_market_items = _dedupe_items(market_items, limit=market_limit)
+        deduped_ticker_items = {
                 symbol: _dedupe_items(items, limit=ticker_limit)
                 for symbol, items in ticker_items.items()
-            },
+            }
+        risk_assessment = assess_news_risk(
+            market_items=deduped_market_items,
+            ticker_items=deduped_ticker_items,
+        )
+
+        details = {
+            "market_items": deduped_market_items,
+            "ticker_items": deduped_ticker_items,
             "owned_symbols": owned_symbols,
+            "risk_assessment": risk_assessment,
             "sources_checked": sources_checked,
             "errors": errors,
         }
@@ -227,6 +265,43 @@ def _owned_symbols(db: Session) -> list[str]:
     return sorted(symbol for symbol in owned_symbols if symbol)
 
 
+def assess_news_risk(
+    *,
+    market_items: list[dict[str, Any]],
+    ticker_items: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    market_keyword_hits = _keyword_hits(market_items)
+    ticker_risks: dict[str, dict[str, Any]] = {}
+    high_risk_symbols: list[str] = []
+    medium_risk_symbols: list[str] = []
+
+    for symbol, items in ticker_items.items():
+        hits = _keyword_hits(items)
+        level = _risk_level_from_hits(hits)
+        ticker_risks[symbol] = {
+            "risk_level": level,
+            "impact_keywords": sorted(hits),
+            "reasons": _risk_reasons(symbol, items, hits),
+        }
+        if level == "high":
+            high_risk_symbols.append(symbol)
+        elif level == "medium":
+            medium_risk_symbols.append(symbol)
+
+    market_risk_level = _risk_level_from_hits(market_keyword_hits)
+    should_block_new_entries = market_risk_level == "high"
+    manual_review_symbols = sorted(set(high_risk_symbols + medium_risk_symbols))
+
+    return {
+        "market_risk_level": market_risk_level,
+        "market_impact_keywords": sorted(market_keyword_hits),
+        "should_block_new_entries": should_block_new_entries,
+        "manual_review_symbols": manual_review_symbols,
+        "ticker_risks": ticker_risks,
+        "reasons": _risk_reasons("market", market_items, market_keyword_hits),
+    }
+
+
 def _parse_rss_items(xml_text: str, *, limit: int) -> list[NewsItem]:
     try:
         root = ET.fromstring(xml_text)
@@ -278,6 +353,48 @@ def _published_at(value: str | None) -> str | None:
 def _impact_keywords(title: str) -> list[str]:
     lower_title = title.lower()
     return [keyword for keyword in IMPACT_KEYWORDS if keyword in lower_title]
+
+
+def _keyword_hits(items: list[dict[str, Any]]) -> set[str]:
+    hits: set[str] = set()
+    for item in items:
+        keywords = item.get("impact_keywords")
+        if not isinstance(keywords, list):
+            continue
+        hits.update(
+            keyword
+            for keyword in keywords
+            if isinstance(keyword, str) and keyword.strip()
+        )
+    return hits
+
+
+def _risk_level_from_hits(hits: set[str]) -> str:
+    if hits & HIGH_RISK_KEYWORDS:
+        return "high"
+    if hits & MEDIUM_RISK_KEYWORDS:
+        return "medium"
+    return "low"
+
+
+def _risk_reasons(
+    label: str,
+    items: list[dict[str, Any]],
+    hits: set[str],
+) -> list[str]:
+    if not hits:
+        return []
+    reasons: list[str] = []
+    for item in items:
+        keywords = item.get("impact_keywords")
+        if not isinstance(keywords, list) or not set(keywords) & hits:
+            continue
+        title = item.get("title")
+        if isinstance(title, str) and title.strip():
+            reasons.append(f"{label}: {title.strip()}")
+        if len(reasons) >= 5:
+            break
+    return reasons
 
 
 def _dedupe_items(items: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:

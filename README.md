@@ -279,7 +279,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/check-news?market_limit=10&ticke
   -H "Authorization: Bearer change-me"
 ```
 
-The news scan checks configured market RSS feeds plus a deeper feed search for each currently owned ticker. Option contract symbols are reduced to their underlying ticker for news searches. Results are stored in the `news_scan` job run details with headline, URL, source, publish time, and simple impact keywords such as Fed, rates, inflation, earnings, downgrade, lawsuit, merger, oil, yields, and volatility. Market-cycle news checks are controlled by `MARKET_CYCLE_NEWS_ENABLED`.
+The news scan checks configured market RSS feeds plus a deeper feed search for each currently owned ticker. By default, the broad scan covers US indexes, Fed/rates/inflation/economic data, US economy/yields/dollar/recession/GDP, world markets/geopolitical risk/oil/war/tariffs, and earnings/volatility/credit/banking headlines. Option contract symbols are reduced to their underlying ticker for news searches. Results are stored in the `news_scan` job run details with headline, URL, source, publish time, simple impact keywords, and a first-pass `risk_assessment`. When market-cycle news checks are enabled, a high market-level news risk blocks new entry previews for that cycle and flags affected owned tickers for manual review; it does not auto-sell positions from headlines.
 
 Seed preview-first paper strategies:
 
@@ -447,7 +447,7 @@ MARKET_CYCLE_EXIT_ENABLED=false
 MARKET_CYCLE_NEWS_ENABLED=false
 MARKET_CYCLE_SUBMIT_ENABLED=false
 NEWS_REQUEST_TIMEOUT_SECONDS=10
-NEWS_MARKET_RSS_FEEDS=https://news.google.com/rss/search?q=stock%20market%20OR%20Federal%20Reserve%20OR%20inflation%20OR%20earnings&hl=en-US&gl=US&ceid=US:en
+NEWS_MARKET_RSS_FEEDS=https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=Federal%20Reserve%20OR%20interest%20rates%20OR%20inflation%20OR%20CPI%20OR%20PPI%20OR%20jobs%20report&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=US%20economy%20OR%20Treasury%20yields%20OR%20dollar%20OR%20recession%20OR%20GDP&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=world%20markets%20OR%20global%20stocks%20OR%20geopolitical%20risk%20OR%20oil%20prices%20OR%20war%20OR%20tariffs&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=earnings%20guidance%20OR%20market%20volatility%20OR%20VIX%20OR%20credit%20markets%20OR%20banking%20sector&hl=en-US&gl=US&ceid=US:en
 NEWS_TICKER_RSS_TEMPLATE=https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en
 ```
 

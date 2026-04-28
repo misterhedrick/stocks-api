@@ -151,6 +151,7 @@ def check_news_route(
         market_items=result.market_items,
         ticker_items=result.ticker_items,
         owned_symbols=result.owned_symbols,
+        risk_assessment=result.risk_assessment,
         sources_checked=result.sources_checked,
         errors=result.errors,
     )

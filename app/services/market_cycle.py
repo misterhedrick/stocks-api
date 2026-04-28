@@ -84,6 +84,7 @@ def run_market_cycle(
     try:
         created_signal_ids: list[uuid.UUID] = []
         submittable_order_intent_ids: list[uuid.UUID] = []
+        news_blocks_entries = False
         if scan_enabled:
             scan_result = scan_signals(db, limit=scan_limit)
             created_signal_ids = scan_result.created_signal_ids
@@ -102,8 +103,38 @@ def run_market_cycle(
         else:
             scan = _disabled_step("scan")
 
+        if news_enabled:
+            news_result = scan_market_news(db)
+            news = {
+                "job_run_id": str(news_result.job_run.id),
+                "market_items": news_result.market_items,
+                "ticker_items": news_result.ticker_items,
+                "owned_symbols": news_result.owned_symbols,
+                "risk_assessment": news_result.risk_assessment,
+                "sources_checked": news_result.sources_checked,
+                "errors": news_result.errors,
+            }
+            risk_assessment = news_result.risk_assessment
+            news_blocks_entries = (
+                isinstance(risk_assessment, dict)
+                and risk_assessment.get("should_block_new_entries") is True
+            )
+
         if preview_enabled:
-            preview = _preview_created_signals(db, created_signal_ids)
+            if news_blocks_entries:
+                preview = {
+                    "status": "blocked",
+                    "signals_seen": len(created_signal_ids),
+                    "previews_created": 0,
+                    "previews_skipped": len(created_signal_ids),
+                    "errors": ["News risk gate blocked new entry previews"],
+                    "order_intent_ids": [],
+                    "news_risk": news.get("risk_assessment")
+                    if isinstance(news, dict)
+                    else None,
+                }
+            else:
+                preview = _preview_created_signals(db, created_signal_ids)
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
 
         if exit_enabled:
@@ -122,17 +153,6 @@ def run_market_cycle(
                 ],
             }
             submittable_order_intent_ids.extend(exit_result.order_intent_ids)
-
-        if news_enabled:
-            news_result = scan_market_news(db)
-            news = {
-                "job_run_id": str(news_result.job_run.id),
-                "market_items": news_result.market_items,
-                "ticker_items": news_result.ticker_items,
-                "owned_symbols": news_result.owned_symbols,
-                "sources_checked": news_result.sources_checked,
-                "errors": news_result.errors,
-            }
 
         if submit_enabled:
             submit = _submit_previewed_order_intents(

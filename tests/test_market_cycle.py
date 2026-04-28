@@ -130,6 +130,22 @@ def build_exit_evaluation_result(order_intent_id: uuid.UUID | None = None) -> Ex
 
 
 def build_news_scan_result() -> NewsScanResult:
+    return build_news_scan_result_with_risk(
+        risk_assessment={
+            "market_risk_level": "medium",
+            "market_impact_keywords": ["fed", "rate"],
+            "should_block_new_entries": False,
+            "manual_review_symbols": [],
+            "ticker_risks": {"SPY": {"risk_level": "low", "impact_keywords": [], "reasons": []}},
+            "reasons": ["market: Fed rate news"],
+        }
+    )
+
+
+def build_news_scan_result_with_risk(
+    *,
+    risk_assessment: dict[str, object],
+) -> NewsScanResult:
     return NewsScanResult(
         job_run=build_job_run("news_scan"),
         market_items=[
@@ -143,6 +159,7 @@ def build_news_scan_result() -> NewsScanResult:
         ],
         ticker_items={"SPY": []},
         owned_symbols=["SPY"],
+        risk_assessment=risk_assessment,
         sources_checked=2,
         errors=[],
     )
@@ -430,8 +447,56 @@ class MarketCycleTests(unittest.TestCase):
 
         self.assertTrue(result.news_enabled)
         self.assertEqual(result.news["owned_symbols"], ["SPY"])
+        self.assertEqual(result.news["risk_assessment"]["market_risk_level"], "medium")
         self.assertEqual(result.news["sources_checked"], 2)
         news_scan.assert_called_once_with(db)
+
+    def test_run_market_cycle_blocks_entry_previews_when_news_risk_is_high(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+        high_risk_news = build_news_scan_result_with_risk(
+            risk_assessment={
+                "market_risk_level": "high",
+                "market_impact_keywords": ["war", "volatility"],
+                "should_block_new_entries": True,
+                "manual_review_symbols": ["SPY"],
+                "ticker_risks": {
+                    "SPY": {
+                        "risk_level": "high",
+                        "impact_keywords": ["volatility"],
+                        "reasons": ["SPY: volatility headline"],
+                    }
+                },
+                "reasons": ["market: war headline"],
+            }
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_news_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.scan_market_news",
+            return_value=high_risk_news,
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+        ) as preview:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.preview["status"], "blocked")
+        self.assertEqual(result.preview["previews_created"], 0)
+        self.assertEqual(result.preview["previews_skipped"], 1)
+        self.assertTrue(result.preview["news_risk"]["should_block_new_entries"])
+        preview.assert_not_called()
 
     def test_run_market_cycle_skips_auto_submit_without_strategy_submit_config(self) -> None:
         strategy = build_strategy()

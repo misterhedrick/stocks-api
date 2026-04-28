@@ -91,9 +91,12 @@ class NewsScannerTests(unittest.TestCase):
 
         self.assertEqual(result.job_run.status, "succeeded")
         self.assertEqual(result.owned_symbols, ["SPY"])
-        self.assertEqual(result.sources_checked, 2)
+        self.assertEqual(result.sources_checked, 6)
         self.assertEqual(result.market_items[0]["impact_keywords"], ["federal reserve", "rate"])
         self.assertEqual(result.ticker_items["SPY"][0]["impact_keywords"], ["earnings", "volatility"])
+        self.assertEqual(result.risk_assessment["market_risk_level"], "medium")
+        self.assertEqual(result.risk_assessment["ticker_risks"]["SPY"]["risk_level"], "high")
+        self.assertFalse(result.risk_assessment["should_block_new_entries"])
         self.assertEqual(db.commit_count, 1)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "news_scan.succeeded")

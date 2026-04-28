@@ -234,8 +234,10 @@ Current repo structure and purpose:
   - Creates previewed sell order_intents with quote context and audit logs.
 - app/services/news_scanner.py
   - Fetches RSS news for broad market context and currently owned tickers.
+  - Default broad scan covers US indexes, Fed/rates/inflation/economic data, US economy/yields/dollar/recession/GDP, world markets/geopolitical risk/oil/war/tariffs, and earnings/volatility/credit/banking headlines.
   - Reduces option contract symbols to their underlying ticker for owned-ticker searches.
   - Tags headlines with simple impact keywords such as Fed, rates, inflation, earnings, downgrade, lawsuit, merger, oil, yields, and volatility.
+  - Produces a first-pass risk_assessment with market_risk_level, should_block_new_entries, manual_review_symbols, and per-ticker risk.
   - Records news_scan job_runs and audit logs.
 - app/integrations/alpaca.py
   - Thin httpx-based Alpaca Trading API integration.
@@ -319,6 +321,7 @@ Current behavior implemented:
 - Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
 - Market-cycle endpoint can evaluate current positions for exit previews when MARKET_CYCLE_EXIT_ENABLED=true.
 - Market-cycle endpoint can check market and owned-ticker news when MARKET_CYCLE_NEWS_ENABLED=true.
+- High market-level news risk blocks new entry previews for that market-cycle run and flags affected owned tickers for manual review; it does not auto-sell from headlines.
 - Market-cycle endpoint can auto-submit only same-cycle previewed order intents when submit switches/config are enabled.
 - Auto-submit enforces strategy-level sizing and existing-exposure controls before broker submission.
 - Auto-submit enforces optional daily order caps and configured trading windows before broker submission.
@@ -373,7 +376,7 @@ Current important limitations/gaps:
 - Scanner/signal-generation logic supports first-pass quote-threshold and percent-change rules, but no moving-average/indicator scoring yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Exit evaluation is first-pass only; it supports simple P/L and expiration rules, not trailing stops or AI-assisted exits yet.
-- News scanning is first-pass RSS/headline observability only; no persistent article table, source ranking, sentiment model, or automated trade decisioning yet.
+- News scanning is first-pass RSS/headline risk gating only; no persistent article table, source ranking, sentiment model, article-body reading, or auto-sell decisioning yet.
 - Manual order_intent creation still accepts client-provided preview data.
 - No formal status enum/state machine yet; statuses are plain strings.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.

@@ -55,6 +55,7 @@ class NewsScanRead(BaseModel):
     market_items: list[dict[str, Any]]
     ticker_items: dict[str, list[dict[str, Any]]]
     owned_symbols: list[str]
+    risk_assessment: dict[str, Any]
     sources_checked: int
     errors: list[str]
 
