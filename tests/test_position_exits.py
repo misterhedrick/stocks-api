@@ -12,6 +12,7 @@ from app.integrations.alpaca import (
 )
 from app.services.position_exits import (
     evaluate_position_exits,
+    get_position_management_statuses,
     preview_unmanaged_position_exits,
 )
 
@@ -23,12 +24,14 @@ class FakePositionExitSession:
         positions: list[PositionSnapshot],
         strategy: Strategy | None,
         entry_order_intent: OrderIntent | None = None,
-        active_exit_count: int = 0,
+        active_exit_count: int | None = 0,
+        active_exit_order: OrderIntent | None = None,
     ) -> None:
         self.positions = positions
         self.strategy = strategy
         self.entry_order_intent = entry_order_intent
         self.active_exit_count = active_exit_count
+        self.active_exit_order = active_exit_order
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -41,6 +44,8 @@ class FakePositionExitSession:
         self.scalar_calls += 1
         if self.scalar_calls == 1:
             return self.entry_order_intent
+        if self.scalar_calls == 2 and self.active_exit_count is None:
+            return self.active_exit_order
         return self.active_exit_count
 
     def get(self, model: type, record_id: uuid.UUID) -> object | None:
@@ -164,6 +169,26 @@ def build_entry_order_intent(strategy: Strategy) -> OrderIntent:
     )
 
 
+def build_exit_order_intent() -> OrderIntent:
+    now = datetime.now(timezone.utc)
+    return OrderIntent(
+        id=uuid.uuid4(),
+        strategy_id=None,
+        signal_id=None,
+        underlying_symbol="SPY",
+        option_symbol="SPY260429C00500000",
+        side="sell",
+        quantity=1,
+        order_type="limit",
+        limit_price=Decimal("1.20"),
+        time_in_force="day",
+        status="previewed",
+        preview={"source": "position_exit_evaluator"},
+        created_at=now,
+        updated_at=now,
+    )
+
+
 class PositionExitTests(unittest.TestCase):
     def test_evaluate_position_exits_creates_sell_intent_for_profit_target(self) -> None:
         strategy = build_strategy()
@@ -262,6 +287,7 @@ class PositionExitTests(unittest.TestCase):
             positions=[position],
             strategy=None,
             entry_order_intent=None,
+            active_exit_count=None,
         )
 
         result = evaluate_position_exits(
@@ -282,6 +308,7 @@ class PositionExitTests(unittest.TestCase):
             positions=[position],
             strategy=None,
             entry_order_intent=None,
+            active_exit_count=None,
         )
 
         result = preview_unmanaged_position_exits(
@@ -306,6 +333,7 @@ class PositionExitTests(unittest.TestCase):
             positions=[position],
             strategy=strategy,
             entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
         )
 
         result = preview_unmanaged_position_exits(
@@ -315,6 +343,91 @@ class PositionExitTests(unittest.TestCase):
 
         self.assertEqual(result.exits_created, 0)
         self.assertEqual(result.no_exit_reasons, [f"{position.symbol}: position is already managed"])
+
+    def test_get_position_management_statuses_reports_unmanaged_position(self) -> None:
+        position = build_position(symbol="SPY")
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=None,
+            entry_order_intent=None,
+            active_exit_count=None,
+        )
+
+        statuses = get_position_management_statuses(db)
+
+        self.assertEqual(statuses[0]["symbol"], "SPY")
+        self.assertFalse(statuses[0]["ownership"]["managed"])
+        self.assertEqual(statuses[0]["recommended_action"], "preview_unmanaged_exit")
+
+    def test_get_position_management_statuses_reports_missing_exit_config(self) -> None:
+        strategy = build_strategy()
+        strategy.config = {"scanner": {"type": "price_threshold"}}
+        position = build_position()
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+
+        statuses = get_position_management_statuses(db)
+
+        self.assertTrue(statuses[0]["ownership"]["managed"])
+        self.assertFalse(statuses[0]["exit_config_enabled"])
+        self.assertEqual(statuses[0]["recommended_action"], "add_exit_config")
+
+    def test_get_position_management_statuses_reports_exit_rule_triggered(self) -> None:
+        strategy = build_strategy()
+        position = build_position()
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+
+        statuses = get_position_management_statuses(db)
+
+        self.assertTrue(statuses[0]["exit_config_enabled"])
+        self.assertEqual(statuses[0]["recommended_action"], "exit_rule_triggered")
+
+    def test_get_position_management_statuses_reports_hold(self) -> None:
+        strategy = build_strategy()
+        position = build_position(
+            symbol="SPY260501C00500000",
+            unrealized_pl=Decimal("5"),
+            cost_basis=Decimal("100"),
+        )
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+
+        statuses = get_position_management_statuses(db)
+
+        self.assertEqual(statuses[0]["recommended_action"], "hold")
+
+    def test_get_position_management_statuses_reports_active_exit_order(self) -> None:
+        strategy = build_strategy()
+        position = build_position()
+        exit_order = build_exit_order_intent()
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+            active_exit_order=exit_order,
+        )
+
+        statuses = get_position_management_statuses(db)
+
+        self.assertEqual(statuses[0]["recommended_action"], "exit_pending")
+        self.assertEqual(
+            statuses[0]["active_exit_order"]["order_intent_id"],
+            str(exit_order.id),
+        )
 
 
 if __name__ == "__main__":

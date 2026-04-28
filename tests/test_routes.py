@@ -612,6 +612,48 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["active_strategies"], [])
         automation_status.assert_called_once_with(db)
 
+    def test_position_management_status_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = [
+            {
+                "symbol": "SPY",
+                "quantity": "100",
+                "market_value": "71188.00",
+                "cost_basis": "71343.00",
+                "unrealized_pl": "-155.00",
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "ownership": {
+                    "symbol": "SPY",
+                    "managed": False,
+                    "reason": "no linked entry order intent found",
+                },
+                "exit_config_enabled": False,
+                "active_exit_order": None,
+                "recommended_action": "preview_unmanaged_exit",
+                "reason": "no linked entry order intent found",
+            }
+        ]
+
+        with patch(
+            "app.api.routes.automation.get_position_management_statuses",
+            return_value=result,
+        ) as positions:
+            response = client.get(
+                "/api/v1/automation/positions?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["symbol"], "SPY")
+        self.assertEqual(response.json()[0]["recommended_action"], "preview_unmanaged_exit")
+        positions.assert_called_once_with(db, limit=25)
+
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
     now = datetime.now(timezone.utc)

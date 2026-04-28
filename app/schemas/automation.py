@@ -46,3 +46,17 @@ class AutomationStatusRead(BaseModel):
     max_estimated_premium_per_order: Decimal
     active_strategies: list[AutomationStrategyRead]
     latest_job_runs: dict[str, JobRunRead | None]
+
+
+class PositionManagementStatusRead(BaseModel):
+    symbol: str
+    quantity: str
+    market_value: str | None
+    cost_basis: str | None
+    unrealized_pl: str | None
+    captured_at: datetime
+    ownership: dict[str, Any]
+    exit_config_enabled: bool
+    active_exit_order: dict[str, Any] | None
+    recommended_action: str
+    reason: str

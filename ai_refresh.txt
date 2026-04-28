@@ -137,6 +137,8 @@ Current repo structure and purpose:
 - app/api/routes/automation.py
   - GET /api/v1/automation/status, bearer-protected.
   - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
+  - GET /api/v1/automation/positions, bearer-protected.
+  - Read-only position management status with ownership, exit config state, active exit order, P/L fields, and recommended action.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -234,6 +236,7 @@ Current repo structure and purpose:
   - Links positions back to the latest entry order_intent/strategy for the held symbol when possible.
   - Reports position_ownership with managed/unmanaged status and reasons such as no linked entry, inactive strategy, or missing exit config.
   - Supports manual preview_unmanaged_position_exits for creating sell previews on unmanaged long positions.
+  - Supports get_position_management_statuses for read-only position dashboard data and recommendations.
   - Supports scanner.exit profit_target_percent, stop_loss_percent, and max_days_to_expiration.
   - Creates previewed sell order_intents with quote context and audit logs.
 - app/services/news_scanner.py

@@ -54,6 +54,36 @@ class PositionOwnership:
         }
 
 
+@dataclass(slots=True)
+class PositionManagementStatus:
+    symbol: str
+    quantity: str
+    market_value: str | None
+    cost_basis: str | None
+    unrealized_pl: str | None
+    captured_at: str
+    ownership: dict[str, Any]
+    exit_config_enabled: bool
+    active_exit_order: dict[str, Any] | None
+    recommended_action: str
+    reason: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "quantity": self.quantity,
+            "market_value": self.market_value,
+            "cost_basis": self.cost_basis,
+            "unrealized_pl": self.unrealized_pl,
+            "captured_at": self.captured_at,
+            "ownership": self.ownership,
+            "exit_config_enabled": self.exit_config_enabled,
+            "active_exit_order": self.active_exit_order,
+            "recommended_action": self.recommended_action,
+            "reason": self.reason,
+        }
+
+
 ACTIVE_EXIT_ORDER_STATUSES = {
     "previewed",
     "new",
@@ -211,6 +241,50 @@ def preview_unmanaged_position_exits(
         position_ownership=position_ownership,
         order_intent_ids=order_intent_ids,
     )
+
+
+def get_position_management_statuses(
+    db: Session,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    statuses: list[dict[str, Any]] = []
+    for position in _latest_position_snapshots(db, limit=limit):
+        ownership = resolve_position_ownership(db, position)
+        exit_config = (
+            _exit_config_for_strategy(ownership.strategy)
+            if ownership.strategy is not None
+            else None
+        )
+        active_exit_order = _latest_active_exit_order(db, position.symbol)
+        recommended_action, reason = _position_recommendation(
+            position,
+            ownership,
+            exit_config,
+            active_exit_order,
+        )
+        statuses.append(
+            PositionManagementStatus(
+                symbol=position.symbol,
+                quantity=str(position.quantity),
+                market_value=str(position.market_value)
+                if position.market_value is not None
+                else None,
+                cost_basis=str(position.cost_basis)
+                if position.cost_basis is not None
+                else None,
+                unrealized_pl=str(position.unrealized_pl)
+                if position.unrealized_pl is not None
+                else None,
+                captured_at=position.captured_at.isoformat(),
+                ownership=ownership.as_dict(),
+                exit_config_enabled=exit_config is not None,
+                active_exit_order=active_exit_order,
+                recommended_action=recommended_action,
+                reason=reason,
+            ).as_dict()
+        )
+    return statuses
 
 
 def _latest_position_snapshots(db: Session, *, limit: int) -> list[PositionSnapshot]:
@@ -480,6 +554,59 @@ def _has_active_exit_order(db: Session, symbol: str) -> bool:
         return int(value or 0) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _latest_active_exit_order(
+    db: Session,
+    symbol: str,
+) -> dict[str, Any] | None:
+    order_intent = db.scalar(
+        select(OrderIntent)
+        .where(OrderIntent.option_symbol == symbol)
+        .where(func.lower(OrderIntent.side) == "sell")
+        .where(OrderIntent.status.in_(ACTIVE_EXIT_ORDER_STATUSES))
+        .order_by(OrderIntent.created_at.desc())
+        .limit(1)
+    )
+    if order_intent is None:
+        return None
+    return {
+        "order_intent_id": str(order_intent.id),
+        "status": order_intent.status,
+        "quantity": order_intent.quantity,
+        "order_type": order_intent.order_type,
+        "limit_price": str(order_intent.limit_price)
+        if order_intent.limit_price is not None
+        else None,
+        "created_at": order_intent.created_at.isoformat()
+        if order_intent.created_at is not None
+        else None,
+    }
+
+
+def _position_recommendation(
+    position: PositionSnapshot,
+    ownership: PositionOwnership,
+    exit_config: dict[str, Any] | None,
+    active_exit_order: dict[str, Any] | None,
+) -> tuple[str, str]:
+    if active_exit_order is not None:
+        return (
+            "exit_pending",
+            f"active exit order intent {active_exit_order['order_intent_id']} is {active_exit_order['status']}",
+        )
+
+    if not ownership.managed:
+        return ("preview_unmanaged_exit", ownership.reason)
+
+    if exit_config is None:
+        return ("add_exit_config", "linked strategy does not have scanner.exit enabled")
+
+    trigger_reason = _exit_trigger_reason(position, exit_config, today=date.today())
+    if trigger_reason is not None:
+        return ("exit_rule_triggered", trigger_reason)
+
+    return ("hold", "no exit rule triggered")
 
 
 def _exit_limit_price(

@@ -263,6 +263,15 @@ curl -H "Authorization: Bearer change-me" \
 
 The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
 
+Check position management status:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/positions?limit=100"
+```
+
+This read-only endpoint summarizes current reconciled positions with ownership, active exit order status, exit config availability, P/L fields, and a recommended action such as `hold`, `exit_rule_triggered`, `exit_pending`, `add_exit_config`, or `preview_unmanaged_exit`.
+
 Evaluate current positions for exits:
 
 ```bash
