@@ -263,6 +263,27 @@ curl -H "Authorization: Bearer change-me" \
 
 The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
 
+Seed preview-first paper strategies:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\seed_paper_strategies.py --dry-run --sample-prices
+.\.venv\Scripts\python.exe .\scripts\seed_paper_strategies.py --dry-run
+.\.venv\Scripts\python.exe .\scripts\seed_paper_strategies.py
+```
+
+The seed script builds active SPY/QQQ paper strategy configs from the latest IEX quote midpoints, enables scanner-driven order previews, and keeps `scanner.submit.enabled=false`. Use `--sample-prices` when you want to inspect the config shape without Alpaca credentials. It is meant for getting observable paper signals and previewed order intents before any auto-submit settings are enabled.
+
+Smoke test the configured local environment:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\smoke_preflight.py
+.\.venv\Scripts\python.exe .\scripts\run_market_cycle_smoke.py
+.\.venv\Scripts\python.exe .\scripts\run_paper_submit_smoke.py
+.\.venv\Scripts\python.exe .\scripts\run_full_smoke_suite.py
+```
+
+`smoke_preflight.py` checks sanitized settings, external Postgres connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation. `run_market_cycle_smoke.py` runs one market-cycle pass. `run_paper_submit_smoke.py` creates a one-contract paper order intent, submits it to Alpaca paper, requests cancellation by default, and reconciles. `run_full_smoke_suite.py` runs preflight, strategy seeding, market-cycle smoke, paper submit/cancel, and deterministic unit tests; use `--skip-paper-submit` for a non-ordering smoke run.
+
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 

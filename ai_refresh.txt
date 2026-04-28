@@ -117,6 +117,22 @@ Current repo structure and purpose:
   - Render cron helper that POSTs a protected API job endpoint.
   - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
   - Retries retryable HTTP responses 429/500/502/503/504 using JOB_RETRY_DELAYS_SECONDS, default 10,30.
+- scripts/seed_paper_strategies.py
+  - Seeds preview-first paper strategies into the configured database.
+  - Builds SPY/QQQ strategy configs from latest IEX quote midpoints.
+  - Enables scanner-driven previews and keeps scanner.submit.enabled=false.
+  - Supports --dry-run, --sample-prices, and --deactivate-others.
+- scripts/smoke_preflight.py
+  - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
+- scripts/run_market_cycle_smoke.py
+  - Runs one market-cycle pass against the configured database and Alpaca clients.
+- scripts/run_paper_submit_smoke.py
+  - Runs a one-contract Alpaca paper submit smoke test.
+  - Creates a smoke strategy/signal/order intent, submits to Alpaca paper, requests cancel by default, and reconciles.
+  - Supports --skip-cancel and --skip-reconcile.
+- scripts/run_full_smoke_suite.py
+  - Runs preflight, strategy seeding, market-cycle smoke, paper submit/cancel, and deterministic unit tests.
+  - Supports --skip-paper-submit, --skip-seed, and --skip-market-cycle.
 - app/api/routes/automation.py
   - GET /api/v1/automation/status, bearer-protected.
   - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
@@ -175,6 +191,10 @@ Current repo structure and purpose:
   - Can select an option contract before previewing when contract_selection is supplied.
   - Creates broker_orders and updates order_intents.
   - Marks order_intents rejected when Alpaca rejects.
+- app/services/strategy_templates.py
+  - Builds JSON-safe preview-first paper strategy payloads.
+  - Current templates include SPY upside call preview, QQQ downside put preview, and SPY momentum call preview.
+  - Templates cap estimated option notional/spread and leave auto-submit disabled.
 - app/services/option_contracts.py
   - Domain/service logic to select an active tradable Alpaca option contract.
   - First-pass selection chooses earliest expiration and strike closest to target_strike or underlying_price.
@@ -436,6 +456,15 @@ Useful local commands:
 
 - Run current tests:
   .\.venv\Scripts\python.exe -m unittest discover -s tests
+
+- Run deterministic tests when .env has live/E2E values:
+  $env:ADMIN_API_TOKEN='change-me'; $env:MARKET_CYCLE_PREVIEW_ENABLED='false'; $env:MARKET_CYCLE_SUBMIT_ENABLED='false'; $env:TRADING_AUTOMATION_ENABLED='false'; $env:MAX_AUTO_ORDERS_PER_DAY='3'; .\.venv\Scripts\python.exe -m unittest discover -s tests
+
+- Run smoke tests:
+  .\.venv\Scripts\python.exe .\scripts\smoke_preflight.py
+  .\.venv\Scripts\python.exe .\scripts\run_market_cycle_smoke.py
+  .\.venv\Scripts\python.exe .\scripts\run_paper_submit_smoke.py
+  .\.venv\Scripts\python.exe .\scripts\run_full_smoke_suite.py
 
 - Manual broker reconciliation:
   curl -X POST "http://127.0.0.1:8000/api/v1/jobs/reconcile-broker?order_limit=100&fill_page_size=100" -H "Authorization: Bearer change-me"
