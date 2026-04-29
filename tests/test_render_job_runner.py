@@ -121,6 +121,34 @@ class RenderJobRunnerTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 1)
         sleep.assert_not_called()
 
+    def test_job_retries_read_timeouts(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-cycle",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=[TimeoutError("timed out"), FakeResponse()],
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0)
+
 
 if __name__ == "__main__":
     unittest.main()

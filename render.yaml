@@ -65,7 +65,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/5 * * * *"
+    schedule: "*/10 * * * *"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -76,6 +76,6 @@ services:
       - key: JOB_PATH
         value: /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
-        value: 90
+        value: 240
       - key: ADMIN_API_TOKEN
         sync: false

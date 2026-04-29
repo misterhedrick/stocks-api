@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -83,6 +84,12 @@ def _post_job(request: Request, url: str, timeout_seconds: int) -> int:
     except URLError as exc:
         print(f"Job POST {url} failed: {exc}", file=sys.stderr)
         return 1
+    except TimeoutError as exc:
+        print(f"Job POST {url} timed out: {exc}", file=sys.stderr)
+        return 504
+    except socket.timeout as exc:
+        print(f"Job POST {url} timed out: {exc}", file=sys.stderr)
+        return 504
 
 
 def _required_env(name: str) -> str:
