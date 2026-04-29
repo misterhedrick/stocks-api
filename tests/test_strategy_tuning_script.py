@@ -91,8 +91,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 trigger="bullish_trend",
                 short_window=5,
                 long_window=20,
-                lookback_minutes=60,
-                timeframe="1Min",
+                lookback_minutes=1440,
+                timeframe="5Min",
                 confidence="0.6200",
             )
         )
@@ -113,8 +113,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 trigger="bullish_trend",
                 short_window=5,
                 long_window=20,
-                lookback_minutes=60,
-                timeframe="1Min",
+                lookback_minutes=1440,
+                timeframe="5Min",
                 confidence="0.6200",
             )
         )

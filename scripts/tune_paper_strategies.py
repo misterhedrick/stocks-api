@@ -46,8 +46,8 @@ def main() -> None:
     )
     seed_parser.add_argument("--short-window", type=int, default=5)
     seed_parser.add_argument("--long-window", type=int, default=20)
-    seed_parser.add_argument("--lookback-minutes", type=int, default=60)
-    seed_parser.add_argument("--timeframe", default="1Min")
+    seed_parser.add_argument("--lookback-minutes", type=int, default=1440)
+    seed_parser.add_argument("--timeframe", default="5Min")
     seed_parser.add_argument("--confidence", default="0.6200")
     seed_parser.add_argument(
         "--target-strike",

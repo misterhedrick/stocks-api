@@ -315,7 +315,7 @@ Tune paper strategies:
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py list --active-only
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average --dry-run --sample-price 500
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average
-.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --scanner-json '{ "short_window": 8, "long_window": 21 }'
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --scanner-json '{ "short_window": 8, "long_window": 21, "lookback_minutes": 1440, "timeframe": "5Min" }'
 ```
 
 The tuning script lists scanner/preview/submit state, creates or updates one preview-first moving-average strategy, and deep-merges scanner config patches. The moving-average strategy keeps `scanner.submit.enabled=false` by default.
@@ -433,8 +433,8 @@ A moving-average rule uses recent Alpaca stock bars:
     "symbols": ["SPY"],
     "short_window": 5,
     "long_window": 20,
-    "lookback_minutes": 60,
-    "timeframe": "1Min",
+    "lookback_minutes": 1440,
+    "timeframe": "5Min",
     "trigger": "bullish_trend",
     "signal_type": "moving_average_setup",
     "direction": "bullish",

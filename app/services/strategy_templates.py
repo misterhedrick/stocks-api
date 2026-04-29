@@ -69,8 +69,8 @@ def build_moving_average_strategy_payload(
     trigger: str = "bullish_trend",
     short_window: int = 5,
     long_window: int = 20,
-    lookback_minutes: int = 60,
-    timeframe: str = "1Min",
+    lookback_minutes: int = 1440,
+    timeframe: str = "5Min",
     confidence: str = "0.6200",
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
