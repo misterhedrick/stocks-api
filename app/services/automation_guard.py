@@ -6,11 +6,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import BrokerOrder, JobRun, OrderIntent
+from app.db.models import BrokerOrder, JobRun, OrderIntent, PositionSnapshot
 
 
 @dataclass(slots=True)
@@ -162,24 +162,31 @@ def _open_positions_count(
     *,
     underlying_symbol: str | None = None,
 ) -> int:
-    signed_quantity = case(
-        (func.lower(BrokerOrder.side) == "sell", -BrokerOrder.quantity),
-        else_=BrokerOrder.quantity,
+    latest_captured_at = (
+        select(
+            PositionSnapshot.symbol.label("symbol"),
+            func.max(PositionSnapshot.captured_at).label("captured_at"),
+        )
+        .group_by(PositionSnapshot.symbol)
+        .subquery()
     )
-    exposure_by_underlying = (
-        select(OrderIntent.underlying_symbol.label("underlying_symbol"))
-        .select_from(BrokerOrder)
-        .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
-        .where(BrokerOrder.status.in_(EXPOSURE_BROKER_ORDER_STATUSES))
-        .group_by(OrderIntent.underlying_symbol)
-        .having(func.coalesce(func.sum(signed_quantity), 0) > 0)
+    open_positions = (
+        select(PositionSnapshot.symbol)
+        .join(
+            latest_captured_at,
+            (PositionSnapshot.symbol == latest_captured_at.c.symbol)
+            & (PositionSnapshot.captured_at == latest_captured_at.c.captured_at),
+        )
+        .where(PositionSnapshot.quantity > 0)
     )
     if underlying_symbol is not None:
-        exposure_by_underlying = exposure_by_underlying.where(
-            func.upper(OrderIntent.underlying_symbol) == underlying_symbol.upper()
+        normalized = underlying_symbol.upper()
+        open_positions = open_positions.where(
+            (func.upper(PositionSnapshot.symbol) == normalized)
+            | (func.upper(PositionSnapshot.symbol).like(f"{normalized}%"))
         )
 
-    statement = select(func.count()).select_from(exposure_by_underlying.subquery())
+    statement = select(func.count()).select_from(open_positions.subquery())
     return _int_scalar(db, statement)
 
 

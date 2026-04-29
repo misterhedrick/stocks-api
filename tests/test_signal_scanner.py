@@ -479,6 +479,85 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_skipped, 1)
         self.assertIn("change_above_percent or change_below_percent", result.errors[0])
 
+    def test_scan_signals_creates_signal_when_moving_average_crosses_up(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "moving_average",
+                    "symbols": ["SPY"],
+                    "short_window": 2,
+                    "long_window": 3,
+                    "trigger": "bullish_cross",
+                    "signal_type": "ma_breakout",
+                    "confidence": "0.70",
+                    "data_feed": "iex",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["10.00", "10.00", "10.00", "10.00", "12.00"]}
+            ),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].signal_type, "ma_breakout")
+        self.assertEqual(signals[-1].direction, "bullish")
+        self.assertEqual(signals[-1].market_context["source"], "scanner.moving_average")
+        self.assertEqual(signals[-1].market_context["trigger"], "bullish_cross")
+
+    def test_scan_signals_does_not_create_signal_when_moving_average_trigger_not_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "moving_average",
+                    "symbols": ["SPY"],
+                    "short_window": 2,
+                    "long_window": 3,
+                    "trigger": "bullish_cross",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["10.00", "11.00", "12.00", "13.00", "14.00"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertIn("moving average trigger bullish_cross was not met", result.no_signal_reasons[0])
+
+    def test_scan_signals_records_malformed_moving_average_config_as_skipped(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "moving_average",
+                    "symbols": ["SPY"],
+                    "short_window": 5,
+                    "long_window": 3,
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["10.00", "10.00", "10.00", "10.00", "12.00"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertEqual(result.signals_skipped, 1)
+        self.assertIn("short_window must be less than", result.errors[0])
+
     def test_scan_signals_suppresses_recent_duplicate_signal(self) -> None:
         strategy = build_strategy(
             config={

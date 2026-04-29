@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.db.models import AuditLog, JobRun
-from app.services.news_scanner import NewsItem, scan_market_news
+from app.services.news_scanner import NewsItem, assess_news_risk, scan_market_news
 
 
 class FakeScalarResult:
@@ -100,6 +100,76 @@ class NewsScannerTests(unittest.TestCase):
         self.assertEqual(db.commit_count, 1)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "news_scan.succeeded")
+
+    def test_assess_news_risk_ignores_stale_low_quality_ticker_noise(self) -> None:
+        stale_date = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+
+        risk = assess_news_risk(
+            market_items=[],
+            ticker_items={
+                "SPY": [
+                    {
+                        "title": "War ALWAYS REVEALS In The Stock Market - SPY QQQ Options ES NQ Swing & Day Trading",
+                        "url": "https://example.test/stale",
+                        "source": "Fathom Journal",
+                        "published_at": stale_date,
+                        "impact_keywords": ["war"],
+                    },
+                    {
+                        "title": "SPY 260427 710.00P Stock Options Chain | Quotes & News",
+                        "url": "https://example.test/chain",
+                        "source": "Moomoo",
+                        "published_at": datetime.now(timezone.utc).isoformat(),
+                        "impact_keywords": ["volatility"],
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(risk["version"], "news_risk_v2")
+        self.assertFalse(risk["should_block_new_entries"])
+        self.assertEqual(risk["ticker_risks"]["SPY"]["risk_level"], "low")
+        self.assertEqual(risk["manual_review_symbols"], [])
+        self.assertGreaterEqual(len(risk["ignored_items"]), 2)
+
+    def test_assess_news_risk_blocks_only_on_multiple_fresh_market_high_risk_items(self) -> None:
+        fresh_date = datetime.now(timezone.utc).isoformat()
+
+        one_headline = assess_news_risk(
+            market_items=[
+                {
+                    "title": "Oil volatility rises as market waits",
+                    "url": "https://example.test/oil",
+                    "source": "Yahoo Finance",
+                    "published_at": fresh_date,
+                    "impact_keywords": ["oil", "volatility"],
+                }
+            ],
+            ticker_items={},
+        )
+        two_headlines = assess_news_risk(
+            market_items=[
+                {
+                    "title": "Oil volatility rises as market waits",
+                    "url": "https://example.test/oil",
+                    "source": "Yahoo Finance",
+                    "published_at": fresh_date,
+                    "impact_keywords": ["oil", "volatility"],
+                },
+                {
+                    "title": "Markets slide on tariff risk",
+                    "url": "https://example.test/tariff",
+                    "source": "CNBC",
+                    "published_at": fresh_date,
+                    "impact_keywords": ["tariff"],
+                },
+            ],
+            ticker_items={},
+        )
+
+        self.assertFalse(one_headline["should_block_new_entries"])
+        self.assertTrue(two_headlines["should_block_new_entries"])
+        self.assertEqual(len(two_headlines["blocking_reasons"]), 2)
 
 
 if __name__ == "__main__":

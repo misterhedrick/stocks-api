@@ -35,6 +35,7 @@ class AutomationStrategyRead(BaseModel):
 
 class AutomationStatusRead(BaseModel):
     switches: AutomationSwitchesRead
+    operational_summary: dict[str, Any]
     trading_automation_enabled: bool
     auto_submit_requires_paper: bool
     paper_mode: bool

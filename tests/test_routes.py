@@ -579,6 +579,18 @@ class RouteBehaviorTests(unittest.TestCase):
                 news_enabled=False,
                 submit_enabled=False,
             ),
+            operational_summary={
+                "effective_mode": "watching",
+                "blockers": ["MARKET_CYCLE_PREVIEW_ENABLED is false"],
+                "news_gate": {
+                    "enabled": False,
+                    "should_block_new_entries": False,
+                    "blocking_reasons": [],
+                    "manual_review_symbols": [],
+                },
+                "last_preview": {},
+                "last_submit": {},
+            },
             trading_automation_enabled=False,
             auto_submit_requires_paper=True,
             paper_mode=True,

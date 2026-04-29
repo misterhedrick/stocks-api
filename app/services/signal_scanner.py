@@ -232,7 +232,15 @@ def _signal_specs_from_scanner(
             market_data_client=market_data_client,
             no_signal_reasons=no_signal_reasons,
         )
-    raise ValueError("scanner.type must be price_threshold or percent_change")
+    if scanner_type == "moving_average":
+        return _moving_average_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    raise ValueError("scanner.type must be price_threshold, percent_change, or moving_average")
 
 
 def _price_threshold_signal_specs(
@@ -431,6 +439,129 @@ def _percent_change_signal_specs(
     return signal_specs
 
 
+def _moving_average_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    short_window = _positive_int(scanner_config, "short_window", default=5)
+    long_window = _positive_int(scanner_config, "long_window", default=20)
+    if short_window >= long_window:
+        raise ValueError("scanner.short_window must be less than scanner.long_window")
+
+    trigger = _scanner_string(scanner_config, "trigger", default="bullish_cross")
+    if trigger not in {"bullish_cross", "bearish_cross", "bullish_trend", "bearish_trend"}:
+        raise ValueError(
+            "scanner.trigger must be bullish_cross, bearish_cross, bullish_trend, or bearish_trend"
+        )
+
+    lookback_minutes = _positive_int(
+        scanner_config,
+        "lookback_minutes",
+        default=max(long_window + 5, 30),
+    )
+    timeframe = _scanner_string(scanner_config, "timeframe", default="1Min")
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 5, long_window + 2),
+    )
+    signal_specs: list[dict[str, Any]] = []
+
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no stock bars returned for moving average window"
+            )
+            continue
+        if len(stock_bars.bars) < long_window + 1:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: fewer than {long_window + 1} stock bars returned for moving average window"
+            )
+            continue
+
+        closes = [bar.close for bar in stock_bars.bars]
+        previous_short = _average(closes[-short_window - 1 : -1])
+        previous_long = _average(closes[-long_window - 1 : -1])
+        current_short = _average(closes[-short_window:])
+        current_long = _average(closes[-long_window:])
+
+        triggered = (
+            (
+                trigger == "bullish_cross"
+                and previous_short <= previous_long
+                and current_short > current_long
+            )
+            or (
+                trigger == "bearish_cross"
+                and previous_short >= previous_long
+                and current_short < current_long
+            )
+            or (trigger == "bullish_trend" and current_short > current_long)
+            or (trigger == "bearish_trend" and current_short < current_long)
+        )
+        if not triggered:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: moving average trigger {trigger} was not met"
+            )
+            continue
+
+        bullish = trigger.startswith("bullish")
+        signal_specs.append(
+            {
+                "symbol": symbol,
+                "underlying_symbol": symbol,
+                "signal_type": _scanner_string(
+                    scanner_config,
+                    "signal_type",
+                    default="moving_average",
+                ),
+                "direction": _scanner_string(
+                    scanner_config,
+                    "direction",
+                    default="bullish" if bullish else "bearish",
+                ),
+                "confidence": scanner_config.get("confidence"),
+                "rationale": _scanner_string(
+                    scanner_config,
+                    "rationale",
+                    default="Moving average scanner triggered",
+                ),
+                "market_context": {
+                    "source": "scanner.moving_average",
+                    "trigger": trigger,
+                    "short_window": short_window,
+                    "long_window": long_window,
+                    "timeframe": timeframe,
+                    "data_feed": feed,
+                    "previous_short_average": str(previous_short),
+                    "previous_long_average": str(previous_long),
+                    "current_short_average": str(current_short),
+                    "current_long_average": str(current_long),
+                    "bars": _stock_bars_context(stock_bars),
+                },
+                "dedupe_minutes": scanner_config.get(
+                    "dedupe_minutes",
+                    DEFAULT_DEDUPE_MINUTES,
+                ),
+            }
+        )
+
+    return signal_specs
+
+
 def _signal_from_spec(strategy: Strategy, signal_spec: dict[str, Any]) -> Signal:
     symbol = _required_string(signal_spec, "symbol")
     signal_type = _required_string(signal_spec, "signal_type")
@@ -546,6 +677,10 @@ def _scanner_string(
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"scanner.{key} must be a non-empty string")
     return value.strip()
+
+
+def _average(values: list[Decimal]) -> Decimal:
+    return sum(values, Decimal("0")) / Decimal(len(values))
 
 
 def _price_from_quote(latest_quote: AlpacaLatestStockQuote) -> Decimal | None:

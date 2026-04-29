@@ -92,6 +92,14 @@ ACTIVE_EXIT_ORDER_STATUSES = {
     "partially_filled",
     "submitted",
 }
+ENTRY_BROKER_ORDER_STATUSES = {
+    "new",
+    "accepted",
+    "pending_new",
+    "partially_filled",
+    "filled",
+    "submitted",
+}
 
 OPTION_EXPIRATION_PATTERN = re.compile(r"(\d{6})([CP])\d{8}$")
 
@@ -373,7 +381,10 @@ def _latest_entry_order_intent_for_position(
         .select_from(BrokerOrder)
         .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
         .where(BrokerOrder.symbol == symbol)
+        .where(OrderIntent.option_symbol == symbol)
+        .where(func.lower(OrderIntent.side) == "buy")
         .where(func.lower(BrokerOrder.side) == "buy")
+        .where(BrokerOrder.status.in_(ENTRY_BROKER_ORDER_STATUSES))
         .order_by(BrokerOrder.submitted_at.desc().nullslast(), BrokerOrder.created_at.desc())
         .limit(1)
     )

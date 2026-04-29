@@ -78,7 +78,29 @@ def build_job_run(job_name: str) -> JobRun:
         status="succeeded",
         started_at=now,
         finished_at=now,
-        details={"status": "ok"},
+        details={
+            "preview": {
+                "status": "blocked",
+                "signals_seen": 1,
+                "previews_created": 0,
+                "previews_skipped": 1,
+            },
+            "submit": {
+                "status": "completed",
+                "order_intents_seen": 0,
+                "submitted": 0,
+                "skipped": 0,
+                "rejected": 0,
+            },
+            "news": {
+                "risk_assessment": {
+                    "market_risk_level": "high",
+                    "should_block_new_entries": True,
+                    "blocking_reasons": ["market: tariff risk"],
+                    "manual_review_symbols": ["SPY"],
+                }
+            },
+        },
         error=None,
         created_at=now,
     )
@@ -95,9 +117,14 @@ class AutomationStatusTests(unittest.TestCase):
             ],
         )
 
-        with patch(
-            "app.services.automation_status.settings.market_cycle_news_enabled",
-            False,
+        with patch.multiple(
+            "app.services.automation_status.settings",
+            market_cycle_preview_enabled=True,
+            market_cycle_news_enabled=False,
+            max_auto_orders_per_day=3,
+            max_open_positions=3,
+            max_open_positions_per_symbol=1,
+            max_contracts_per_order=1,
         ):
             result = get_automation_status(db)
 
@@ -113,6 +140,16 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(result.max_open_positions_per_symbol, 1)
         self.assertEqual(result.max_contracts_per_order, 1)
         self.assertEqual(str(result.max_estimated_premium_per_order), "250")
+        self.assertEqual(result.operational_summary["effective_mode"], "previewing")
+        self.assertIn(
+            "news risk gate is blocking new entry previews",
+            result.operational_summary["blockers"],
+        )
+        self.assertEqual(
+            result.operational_summary["news_gate"]["blocking_reasons"],
+            ["market: tariff risk"],
+        )
+        self.assertEqual(result.operational_summary["last_preview"]["signals_seen"], 1)
         self.assertEqual(len(result.active_strategies), 1)
         strategy = result.active_strategies[0]
         self.assertEqual(strategy.scanner_type, "percent_change")
