@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import BrokerOrder, Fill, JobRun, PositionSnapshot
+from app.db.models import BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot
 from app.integrations.alpaca import (
     AlpacaFillActivity,
     AlpacaPosition,
@@ -139,6 +140,10 @@ def _upsert_broker_order(
     if broker_order is None:
         broker_order = BrokerOrder(alpaca_order_id=order.id)
 
+    order_intent = _find_order_intent_for_broker_order(db, broker_order, order)
+    if order_intent is not None:
+        broker_order.order_intent_id = order_intent.id
+
     broker_order.symbol = order.symbol
     broker_order.side = order.side
     broker_order.quantity = order.qty
@@ -150,7 +155,30 @@ def _upsert_broker_order(
     broker_order.raw_response = raw_order
 
     db.add(broker_order)
+    if order_intent is not None:
+        order_intent.status = order.status
+        order_intent.submitted_at = order.submitted_at
+        db.add(order_intent)
     return created
+
+
+def _find_order_intent_for_broker_order(
+    db: Session,
+    broker_order: BrokerOrder,
+    order: AlpacaSubmittedOrder,
+) -> OrderIntent | None:
+    if broker_order.order_intent is not None:
+        return broker_order.order_intent
+    if broker_order.order_intent_id is not None:
+        return db.get(OrderIntent, broker_order.order_intent_id)
+    if order.client_order_id is None:
+        return None
+
+    try:
+        order_intent_id = uuid.UUID(order.client_order_id)
+    except ValueError:
+        return None
+    return db.get(OrderIntent, order_intent_id)
 
 
 def _insert_fill_if_new(

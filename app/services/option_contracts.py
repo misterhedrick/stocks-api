@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.integrations.alpaca import (
+    AlpacaLatestOptionQuote,
     AlpacaMarketDataClient,
     AlpacaOptionContract,
     AlpacaOptionQuote,
@@ -39,23 +40,28 @@ def select_option_contract(
         expiration_date_lte=payload.expiration_date_lte,
         limit=payload.limit,
     )
-    candidates = [
-        contract
-        for contract in contracts_page.contracts
-        if contract.status == "active" and contract.tradable
-    ]
+    target_strike = payload.target_strike or payload.underlying_price
+    candidates = sorted(
+        [
+            contract
+            for contract in contracts_page.contracts
+            if contract.status == "active" and contract.tradable
+        ],
+        key=lambda contract: _contract_sort_key(contract, target_strike=target_strike),
+    )
     if not candidates:
         raise OptionContractNotFoundError(
             f"No active tradable {payload.option_type} contracts found for {payload.underlying_symbol}"
         )
 
-    target_strike = payload.target_strike or payload.underlying_price
-    selected = _select_contract(candidates, target_strike=target_strike)
-
     market_data = market_data_client or AlpacaMarketDataClient.from_settings()
-    latest_quote = market_data.get_latest_option_quote(
-        selected.symbol,
+    selected, latest_quote = _select_quoted_contract(
+        candidates,
+        market_data_client=market_data,
         feed=payload.data_feed,
+        side=payload.side,
+        max_estimated_notional=payload.max_estimated_notional,
+        max_spread=payload.max_spread,
     )
 
     return OptionContractSelectionRead(
@@ -71,30 +77,84 @@ def select_option_contract(
     )
 
 
-def _select_contract(
-    contracts: list[AlpacaOptionContract],
+def _select_quoted_contract(
+    candidates: list[AlpacaOptionContract],
+    *,
+    market_data_client: AlpacaMarketDataClient,
+    feed: str,
+    side: str,
+    max_estimated_notional: Decimal | None,
+    max_spread: Decimal | None,
+) -> tuple[AlpacaOptionContract, AlpacaLatestOptionQuote]:
+    rejected_reasons: list[str] = []
+    for contract in candidates:
+        latest_quote = market_data_client.get_latest_option_quote(
+            contract.symbol,
+            feed=feed,
+        )
+        quote_context = _build_quote_context(
+            latest_quote.quote,
+            side=side,
+            raw_quote=latest_quote.raw_response,
+        )
+        rejection_reason = _quote_rejection_reason(
+            contract,
+            quote_context,
+            max_estimated_notional=max_estimated_notional,
+            max_spread=max_spread,
+        )
+        if rejection_reason is None:
+            return contract, latest_quote
+        rejected_reasons.append(rejection_reason)
+
+    raise OptionContractNotFoundError(
+        "No active tradable option contract matched the quote constraints: "
+        + "; ".join(rejected_reasons[:5])
+    )
+
+
+def _quote_rejection_reason(
+    contract: AlpacaOptionContract,
+    quote_context: dict[str, object],
+    *,
+    max_estimated_notional: Decimal | None,
+    max_spread: Decimal | None,
+) -> str | None:
+    estimated_notional = _decimal_from_context(quote_context.get("estimated_notional"))
+    spread = _decimal_from_context(quote_context.get("spread"))
+
+    if (
+        max_estimated_notional is not None
+        and estimated_notional is not None
+        and estimated_notional > max_estimated_notional
+    ):
+        return (
+            f"{contract.symbol} estimated notional {estimated_notional} "
+            f"exceeds max {max_estimated_notional}"
+        )
+    if max_spread is not None and spread is not None and spread > max_spread:
+        return f"{contract.symbol} spread {spread} exceeds max {max_spread}"
+    return None
+
+
+def _contract_sort_key(
+    contract: AlpacaOptionContract,
     *,
     target_strike: Decimal | None,
-) -> AlpacaOptionContract:
+) -> tuple:
     if target_strike is None:
-        return sorted(
-            contracts,
-            key=lambda contract: (
-                contract.expiration_date,
-                contract.strike_price,
-                contract.symbol,
-            ),
-        )[0]
-
-    return sorted(
-        contracts,
-        key=lambda contract: (
+        return (
             contract.expiration_date,
-            abs(contract.strike_price - target_strike),
             contract.strike_price,
             contract.symbol,
-        ),
-    )[0]
+        )
+
+    return (
+        contract.expiration_date,
+        abs(contract.strike_price - target_strike),
+        contract.strike_price,
+        contract.symbol,
+    )
 
 
 def _selection_reason(
@@ -148,6 +208,7 @@ def _build_quote_context(
         ask_price=ask_price,
         fallback=midpoint,
     )
+    estimated_notional = estimated_price * Decimal("100") if estimated_price is not None else None
 
     return {
         "bid_price": _decimal_to_string(bid_price),
@@ -157,6 +218,7 @@ def _build_quote_context(
         "midpoint": _decimal_to_string(midpoint),
         "spread": _decimal_to_string(spread),
         "estimated_price": _decimal_to_string(estimated_price),
+        "estimated_notional": _decimal_to_string(estimated_notional),
         "contract_multiplier": "100",
         "quote_timestamp": quote.timestamp.isoformat()
         if quote.timestamp is not None
@@ -193,3 +255,9 @@ def _decimal_to_string(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _decimal_from_context(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(str(value))

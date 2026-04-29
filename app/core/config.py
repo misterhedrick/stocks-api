@@ -29,7 +29,20 @@ class Settings(BaseSettings):
     market_cycle_scan_enabled: bool = True
     market_cycle_reconcile_enabled: bool = True
     market_cycle_preview_enabled: bool = False
+    market_cycle_exit_enabled: bool = False
+    market_cycle_news_enabled: bool = False
     market_cycle_submit_enabled: bool = False
+    news_request_timeout_seconds: int = 10
+    news_market_rss_feeds: str = (
+        "https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,"
+        "https://news.google.com/rss/search?q=Federal%20Reserve%20OR%20interest%20rates%20OR%20inflation%20OR%20CPI%20OR%20PPI%20OR%20jobs%20report&hl=en-US&gl=US&ceid=US:en,"
+        "https://news.google.com/rss/search?q=US%20economy%20OR%20Treasury%20yields%20OR%20dollar%20OR%20recession%20OR%20GDP&hl=en-US&gl=US&ceid=US:en,"
+        "https://news.google.com/rss/search?q=world%20markets%20OR%20global%20stocks%20OR%20geopolitical%20risk%20OR%20oil%20prices%20OR%20war%20OR%20tariffs&hl=en-US&gl=US&ceid=US:en,"
+        "https://news.google.com/rss/search?q=earnings%20guidance%20OR%20market%20volatility%20OR%20VIX%20OR%20credit%20markets%20OR%20banking%20sector&hl=en-US&gl=US&ceid=US:en"
+    )
+    news_ticker_rss_template: str = (
+        "https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en"
+    )
     trading_automation_enabled: bool = False
     auto_submit_requires_paper: bool = True
     max_auto_orders_per_cycle: int = 1

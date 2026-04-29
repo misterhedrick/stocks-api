@@ -1,12 +1,18 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
 from app.db.session import get_db
-from app.schemas.automation import AutomationStatusRead
+from app.schemas.automation import (
+    AutomationStatusRead,
+    PaperPerformanceRead,
+    PositionManagementStatusRead,
+)
 from app.services.automation_status import get_automation_status
+from app.services.performance_review import get_paper_performance_review
+from app.services.position_exits import get_position_management_statuses
 
 router = APIRouter(
     prefix="/automation",
@@ -24,3 +30,27 @@ def automation_status_route(
     db: Annotated[Session, Depends(get_db)],
 ) -> AutomationStatusRead:
     return get_automation_status(db)
+
+
+@router.get(
+    "/positions",
+    response_model=list[PositionManagementStatusRead],
+    status_code=status.HTTP_200_OK,
+)
+def position_management_status_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict]:
+    return get_position_management_statuses(db, limit=limit)
+
+
+@router.get(
+    "/performance",
+    response_model=PaperPerformanceRead,
+    status_code=status.HTTP_200_OK,
+)
+def paper_performance_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+) -> PaperPerformanceRead:
+    return get_paper_performance_review(db, limit=limit)

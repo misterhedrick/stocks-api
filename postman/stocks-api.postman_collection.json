@@ -657,7 +657,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"underlying_symbol\": \"SPY\",\n  \"option_type\": \"call\",\n  \"side\": \"buy\",\n  \"expiration_date_gte\": \"2026-04-17\",\n  \"expiration_date_lte\": \"2026-05-01\",\n  \"target_strike\": \"500\",\n  \"data_feed\": \"indicative\"\n}",
+          "raw": "{\n  \"underlying_symbol\": \"SPY\",\n  \"option_type\": \"call\",\n  \"side\": \"buy\",\n  \"expiration_date_gte\": \"2026-04-27\",\n  \"expiration_date_lte\": \"2026-05-01\",\n  \"target_strike\": \"720\",\n  \"max_estimated_notional\": \"300\",\n  \"max_spread\": \"0.20\",\n  \"data_feed\": \"indicative\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -710,7 +710,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"signal_id\": \"{{last_signal_id}}\",\n  \"option_symbol\": \"SPY260417C00500000\",\n  \"side\": \"buy\",\n  \"quantity\": 1,\n  \"order_type\": \"limit\",\n  \"time_in_force\": \"day\",\n  \"data_feed\": \"indicative\"\n}",
+          "raw": "{\n  \"signal_id\": \"{{last_signal_id}}\",\n  \"contract_selection\": {\n    \"underlying_symbol\": \"SPY\",\n    \"option_type\": \"call\",\n    \"side\": \"buy\",\n    \"expiration_date_gte\": \"2026-04-27\",\n    \"expiration_date_lte\": \"2026-05-01\",\n    \"target_strike\": \"720\",\n    \"max_estimated_notional\": \"300\",\n    \"max_spread\": \"0.20\",\n    \"data_feed\": \"indicative\"\n  },\n  \"side\": \"buy\",\n  \"quantity\": 1,\n  \"order_type\": \"limit\",\n  \"time_in_force\": \"day\",\n  \"data_feed\": \"indicative\",\n  \"max_estimated_notional\": \"300\",\n  \"max_spread\": \"0.20\"\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -826,6 +826,44 @@
               "  pm.expect(body.order_intent.status).to.not.eql(\"previewed\");",
               "  pm.expect(body.broker_order).to.have.property(\"alpaca_order_id\");",
               "  pm.expect(body.broker_order).to.have.property(\"status\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Cancel Order Intent",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{admin_api_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": "{{base_url}}/api/v1/order-intents/{{last_order_intent_id}}/cancel"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Cancel order intent returns 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Cancel order intent returns cancel requested state\", function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.order_intent.status).to.eql(\"cancel_requested\");",
+              "  pm.expect(body.broker_order.status).to.eql(\"cancel_requested\");",
               "});"
             ]
           }

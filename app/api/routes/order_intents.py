@@ -16,15 +16,18 @@ from app.integrations.alpaca import (
 from app.schemas.order_intents import (
     BrokerOrderRead,
     OrderIntentCreate,
+    OrderIntentCancellationRead,
     OrderIntentPreviewCreate,
     OrderIntentRead,
     OrderIntentSubmissionRead,
 )
 from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
+    BrokerOrderNotFoundError,
     OrderIntentPreviewError,
     OrderIntentNotFoundError,
     OrderIntentStateError,
+    cancel_order_intent,
     SignalNotFoundError,
     preview_order_intent_from_signal,
     submit_order_intent,
@@ -166,6 +169,49 @@ def submit_order_intent_route(
         ) from exc
 
     return OrderIntentSubmissionRead(
+        order_intent=OrderIntentRead.model_validate(order_intent),
+        broker_order=BrokerOrderRead.model_validate(broker_order),
+    )
+
+
+@router.post(
+    "/{order_intent_id}/cancel",
+    response_model=OrderIntentCancellationRead,
+    status_code=status.HTTP_200_OK,
+)
+def cancel_order_intent_route(
+    order_intent_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> OrderIntentCancellationRead:
+    try:
+        order_intent, broker_order = cancel_order_intent(db, order_intent_id)
+    except OrderIntentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except BrokerOrderNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except OrderIntentStateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Broker order cannot be canceled from status: {exc.current_status}",
+        ) from exc
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return OrderIntentCancellationRead(
         order_intent=OrderIntentRead.model_validate(order_intent),
         broker_order=BrokerOrderRead.model_validate(broker_order),
     )

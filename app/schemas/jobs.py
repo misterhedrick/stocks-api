@@ -40,13 +40,38 @@ class SignalScanRead(BaseModel):
     created_signal_ids: list[uuid.UUID]
 
 
+class PositionExitEvaluationRead(BaseModel):
+    positions_seen: int
+    positions_evaluated: int
+    exits_created: int
+    exits_skipped: int
+    errors: list[str]
+    no_exit_reasons: list[str]
+    position_ownership: list[dict[str, Any]]
+    order_intent_ids: list[uuid.UUID]
+
+
+class NewsScanRead(BaseModel):
+    job_run: JobRunRead
+    market_items: list[dict[str, Any]]
+    ticker_items: dict[str, list[dict[str, Any]]]
+    owned_symbols: list[str]
+    risk_assessment: dict[str, Any]
+    sources_checked: int
+    errors: list[str]
+
+
 class MarketCycleRead(BaseModel):
     job_run: JobRunRead
     scan_enabled: bool
     reconcile_enabled: bool
     preview_enabled: bool
+    exit_enabled: bool
+    news_enabled: bool
     submit_enabled: bool
     scan: dict[str, Any] | None
     reconcile: dict[str, Any] | None
     preview: dict[str, Any] | None
+    exits: dict[str, Any] | None
+    news: dict[str, Any] | None
     submit: dict[str, Any] | None

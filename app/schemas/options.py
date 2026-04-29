@@ -16,6 +16,8 @@ class OptionContractSelectionCreate(BaseModel):
     expiration_date_lte: date | None = None
     target_strike: Decimal | None = Field(default=None, gt=0)
     underlying_price: Decimal | None = Field(default=None, gt=0)
+    max_estimated_notional: Decimal | None = Field(default=None, gt=0)
+    max_spread: Decimal | None = Field(default=None, ge=0)
     data_feed: Literal["indicative", "opra"] = "indicative"
     limit: int = Field(default=100, ge=1, le=500)
 

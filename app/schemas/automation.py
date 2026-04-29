@@ -12,6 +12,8 @@ class AutomationSwitchesRead(BaseModel):
     scan_enabled: bool
     reconcile_enabled: bool
     preview_enabled: bool
+    exit_enabled: bool
+    news_enabled: bool
     submit_enabled: bool
 
 
@@ -22,7 +24,9 @@ class AutomationStrategyRead(BaseModel):
     scanner_type: str | None
     scanner_symbols: list[str]
     preview_enabled: bool
+    exit_enabled: bool
     submit_enabled: bool
+    exit_limits: dict[str, Any]
     submit_limits: dict[str, Any]
     updated_at: datetime
 
@@ -31,6 +35,7 @@ class AutomationStrategyRead(BaseModel):
 
 class AutomationStatusRead(BaseModel):
     switches: AutomationSwitchesRead
+    operational_summary: dict[str, Any]
     trading_automation_enabled: bool
     auto_submit_requires_paper: bool
     paper_mode: bool
@@ -42,3 +47,27 @@ class AutomationStatusRead(BaseModel):
     max_estimated_premium_per_order: Decimal
     active_strategies: list[AutomationStrategyRead]
     latest_job_runs: dict[str, JobRunRead | None]
+
+
+class PositionManagementStatusRead(BaseModel):
+    symbol: str
+    quantity: str
+    market_value: str | None
+    cost_basis: str | None
+    unrealized_pl: str | None
+    captured_at: datetime
+    ownership: dict[str, Any]
+    exit_config_enabled: bool
+    active_exit_order: dict[str, Any] | None
+    recommended_action: str
+    reason: str
+
+
+class PaperPerformanceRead(BaseModel):
+    generated_at: datetime
+    fills_seen: int
+    matched_round_trips: int
+    open_positions: list[dict[str, Any]]
+    totals: dict[str, Any]
+    by_strategy: list[dict[str, Any]]
+    recent_round_trips: list[dict[str, Any]]

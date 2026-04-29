@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from app.db.models import JobRun, Strategy
 from app.services.automation_status import get_automation_status
@@ -47,6 +48,14 @@ def build_strategy() -> Strategy:
                 "type": "percent_change",
                 "symbols": ["spy", " QQQ "],
                 "preview": {"enabled": True},
+                "exit": {
+                    "enabled": True,
+                    "profit_target_percent": "30",
+                    "submit": {
+                        "enabled": True,
+                        "allowed_sides": ["sell"],
+                    },
+                },
                 "submit": {
                     "enabled": True,
                     "max_orders_per_cycle": 1,
@@ -69,7 +78,29 @@ def build_job_run(job_name: str) -> JobRun:
         status="succeeded",
         started_at=now,
         finished_at=now,
-        details={"status": "ok"},
+        details={
+            "preview": {
+                "status": "blocked",
+                "signals_seen": 1,
+                "previews_created": 0,
+                "previews_skipped": 1,
+            },
+            "submit": {
+                "status": "completed",
+                "order_intents_seen": 0,
+                "submitted": 0,
+                "skipped": 0,
+                "rejected": 0,
+            },
+            "news": {
+                "risk_assessment": {
+                    "market_risk_level": "high",
+                    "should_block_new_entries": True,
+                    "blocking_reasons": ["market: tariff risk"],
+                    "manual_review_symbols": ["SPY"],
+                }
+            },
+        },
         error=None,
         created_at=now,
     )
@@ -86,10 +117,20 @@ class AutomationStatusTests(unittest.TestCase):
             ],
         )
 
-        result = get_automation_status(db)
+        with patch.multiple(
+            "app.services.automation_status.settings",
+            market_cycle_preview_enabled=True,
+            market_cycle_news_enabled=False,
+            max_auto_orders_per_day=3,
+            max_open_positions=3,
+            max_open_positions_per_symbol=1,
+            max_contracts_per_order=1,
+        ):
+            result = get_automation_status(db)
 
         self.assertTrue(result.switches.scan_enabled)
         self.assertTrue(result.switches.reconcile_enabled)
+        self.assertFalse(result.switches.news_enabled)
         self.assertFalse(result.trading_automation_enabled)
         self.assertTrue(result.auto_submit_requires_paper)
         self.assertTrue(result.paper_mode)
@@ -99,12 +140,33 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(result.max_open_positions_per_symbol, 1)
         self.assertEqual(result.max_contracts_per_order, 1)
         self.assertEqual(str(result.max_estimated_premium_per_order), "250")
+        self.assertEqual(result.operational_summary["effective_mode"], "previewing")
+        self.assertIn(
+            "news risk gate is blocking new entry previews",
+            result.operational_summary["blockers"],
+        )
+        self.assertEqual(
+            result.operational_summary["news_gate"]["blocking_reasons"],
+            ["market: tariff risk"],
+        )
+        self.assertEqual(result.operational_summary["last_preview"]["signals_seen"], 1)
+        readiness = result.operational_summary["paper_trading_readiness"]
+        self.assertTrue(readiness["ready_after_switches"])
+        self.assertFalse(readiness["ready_to_auto_submit_now"])
+        self.assertEqual(readiness["submit_ready_strategies"], ["Momentum Scanner"])
+        self.assertIn(
+            "TRADING_AUTOMATION_ENABLED must be true to auto-submit paper orders",
+            readiness["warnings"],
+        )
         self.assertEqual(len(result.active_strategies), 1)
         strategy = result.active_strategies[0]
         self.assertEqual(strategy.scanner_type, "percent_change")
         self.assertEqual(strategy.scanner_symbols, ["SPY", "QQQ"])
         self.assertTrue(strategy.preview_enabled)
+        self.assertTrue(strategy.exit_enabled)
         self.assertTrue(strategy.submit_enabled)
+        self.assertEqual(strategy.exit_limits["profit_target_percent"], "30")
+        self.assertEqual(strategy.exit_limits["submit"]["allowed_sides"], ["sell"])
         self.assertEqual(strategy.submit_limits["max_orders_per_cycle"], 1)
         self.assertNotIn("ignored_setting", strategy.submit_limits)
         self.assertEqual(result.latest_job_runs["market_cycle"].job_name, "market_cycle")

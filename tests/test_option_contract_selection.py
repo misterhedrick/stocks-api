@@ -36,30 +36,29 @@ class FakeTradingClient:
 
 
 class FakeMarketDataClient:
+    def __init__(self, quotes_by_symbol: dict[str, dict[str, str]] | None = None) -> None:
+        self.quotes_by_symbol = quotes_by_symbol or {}
+
     def get_latest_option_quote(
         self,
         symbol: str,
         *,
         feed: str,
     ) -> AlpacaLatestOptionQuote:
-        return AlpacaLatestOptionQuote(
-            symbol=symbol,
-            quote=AlpacaOptionQuote.model_validate(
-                {
-                    "bp": "1.20",
-                    "bs": "10",
-                    "ap": "1.30",
-                    "as": "12",
-                    "t": "2026-04-23T16:00:00Z",
-                }
-            ),
-            raw_response={
+        raw_quote = self.quotes_by_symbol.get(
+            symbol,
+            {
                 "bp": "1.20",
                 "bs": "10",
                 "ap": "1.30",
                 "as": "12",
                 "t": "2026-04-23T16:00:00Z",
             },
+        )
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(raw_quote),
+            raw_response=raw_quote,
         )
 
 
@@ -123,7 +122,52 @@ class OptionContractSelectionTests(unittest.TestCase):
         self.assertEqual(result.quote["bid_price"], "1.20")
         self.assertEqual(result.quote["ask_price"], "1.30")
         self.assertEqual(result.quote["midpoint"], "1.25")
+        self.assertEqual(result.quote["estimated_notional"], "130.00")
         self.assertEqual(result.candidates_seen, 3)
+
+    def test_select_option_contract_skips_quotes_over_notional_cap(self) -> None:
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                max_estimated_notional=Decimal("250"),
+            ),
+            trading_client=FakeTradingClient(
+                [
+                    build_contract(
+                        "SPY260417C00500000",
+                        expiration_date="2026-04-17",
+                        strike_price="500",
+                    ),
+                    build_contract(
+                        "SPY260417C00720000",
+                        expiration_date="2026-04-17",
+                        strike_price="720",
+                    ),
+                ]
+            ),
+            market_data_client=FakeMarketDataClient(
+                {
+                    "SPY260417C00500000": {
+                        "bp": "209.00",
+                        "bs": "3",
+                        "ap": "212.00",
+                        "as": "2",
+                        "t": "2026-04-23T16:00:00Z",
+                    },
+                    "SPY260417C00720000": {
+                        "bp": "1.20",
+                        "bs": "10",
+                        "ap": "1.30",
+                        "as": "12",
+                        "t": "2026-04-23T16:00:00Z",
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260417C00720000")
+        self.assertEqual(result.quote["estimated_notional"], "130.00")
 
     def test_select_option_contract_ignores_inactive_or_untradable_contracts(self) -> None:
         result = select_option_contract(

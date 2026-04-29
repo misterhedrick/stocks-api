@@ -20,6 +20,9 @@ from app.schemas.automation import (
 )
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
+from app.services.news_scanner import NewsScanResult
+from app.services.performance_review import PerformanceReviewResult
+from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 
 
@@ -456,6 +459,110 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_evaluate_exits_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = ExitEvaluationResult(
+            positions_seen=1,
+            positions_evaluated=1,
+            exits_created=1,
+            exits_skipped=0,
+            errors=[],
+            no_exit_reasons=[],
+            position_ownership=[
+                {
+                    "symbol": "SPY260429C00500000",
+                    "managed": True,
+                    "reason": "linked to active strategy",
+                }
+            ],
+            order_intent_ids=[uuid.uuid4()],
+        )
+
+        with patch(
+            "app.api.routes.jobs.evaluate_position_exits",
+            return_value=result,
+        ) as exits:
+            response = client.post(
+                "/api/v1/jobs/evaluate-exits?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["positions_seen"], 1)
+        self.assertEqual(response.json()["exits_created"], 1)
+        self.assertTrue(response.json()["position_ownership"][0]["managed"])
+        exits.assert_called_once_with(db, limit=25)
+
+    def test_preview_unmanaged_exits_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = ExitEvaluationResult(
+            positions_seen=1,
+            positions_evaluated=1,
+            exits_created=1,
+            exits_skipped=0,
+            errors=[],
+            no_exit_reasons=[],
+            position_ownership=[
+                {
+                    "symbol": "SPY",
+                    "managed": False,
+                    "reason": "no linked entry order intent found",
+                }
+            ],
+            order_intent_ids=[uuid.uuid4()],
+        )
+
+        with patch(
+            "app.api.routes.jobs.preview_unmanaged_position_exits",
+            return_value=result,
+        ) as unmanaged_exits:
+            response = client.post(
+                "/api/v1/jobs/preview-unmanaged-exits?symbol=SPY&limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["exits_created"], 1)
+        self.assertFalse(response.json()["position_ownership"][0]["managed"])
+        unmanaged_exits.assert_called_once_with(db, symbol="SPY", limit=25)
+
+    def test_check_news_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_news_scan_result()
+
+        with patch(
+            "app.api.routes.jobs.scan_market_news",
+            return_value=result,
+        ) as news_scan:
+            response = client.post(
+                "/api/v1/jobs/check-news?market_limit=3&ticker_limit=2",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["owned_symbols"], ["SPY"])
+        self.assertEqual(response.json()["risk_assessment"]["market_risk_level"], "medium")
+        self.assertEqual(response.json()["sources_checked"], 2)
+        news_scan.assert_called_once_with(db, market_limit=3, ticker_limit=2)
+
     def test_automation_status_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -469,8 +576,22 @@ class RouteBehaviorTests(unittest.TestCase):
                 scan_enabled=True,
                 reconcile_enabled=True,
                 preview_enabled=False,
+                exit_enabled=False,
+                news_enabled=False,
                 submit_enabled=False,
             ),
+            operational_summary={
+                "effective_mode": "watching",
+                "blockers": ["MARKET_CYCLE_PREVIEW_ENABLED is false"],
+                "news_gate": {
+                    "enabled": False,
+                    "should_block_new_entries": False,
+                    "blocking_reasons": [],
+                    "manual_review_symbols": [],
+                },
+                "last_preview": {},
+                "last_submit": {},
+            },
             trading_automation_enabled=False,
             auto_submit_requires_paper=True,
             paper_mode=True,
@@ -503,6 +624,94 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["max_auto_orders_per_day"], 3)
         self.assertEqual(response.json()["active_strategies"], [])
         automation_status.assert_called_once_with(db)
+
+    def test_position_management_status_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = [
+            {
+                "symbol": "SPY",
+                "quantity": "100",
+                "market_value": "71188.00",
+                "cost_basis": "71343.00",
+                "unrealized_pl": "-155.00",
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "ownership": {
+                    "symbol": "SPY",
+                    "managed": False,
+                    "reason": "no linked entry order intent found",
+                },
+                "exit_config_enabled": False,
+                "active_exit_order": None,
+                "recommended_action": "preview_unmanaged_exit",
+                "reason": "no linked entry order intent found",
+            }
+        ]
+
+        with patch(
+            "app.api.routes.automation.get_position_management_statuses",
+            return_value=result,
+        ) as positions:
+            response = client.get(
+                "/api/v1/automation/positions?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["symbol"], "SPY")
+        self.assertEqual(response.json()[0]["recommended_action"], "preview_unmanaged_exit")
+        positions.assert_called_once_with(db, limit=25)
+
+    def test_paper_performance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = PerformanceReviewResult(
+            generated_at=now,
+            fills_seen=2,
+            matched_round_trips=1,
+            open_positions=[],
+            totals={"realized_pnl": "35", "win_rate_percent": "100"},
+            by_strategy=[
+                {
+                    "strategy_name": "Confirmed Trend",
+                    "matched_round_trips": 1,
+                    "realized_pnl": "35",
+                }
+            ],
+            recent_round_trips=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "realized_pnl": "35",
+                    "entry_at": now.isoformat(),
+                    "exit_at": now.isoformat(),
+                }
+            ],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_paper_performance_review",
+            return_value=result,
+        ) as performance:
+            response = client.get(
+                "/api/v1/automation/performance?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["fills_seen"], 2)
+        self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
+        performance.assert_called_once_with(db, limit=25)
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
@@ -573,11 +782,53 @@ def build_market_cycle_result() -> MarketCycleResult:
         scan_enabled=True,
         reconcile_enabled=True,
         preview_enabled=False,
+        exit_enabled=False,
+        news_enabled=False,
         submit_enabled=False,
         scan={"signals_created": 1},
         reconcile={"orders_seen": 2},
         preview={"status": "disabled"},
+        exits={"status": "disabled"},
+        news={"status": "disabled"},
         submit={"status": "disabled"},
+    )
+
+
+def build_news_scan_result() -> NewsScanResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="news_scan",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+    return NewsScanResult(
+        job_run=job_run,
+        market_items=[
+            {
+                "title": "Fed rates move stocks",
+                "url": "https://example.test/market",
+                "source": "Example",
+                "published_at": now.isoformat(),
+                "impact_keywords": ["fed", "rate"],
+            }
+        ],
+        ticker_items={"SPY": []},
+        owned_symbols=["SPY"],
+        risk_assessment={
+            "market_risk_level": "medium",
+            "market_impact_keywords": ["fed", "rate"],
+            "should_block_new_entries": False,
+            "manual_review_symbols": [],
+            "ticker_risks": {"SPY": {"risk_level": "low", "impact_keywords": [], "reasons": []}},
+            "reasons": ["market: Fed rates move stocks"],
+        },
+        sources_checked=2,
+        errors=[],
     )
 
 

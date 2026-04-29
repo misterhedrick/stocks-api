@@ -114,6 +114,12 @@ class AlpacaOrderSubmission:
 
 
 @dataclass(slots=True)
+class AlpacaOrderCancellation:
+    alpaca_order_id: str
+    raw_response: dict[str, Any]
+
+
+@dataclass(slots=True)
 class AlpacaLatestOptionQuote:
     symbol: str
     quote: AlpacaOptionQuote
@@ -225,6 +231,40 @@ class AlpacaTradingClient:
 
         return AlpacaOrderSubmission(
             order=AlpacaSubmittedOrder.model_validate(raw_response),
+            raw_response=raw_response,
+        )
+
+    def cancel_order(self, alpaca_order_id: str) -> AlpacaOrderCancellation:
+        try:
+            with httpx.Client(
+                base_url=self._base_url,
+                timeout=self._timeout_seconds,
+                headers={
+                    "APCA-API-KEY-ID": self._api_key,
+                    "APCA-API-SECRET-KEY": self._api_secret,
+                },
+            ) as client:
+                response = client.delete(f"/v2/orders/{alpaca_order_id}")
+        except httpx.HTTPError as exc:
+            raise AlpacaTradingError(
+                f"Unable to reach Alpaca Trading API: {exc}"
+            ) from exc
+
+        raw_response = self._parse_any_response(response)
+
+        if response.is_error:
+            raise AlpacaTradingError(
+                self._extract_error_detail(raw_response),
+                status_code=response.status_code,
+            )
+
+        if not isinstance(raw_response, dict):
+            raw_response = {"message": str(raw_response)}
+
+        raw_response.setdefault("status_code", response.status_code)
+
+        return AlpacaOrderCancellation(
+            alpaca_order_id=alpaca_order_id,
             raw_response=raw_response,
         )
 

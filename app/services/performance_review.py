@@ -1,0 +1,293 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db.models import BrokerOrder, Fill, OrderIntent, Strategy
+
+
+@dataclass(slots=True)
+class FillRecord:
+    fill_id: uuid.UUID
+    filled_at: datetime
+    symbol: str
+    side: str
+    quantity: Decimal
+    price: Decimal
+    strategy_id: uuid.UUID | None
+    strategy_name: str | None
+    order_intent_id: uuid.UUID | None
+
+
+@dataclass(slots=True)
+class PerformanceReviewResult:
+    generated_at: datetime
+    fills_seen: int
+    matched_round_trips: int
+    open_positions: list[dict[str, Any]]
+    totals: dict[str, Any]
+    by_strategy: list[dict[str, Any]]
+    recent_round_trips: list[dict[str, Any]]
+
+
+def get_paper_performance_review(
+    db: Session,
+    *,
+    limit: int = 500,
+) -> PerformanceReviewResult:
+    fill_records = _fill_records(db, limit=limit)
+    round_trips, open_lots = _match_round_trips(fill_records)
+
+    return PerformanceReviewResult(
+        generated_at=datetime.now(timezone.utc),
+        fills_seen=len(fill_records),
+        matched_round_trips=len(round_trips),
+        open_positions=_open_position_summaries(open_lots),
+        totals=_totals(round_trips),
+        by_strategy=_strategy_summaries(round_trips),
+        recent_round_trips=round_trips[-25:][::-1],
+    )
+
+
+def _fill_records(db: Session, *, limit: int) -> list[FillRecord]:
+    statement = (
+        select(
+            Fill.id,
+            Fill.filled_at,
+            Fill.symbol,
+            Fill.side,
+            Fill.quantity,
+            Fill.price,
+            OrderIntent.strategy_id,
+            Strategy.name,
+            OrderIntent.id,
+        )
+        .select_from(Fill)
+        .join(BrokerOrder, Fill.broker_order_id == BrokerOrder.id, isouter=True)
+        .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id, isouter=True)
+        .join(Strategy, OrderIntent.strategy_id == Strategy.id, isouter=True)
+        .order_by(Fill.filled_at.asc())
+        .limit(limit)
+    )
+    return [
+        _coerce_fill_record(row)
+        for row in db.execute(statement)
+    ]
+
+
+def _coerce_fill_record(row: object) -> FillRecord:
+    values = tuple(row)
+    return FillRecord(
+        fill_id=values[0],
+        filled_at=values[1],
+        symbol=str(values[2]),
+        side=str(values[3]).lower(),
+        quantity=Decimal(str(values[4])),
+        price=Decimal(str(values[5])),
+        strategy_id=values[6],
+        strategy_name=values[7],
+        order_intent_id=values[8],
+    )
+
+
+def _match_round_trips(
+    fills: list[FillRecord],
+) -> tuple[list[dict[str, Any]], dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]]]:
+    open_lots: dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]] = {}
+    round_trips: list[dict[str, Any]] = []
+
+    for fill in fills:
+        key = (fill.symbol, fill.strategy_id)
+        if fill.side == "buy":
+            open_lots.setdefault(key, []).append(
+                {
+                    "symbol": fill.symbol,
+                    "strategy_id": fill.strategy_id,
+                    "strategy_name": fill.strategy_name,
+                    "quantity": fill.quantity,
+                    "remaining_quantity": fill.quantity,
+                    "entry_price": fill.price,
+                    "entry_fill_id": fill.fill_id,
+                    "entry_at": fill.filled_at,
+                    "order_intent_id": fill.order_intent_id,
+                }
+            )
+            continue
+
+        if fill.side != "sell":
+            continue
+
+        remaining_sell_quantity = fill.quantity
+        lots = open_lots.get(key, [])
+        while remaining_sell_quantity > 0 and lots:
+            lot = lots[0]
+            matched_quantity = min(remaining_sell_quantity, lot["remaining_quantity"])
+            entry_price = Decimal(str(lot["entry_price"]))
+            exit_price = fill.price
+            multiplier = Decimal("100")
+            entry_notional = entry_price * matched_quantity * multiplier
+            exit_notional = exit_price * matched_quantity * multiplier
+            realized_pnl = exit_notional - entry_notional
+            holding_seconds = int(
+                (fill.filled_at - lot["entry_at"]).total_seconds()
+            )
+
+            round_trips.append(
+                {
+                    "symbol": fill.symbol,
+                    "strategy_id": str(fill.strategy_id)
+                    if fill.strategy_id is not None
+                    else None,
+                    "strategy_name": fill.strategy_name,
+                    "quantity": _decimal_string(matched_quantity),
+                    "entry_price": _decimal_string(entry_price),
+                    "exit_price": _decimal_string(exit_price),
+                    "entry_notional": _decimal_string(entry_notional),
+                    "exit_notional": _decimal_string(exit_notional),
+                    "realized_pnl": _decimal_string(realized_pnl),
+                    "return_percent": _decimal_string(
+                        (realized_pnl / entry_notional * Decimal("100"))
+                        if entry_notional != 0
+                        else Decimal("0")
+                    ),
+                    "entry_at": lot["entry_at"].isoformat(),
+                    "exit_at": fill.filled_at.isoformat(),
+                    "holding_seconds": holding_seconds,
+                    "entry_fill_id": str(lot["entry_fill_id"]),
+                    "exit_fill_id": str(fill.fill_id),
+                }
+            )
+
+            lot["remaining_quantity"] -= matched_quantity
+            remaining_sell_quantity -= matched_quantity
+            if lot["remaining_quantity"] <= 0:
+                lots.pop(0)
+
+    return round_trips, open_lots
+
+
+def _open_position_summaries(
+    open_lots: dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    summaries = []
+    for (symbol, strategy_id), lots in open_lots.items():
+        remaining_quantity = sum(
+            (Decimal(str(lot["remaining_quantity"])) for lot in lots),
+            Decimal("0"),
+        )
+        if remaining_quantity <= 0:
+            continue
+        cost_basis = sum(
+            Decimal(str(lot["entry_price"]))
+            * Decimal(str(lot["remaining_quantity"]))
+            * Decimal("100")
+            for lot in lots
+        )
+        strategy_name = next(
+            (
+                lot.get("strategy_name")
+                for lot in lots
+                if lot.get("strategy_name") is not None
+            ),
+            None,
+        )
+        summaries.append(
+            {
+                "symbol": symbol,
+                "strategy_id": str(strategy_id) if strategy_id is not None else None,
+                "strategy_name": strategy_name,
+                "open_quantity": _decimal_string(remaining_quantity),
+                "cost_basis": _decimal_string(cost_basis),
+                "average_entry_price": _decimal_string(
+                    cost_basis / remaining_quantity / Decimal("100")
+                ),
+                "open_lots": len(lots),
+            }
+        )
+    return sorted(
+        summaries,
+        key=lambda item: (str(item["strategy_name"] or ""), str(item["symbol"])),
+    )
+
+
+def _totals(round_trips: list[dict[str, Any]]) -> dict[str, Any]:
+    wins = [
+        Decimal(str(item["realized_pnl"]))
+        for item in round_trips
+        if Decimal(str(item["realized_pnl"])) > 0
+    ]
+    losses = [
+        Decimal(str(item["realized_pnl"]))
+        for item in round_trips
+        if Decimal(str(item["realized_pnl"])) < 0
+    ]
+    realized_pnl = sum(
+        (Decimal(str(item["realized_pnl"])) for item in round_trips),
+        Decimal("0"),
+    )
+    total_entry_notional = sum(
+        (Decimal(str(item["entry_notional"])) for item in round_trips),
+        Decimal("0"),
+    )
+    return {
+        "realized_pnl": _decimal_string(realized_pnl),
+        "total_entry_notional": _decimal_string(total_entry_notional),
+        "return_percent": _decimal_string(
+            realized_pnl / total_entry_notional * Decimal("100")
+            if total_entry_notional != 0
+            else Decimal("0")
+        ),
+        "winning_trades": len(wins),
+        "losing_trades": len(losses),
+        "flat_trades": len(round_trips) - len(wins) - len(losses),
+        "win_rate_percent": _decimal_string(
+            Decimal(len(wins)) / Decimal(len(round_trips)) * Decimal("100")
+            if round_trips
+            else Decimal("0")
+        ),
+        "average_win": _decimal_string(sum(wins, Decimal("0")) / Decimal(len(wins)))
+        if wins
+        else "0",
+        "average_loss": _decimal_string(
+            sum(losses, Decimal("0")) / Decimal(len(losses))
+        )
+        if losses
+        else "0",
+    }
+
+
+def _strategy_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
+    for item in round_trips:
+        key = (item.get("strategy_id"), item.get("strategy_name"))
+        grouped.setdefault(key, []).append(item)
+
+    summaries = []
+    for (strategy_id, strategy_name), items in grouped.items():
+        totals = _totals(items)
+        summaries.append(
+            {
+                "strategy_id": strategy_id,
+                "strategy_name": strategy_name,
+                "matched_round_trips": len(items),
+                **totals,
+            }
+        )
+    return sorted(
+        summaries,
+        key=lambda item: Decimal(str(item["realized_pnl"])),
+        reverse=True,
+    )
+
+
+def _decimal_string(value: Decimal) -> str:
+    normalized = value.normalize()
+    if normalized == normalized.to_integral():
+        return str(normalized.quantize(Decimal("1")))
+    return format(normalized, "f")

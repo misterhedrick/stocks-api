@@ -41,6 +41,8 @@ class OrderIntentPreviewCreate(BaseModel):
     time_in_force: Literal["day"] = "day"
     rationale: str | None = None
     data_feed: Literal["indicative", "opra"] = "indicative"
+    max_estimated_notional: Decimal | None = Field(default=None, gt=0)
+    max_spread: Decimal | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_preview_request(self) -> "OrderIntentPreviewCreate":
@@ -97,5 +99,10 @@ class BrokerOrderRead(BaseModel):
 
 
 class OrderIntentSubmissionRead(BaseModel):
+    order_intent: OrderIntentRead
+    broker_order: BrokerOrderRead
+
+
+class OrderIntentCancellationRead(BaseModel):
     order_intent: OrderIntentRead
     broker_order: BrokerOrderRead
