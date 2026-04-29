@@ -24,6 +24,7 @@ from app.services.news_scanner import NewsScanResult
 from app.services.performance_review import PerformanceReviewResult
 from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
+from app.services.trade_lifecycle import TradeCasesResult, TradeLifecycleResult
 
 
 class FakeRouteSession:
@@ -689,6 +690,13 @@ class RouteBehaviorTests(unittest.TestCase):
                     "realized_pnl": "35",
                 }
             ],
+            by_symbol=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "matched_round_trips": 1,
+                    "realized_pnl": "35",
+                }
+            ],
             recent_round_trips=[
                 {
                     "symbol": "SPY260501C00500000",
@@ -712,6 +720,79 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["fills_seen"], 2)
         self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
         performance.assert_called_once_with(db, limit=25)
+
+    def test_trade_lifecycle_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = TradeLifecycleResult(
+            generated_at=now,
+            positions_seen=1,
+            managed_positions=1,
+            unmanaged_positions=0,
+            positions=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "ownership": {"managed": True},
+                    "entry_order_intent": {"id": str(uuid.uuid4())},
+                    "entry_fill_summary": {"filled_notional": "100"},
+                    "recommended_action": "hold",
+                }
+            ],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_trade_lifecycle",
+            return_value=result,
+        ) as lifecycle:
+            response = client.get(
+                "/api/v1/automation/trade-lifecycle?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["positions_seen"], 1)
+        self.assertEqual(response.json()["positions"][0]["recommended_action"], "hold")
+        lifecycle.assert_called_once_with(db, limit=25)
+
+    def test_trade_cases_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = TradeCasesResult(
+            generated_at=now,
+            fills_seen=2,
+            matched_round_trips=1,
+            open_positions=[],
+            recent_round_trips=[{"symbol": "SPY260501C00500000", "realized_pnl": "35"}],
+            totals={"realized_pnl": "35"},
+            by_strategy=[{"strategy_name": "Confirmed Trend", "realized_pnl": "35"}],
+            by_symbol=[{"symbol": "SPY260501C00500000", "realized_pnl": "35"}],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_trade_cases",
+            return_value=result,
+        ) as trade_cases:
+            response = client.get(
+                "/api/v1/automation/trade-cases?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["matched_round_trips"], 1)
+        self.assertEqual(response.json()["by_symbol"][0]["realized_pnl"], "35")
+        trade_cases.assert_called_once_with(db, limit=25)
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:

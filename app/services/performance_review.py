@@ -33,6 +33,7 @@ class PerformanceReviewResult:
     open_positions: list[dict[str, Any]]
     totals: dict[str, Any]
     by_strategy: list[dict[str, Any]]
+    by_symbol: list[dict[str, Any]]
     recent_round_trips: list[dict[str, Any]]
 
 
@@ -51,6 +52,7 @@ def get_paper_performance_review(
         open_positions=_open_position_summaries(open_lots),
         totals=_totals(round_trips),
         by_strategy=_strategy_summaries(round_trips),
+        by_symbol=_symbol_summaries(round_trips),
         recent_round_trips=round_trips[-25:][::-1],
     )
 
@@ -161,6 +163,12 @@ def _match_round_trips(
                     "holding_seconds": holding_seconds,
                     "entry_fill_id": str(lot["entry_fill_id"]),
                     "exit_fill_id": str(fill.fill_id),
+                    "entry_order_intent_id": str(lot["order_intent_id"])
+                    if lot["order_intent_id"] is not None
+                    else None,
+                    "exit_order_intent_id": str(fill.order_intent_id)
+                    if fill.order_intent_id is not None
+                    else None,
                 }
             )
 
@@ -276,6 +284,36 @@ def _strategy_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any
                 "strategy_id": strategy_id,
                 "strategy_name": strategy_name,
                 "matched_round_trips": len(items),
+                **totals,
+            }
+        )
+    return sorted(
+        summaries,
+        key=lambda item: Decimal(str(item["realized_pnl"])),
+        reverse=True,
+    )
+
+
+def _symbol_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in round_trips:
+        grouped.setdefault(str(item.get("symbol")), []).append(item)
+
+    summaries = []
+    for symbol, items in grouped.items():
+        totals = _totals(items)
+        strategy_names = sorted(
+            {
+                str(item["strategy_name"])
+                for item in items
+                if item.get("strategy_name") is not None
+            }
+        )
+        summaries.append(
+            {
+                "symbol": symbol,
+                "matched_round_trips": len(items),
+                "strategy_names": strategy_names,
                 **totals,
             }
         )

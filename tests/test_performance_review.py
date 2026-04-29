@@ -73,6 +73,12 @@ class PerformanceReviewTests(unittest.TestCase):
         self.assertEqual(result.totals["win_rate_percent"], "100")
         self.assertEqual(result.by_strategy[0]["strategy_name"], "Confirmed Trend")
         self.assertEqual(result.by_strategy[0]["realized_pnl"], "35")
+        self.assertEqual(result.by_symbol[0]["symbol"], "SPY260501C00500000")
+        self.assertEqual(result.by_symbol[0]["realized_pnl"], "35")
+        self.assertEqual(
+            result.by_symbol[0]["strategy_names"],
+            ["Confirmed Trend"],
+        )
         self.assertEqual(result.open_positions[0]["open_quantity"], "1")
         self.assertEqual(result.open_positions[0]["cost_basis"], "100")
 
@@ -105,6 +111,7 @@ class PerformanceReviewTests(unittest.TestCase):
         self.assertEqual(result.totals["realized_pnl"], "-50")
         self.assertEqual(result.totals["losing_trades"], 1)
         self.assertEqual(result.totals["average_loss"], "-50")
+        self.assertEqual(result.by_symbol[0]["losing_trades"], 1)
         self.assertEqual(result.open_positions, [])
 
 

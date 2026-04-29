@@ -272,6 +272,15 @@ curl -H "Authorization: Bearer change-me" \
 
 This read-only endpoint summarizes current reconciled positions with ownership, active exit order status, exit config availability, P/L fields, and a recommended action such as `hold`, `exit_rule_triggered`, `exit_pending`, `add_exit_config`, or `preview_unmanaged_exit`.
 
+Check open trade lifecycle details:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/trade-lifecycle?limit=100"
+```
+
+This read-only endpoint expands current reconciled positions into a trade lifecycle view: ownership, linked entry order intent, entry broker orders, entry fills, average fill price/notional, active exit order, and the current exit recommendation.
+
 Check paper performance:
 
 ```bash
@@ -279,7 +288,17 @@ curl -H "Authorization: Bearer change-me" \
   "http://127.0.0.1:8000/api/v1/automation/performance?limit=500"
 ```
 
-This read-only endpoint matches option buy/sell fills FIFO by symbol and strategy, reports realized paper P/L, win/loss counts, win rate, strategy-level summaries, recent round trips, and any still-open lots. It is intended for tuning paper strategies after automated paper trading has collected data.
+This read-only endpoint matches option buy/sell fills FIFO by symbol and strategy, reports realized paper P/L, win/loss counts, win rate, strategy-level and symbol-level summaries, recent round trips, and any still-open lots. It is intended for tuning paper strategies after automated paper trading has collected data.
+
+Check paper trade cases:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/trade-cases?limit=500"
+```
+
+This read-only endpoint exposes the same FIFO-matched closed round trips and open lots in a trade-case shape so later AI review can consume stable entry/exit IDs, realized P/L, strategy summaries, and symbol summaries without changing the broker source of truth.
+
 
 Evaluate current positions for exits:
 
@@ -332,6 +351,15 @@ Tune paper strategies:
 ```
 
 The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, deep-merges scanner config patches, and can enable or disable scanner auto-submit with conservative paper limits. Seeded strategies keep `scanner.submit.enabled=false` by default.
+
+Seed a broader paper-trading universe:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\seed_paper_trade_universe.py --dry-run --sample-price AAPL=180 --sample-price MSFT=420 --symbol AAPL --symbol MSFT
+.\.venv\Scripts\python.exe .\scripts\seed_paper_trade_universe.py
+```
+
+The universe seed script creates or updates bullish call and bearish put variants for moving-average and confirmed-trend scanners. By default it covers `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMD`, `TSLA`, `META`, `AMZN`, `GOOGL`, `NFLX`, and `AVGO`. It enables scanner submit using one contract per order, a configurable notional cap, no per-symbol cap, and the paper-trade-day time window. It is intended for collecting paper-trade data across a wider but still liquid ticker set.
 
 Smoke test the configured local environment:
 

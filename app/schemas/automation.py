@@ -70,4 +70,24 @@ class PaperPerformanceRead(BaseModel):
     open_positions: list[dict[str, Any]]
     totals: dict[str, Any]
     by_strategy: list[dict[str, Any]]
+    by_symbol: list[dict[str, Any]]
     recent_round_trips: list[dict[str, Any]]
+
+
+class TradeLifecycleRead(BaseModel):
+    generated_at: datetime
+    positions_seen: int
+    managed_positions: int
+    unmanaged_positions: int
+    positions: list[dict[str, Any]]
+
+
+class TradeCasesRead(BaseModel):
+    generated_at: datetime
+    fills_seen: int
+    matched_round_trips: int
+    open_positions: list[dict[str, Any]]
+    recent_round_trips: list[dict[str, Any]]
+    totals: dict[str, Any]
+    by_strategy: list[dict[str, Any]]
+    by_symbol: list[dict[str, Any]]

@@ -9,10 +9,13 @@ from app.schemas.automation import (
     AutomationStatusRead,
     PaperPerformanceRead,
     PositionManagementStatusRead,
+    TradeCasesRead,
+    TradeLifecycleRead,
 )
 from app.services.automation_status import get_automation_status
 from app.services.performance_review import get_paper_performance_review
 from app.services.position_exits import get_position_management_statuses
+from app.services.trade_lifecycle import get_trade_cases, get_trade_lifecycle
 
 router = APIRouter(
     prefix="/automation",
@@ -54,3 +57,27 @@ def paper_performance_route(
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ) -> PaperPerformanceRead:
     return get_paper_performance_review(db, limit=limit)
+
+
+@router.get(
+    "/trade-lifecycle",
+    response_model=TradeLifecycleRead,
+    status_code=status.HTTP_200_OK,
+)
+def trade_lifecycle_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> TradeLifecycleRead:
+    return get_trade_lifecycle(db, limit=limit)
+
+
+@router.get(
+    "/trade-cases",
+    response_model=TradeCasesRead,
+    status_code=status.HTTP_200_OK,
+)
+def trade_cases_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=5000)] = 500,
+) -> TradeCasesRead:
+    return get_trade_cases(db, limit=limit)

@@ -141,9 +141,12 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(result.max_contracts_per_order, 1)
         self.assertEqual(str(result.max_estimated_premium_per_order), "250")
         self.assertEqual(result.operational_summary["effective_mode"], "previewing")
-        self.assertIn(
+        self.assertNotIn(
             "news risk gate is blocking new entry previews",
             result.operational_summary["blockers"],
+        )
+        self.assertFalse(
+            result.operational_summary["news_gate"]["should_block_new_entries"]
         )
         self.assertEqual(
             result.operational_summary["news_gate"]["blocking_reasons"],
@@ -172,6 +175,38 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(result.latest_job_runs["market_cycle"].job_name, "market_cycle")
         self.assertEqual(result.latest_job_runs["scan_signals"].job_name, "scan_signals")
         self.assertIsNone(result.latest_job_runs["reconcile_broker"])
+
+    def test_get_automation_status_blocks_on_news_risk_when_news_enabled(self) -> None:
+        db = FakeAutomationStatusSession(
+            strategies=[build_strategy()],
+            job_runs=[
+                build_job_run("market_cycle"),
+                None,
+                None,
+            ],
+        )
+
+        with patch.multiple(
+            "app.services.automation_status.settings",
+            market_cycle_preview_enabled=True,
+            market_cycle_news_enabled=True,
+            market_cycle_submit_enabled=True,
+            trading_automation_enabled=True,
+        ):
+            result = get_automation_status(db)
+
+        self.assertIn(
+            "news risk gate is blocking new entry previews",
+            result.operational_summary["blockers"],
+        )
+        self.assertTrue(
+            result.operational_summary["news_gate"]["should_block_new_entries"]
+        )
+        self.assertFalse(
+            result.operational_summary["paper_trading_readiness"][
+                "ready_to_auto_submit_now"
+            ]
+        )
 
 
 if __name__ == "__main__":
