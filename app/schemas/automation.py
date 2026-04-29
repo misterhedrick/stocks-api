@@ -61,3 +61,13 @@ class PositionManagementStatusRead(BaseModel):
     active_exit_order: dict[str, Any] | None
     recommended_action: str
     reason: str
+
+
+class PaperPerformanceRead(BaseModel):
+    generated_at: datetime
+    fills_seen: int
+    matched_round_trips: int
+    open_positions: list[dict[str, Any]]
+    totals: dict[str, Any]
+    by_strategy: list[dict[str, Any]]
+    recent_round_trips: list[dict[str, Any]]

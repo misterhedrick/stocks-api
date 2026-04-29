@@ -261,7 +261,7 @@ curl -H "Authorization: Bearer change-me" \
   "http://127.0.0.1:8000/api/v1/automation/status"
 ```
 
-The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs.
+The automation status endpoint summarizes market-cycle switches, global automation safety settings, active strategy scanner/submit settings, and the latest `market_cycle`, `scan_signals`, and `reconcile_broker` job runs. It also includes `operational_summary.paper_trading_readiness`, which distinguishes current blockers from switches/settings that must be enabled intentionally before automated paper submit.
 
 Check position management status:
 
@@ -271,6 +271,15 @@ curl -H "Authorization: Bearer change-me" \
 ```
 
 This read-only endpoint summarizes current reconciled positions with ownership, active exit order status, exit config availability, P/L fields, and a recommended action such as `hold`, `exit_rule_triggered`, `exit_pending`, `add_exit_config`, or `preview_unmanaged_exit`.
+
+Check paper performance:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/performance?limit=500"
+```
+
+This read-only endpoint matches option buy/sell fills FIFO by symbol and strategy, reports realized paper P/L, win/loss counts, win rate, strategy-level summaries, recent round trips, and any still-open lots. It is intended for tuning paper strategies after automated paper trading has collected data.
 
 Evaluate current positions for exits:
 

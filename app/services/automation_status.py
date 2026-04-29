@@ -60,7 +60,10 @@ def get_automation_status(db: Session) -> AutomationStatusRead:
             news_enabled=settings.market_cycle_news_enabled,
             submit_enabled=settings.market_cycle_submit_enabled,
         ),
-        operational_summary=_operational_summary(latest_job_runs),
+        operational_summary=_operational_summary(
+            latest_job_runs,
+            active_strategies=active_strategies,
+        ),
         trading_automation_enabled=settings.trading_automation_enabled,
         auto_submit_requires_paper=settings.auto_submit_requires_paper,
         paper_mode=settings.alpaca_paper,
@@ -118,6 +121,8 @@ def _latest_job_runs(db: Session) -> dict[str, JobRunRead | None]:
 
 def _operational_summary(
     latest_job_runs: dict[str, JobRunRead | None],
+    *,
+    active_strategies: list[Strategy],
 ) -> dict[str, Any]:
     market_cycle = latest_job_runs.get("market_cycle")
     details = market_cycle.details if market_cycle is not None else {}
@@ -178,6 +183,68 @@ def _operational_summary(
             "skipped": submit.get("skipped"),
             "rejected": submit.get("rejected"),
         },
+        "paper_trading_readiness": _paper_trading_readiness(
+            active_strategies,
+            risk=risk,
+        ),
+    }
+
+
+def _paper_trading_readiness(
+    active_strategies: list[Strategy],
+    *,
+    risk: dict[str, Any],
+) -> dict[str, Any]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+
+    if not settings.alpaca_paper:
+        blockers.append("ALPACA_PAPER is false")
+    if settings.auto_submit_requires_paper and not settings.alpaca_paper:
+        blockers.append("AUTO_SUBMIT_REQUIRES_PAPER is true but paper mode is off")
+    if not settings.market_cycle_scan_enabled:
+        blockers.append("MARKET_CYCLE_SCAN_ENABLED is false")
+    if not settings.market_cycle_preview_enabled:
+        blockers.append("MARKET_CYCLE_PREVIEW_ENABLED is false")
+    if not settings.market_cycle_reconcile_enabled:
+        blockers.append("MARKET_CYCLE_RECONCILE_ENABLED is false")
+    if not settings.market_cycle_submit_enabled:
+        warnings.append("MARKET_CYCLE_SUBMIT_ENABLED must be true to auto-submit paper orders")
+    if not settings.trading_automation_enabled:
+        warnings.append("TRADING_AUTOMATION_ENABLED must be true to auto-submit paper orders")
+    if risk.get("should_block_new_entries") is True:
+        warnings.append("news risk gate is currently blocking new entry previews")
+
+    submit_ready_strategies = []
+    preview_only_strategies = []
+    for strategy in active_strategies:
+        scanner = strategy.config.get("scanner") if isinstance(strategy.config, dict) else None
+        if not isinstance(scanner, dict):
+            continue
+        preview = scanner.get("preview")
+        submit = scanner.get("submit")
+        if isinstance(preview, dict) and preview.get("enabled") is True:
+            if isinstance(submit, dict) and submit.get("enabled") is True:
+                submit_ready_strategies.append(strategy.name)
+            else:
+                preview_only_strategies.append(strategy.name)
+
+    if not submit_ready_strategies:
+        warnings.append("no active strategy has scanner.submit.enabled=true")
+    if not active_strategies:
+        blockers.append("no active strategies found")
+
+    return {
+        "ready_to_auto_submit_now": not blockers
+        and settings.market_cycle_submit_enabled
+        and settings.trading_automation_enabled
+        and bool(submit_ready_strategies)
+        and risk.get("should_block_new_entries") is not True,
+        "ready_after_switches": not blockers and bool(active_strategies),
+        "blockers": blockers,
+        "warnings": warnings,
+        "submit_ready_strategies": submit_ready_strategies,
+        "preview_only_strategies": preview_only_strategies,
     }
 
 

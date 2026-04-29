@@ -21,6 +21,7 @@ from app.schemas.automation import (
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
 from app.services.news_scanner import NewsScanResult
+from app.services.performance_review import PerformanceReviewResult
 from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 
@@ -665,6 +666,52 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()[0]["symbol"], "SPY")
         self.assertEqual(response.json()[0]["recommended_action"], "preview_unmanaged_exit")
         positions.assert_called_once_with(db, limit=25)
+
+    def test_paper_performance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = PerformanceReviewResult(
+            generated_at=now,
+            fills_seen=2,
+            matched_round_trips=1,
+            open_positions=[],
+            totals={"realized_pnl": "35", "win_rate_percent": "100"},
+            by_strategy=[
+                {
+                    "strategy_name": "Confirmed Trend",
+                    "matched_round_trips": 1,
+                    "realized_pnl": "35",
+                }
+            ],
+            recent_round_trips=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "realized_pnl": "35",
+                    "entry_at": now.isoformat(),
+                    "exit_at": now.isoformat(),
+                }
+            ],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_paper_performance_review",
+            return_value=result,
+        ) as performance:
+            response = client.get(
+                "/api/v1/automation/performance?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["fills_seen"], 2)
+        self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
+        performance.assert_called_once_with(db, limit=25)
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:

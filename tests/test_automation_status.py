@@ -150,6 +150,14 @@ class AutomationStatusTests(unittest.TestCase):
             ["market: tariff risk"],
         )
         self.assertEqual(result.operational_summary["last_preview"]["signals_seen"], 1)
+        readiness = result.operational_summary["paper_trading_readiness"]
+        self.assertTrue(readiness["ready_after_switches"])
+        self.assertFalse(readiness["ready_to_auto_submit_now"])
+        self.assertEqual(readiness["submit_ready_strategies"], ["Momentum Scanner"])
+        self.assertIn(
+            "TRADING_AUTOMATION_ENABLED must be true to auto-submit paper orders",
+            readiness["warnings"],
+        )
         self.assertEqual(len(result.active_strategies), 1)
         strategy = result.active_strategies[0]
         self.assertEqual(strategy.scanner_type, "percent_change")

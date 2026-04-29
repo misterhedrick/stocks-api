@@ -145,6 +145,8 @@ Current repo structure and purpose:
   - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
   - GET /api/v1/automation/positions, bearer-protected.
   - Read-only position management status with ownership, exit config state, active exit order, P/L fields, and recommended action.
+  - GET /api/v1/automation/performance, bearer-protected.
+  - Read-only paper performance review with FIFO matched option round trips, realized P/L, strategy summaries, recent round trips, and open lots.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -200,6 +202,7 @@ Current repo structure and purpose:
   - Pydantic response schemas for automation status.
 - app/services/automation_status.py
   - Service logic for reading active strategy automation config and latest job_run summaries.
+  - Includes paper_trading_readiness in operational_summary so tomorrow's auto-paper switches can be checked before enabling submit.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
   - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
@@ -247,6 +250,10 @@ Current repo structure and purpose:
   - Supports get_position_management_statuses for read-only position dashboard data and recommendations.
   - Supports scanner.exit profit_target_percent, stop_loss_percent, and max_days_to_expiration.
   - Creates previewed sell order_intents with quote context and audit logs.
+- app/services/performance_review.py
+  - Read-only paper performance review using existing fills, broker_orders, order_intents, and strategies.
+  - Matches buy/sell option fills FIFO by symbol and strategy.
+  - Reports realized P/L, win/loss counts, win rate, per-strategy summaries, recent round trips, and open lots.
 - app/services/news_scanner.py
   - Fetches RSS news for broad market context and currently owned tickers.
   - Default broad scan covers US indexes, Fed/rates/inflation/economic data, US economy/yields/dollar/recession/GDP, world markets/geopolitical risk/oil/war/tariffs, and earnings/volatility/credit/banking headlines.
@@ -371,7 +378,9 @@ Current behavior implemented:
   - New env/settings: MARKET_CYCLE_NEWS_ENABLED=false controls market-cycle news checks.
   - Guard service: app/services/automation_guard.py with can_auto_submit_order_intent(db, order_intent, cycle_id=None).
   - Market-cycle auto-submit now checks the guard before calling submit_order_intent; blocked intents are skipped, included in submit errors, and audited as order_intent.auto_submit_skipped.
-  - GET /api/v1/automation/status now includes the global safety fields and paper mode.
+- GET /api/v1/automation/status now includes the global safety fields and paper mode.
+  - operational_summary now includes paper_trading_readiness with blockers, warnings, submit-ready strategies, and preview-only strategies.
+  - GET /api/v1/automation/performance reports paper P/L from matched fills for strategy tuning.
   - Postman automation status and market-cycle coverage includes safety-field and skip-visibility assertions.
   - Tests added/updated for guard decisions, market-cycle guard skips, and automation status response shape.
 - Scanner no-op observability was added.
