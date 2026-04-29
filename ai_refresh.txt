@@ -126,8 +126,9 @@ Current repo structure and purpose:
 - scripts/tune_paper_strategies.py
   - Lists active strategy scanner/preview/submit state.
   - Creates or updates one preview-first moving-average paper strategy.
+  - Creates or updates one preview-first confirmed-trend paper strategy.
   - Deep-merges JSON scanner config patches by strategy name and supports direct scanner patch flags such as --lookback-minutes and --timeframe.
-  - Supports dry-run output for moving-average seeding and scanner patch previews.
+  - Supports dry-run output for moving-average/confirmed-trend seeding and scanner patch previews.
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
 - scripts/run_market_cycle_smoke.py
@@ -207,7 +208,7 @@ Current repo structure and purpose:
   - Marks order_intents rejected when Alpaca rejects.
 - app/services/strategy_templates.py
   - Builds JSON-safe preview-first paper strategy payloads.
-  - Current templates include SPY upside call preview, QQQ downside put preview, SPY momentum call preview, and SPY moving-average call preview.
+  - Current templates include SPY upside call preview, QQQ downside put preview, SPY momentum call preview, SPY moving-average call preview, and SPY confirmed-trend call preview.
   - Templates cap estimated option notional/spread and leave auto-submit disabled.
 - app/services/option_contracts.py
   - Domain/service logic to select an active tradable Alpaca option contract.
@@ -222,6 +223,7 @@ Current repo structure and purpose:
   - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
   - Supports config.scanner.type="percent_change" using recent Alpaca stock bars.
   - Supports config.scanner.type="moving_average" using recent Alpaca stock bars, short/long windows, and bullish/bearish cross or trend triggers.
+  - Supports config.scanner.type="trend_confirmation" using moving-average alignment plus a minimum lookback percent change to reduce choppy false positives.
   - Supports scanner dedupe_minutes to suppress repeated equivalent signals.
   - Creates signals; market_cycle can optionally preview/submit scanner-created signals behind separate switches.
   - Records job_runs and audit_logs for success/failure.
@@ -387,7 +389,7 @@ Current behavior implemented:
   - Includes health/ready, automation status, reconcile, market-cycle, scan-signals, strategy/signal/order-intent flows, and option contract selection.
 
 Current important limitations/gaps:
-- Scanner/signal-generation logic supports first-pass quote-threshold, percent-change, and moving-average rules, but no broader indicator scoring yet.
+- Scanner/signal-generation logic supports quote-threshold, percent-change, moving-average, and confirmed-trend rules, but no broader indicator scoring/backtesting yet.
 - Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
 - Exit evaluation is first-pass only; it supports simple P/L and expiration rules, not trailing stops or AI-assisted exits yet.
 - News scanning is RSS/headline risk gating with lightweight freshness/source-quality filters; no persistent article table, source ranking model, sentiment model, article-body reading, or auto-sell decisioning yet.

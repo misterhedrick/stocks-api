@@ -8,6 +8,7 @@ from app.db.models import AuditLog, Strategy
 from app.services.strategy_templates import (
     build_moving_average_strategy_payload,
     build_preview_first_strategy_payloads,
+    build_trend_confirmation_strategy_payload,
 )
 from scripts.seed_paper_strategies import seed_strategies
 
@@ -46,15 +47,21 @@ class StrategyTemplateTests(unittest.TestCase):
             prices={"SPY": Decimal("500.20"), "QQQ": Decimal("430.40")}
         )
 
-        self.assertEqual(len(payloads), 4)
+        self.assertEqual(len(payloads), 5)
         for payload in payloads:
             scanner = payload["config"]["scanner"]
             self.assertTrue(payload["is_active"])
             self.assertTrue(scanner["preview"]["enabled"])
             self.assertFalse(scanner["submit"]["enabled"])
             self.assertEqual(scanner["preview"]["quantity"], 1)
-            self.assertEqual(scanner["preview"]["max_estimated_notional"], "250.00")
-            self.assertEqual(scanner["preview"]["max_spread"], "0.25")
+            self.assertLessEqual(
+                Decimal(scanner["preview"]["max_estimated_notional"]),
+                Decimal("250.00"),
+            )
+            self.assertLessEqual(
+                Decimal(scanner["preview"]["max_spread"]),
+                Decimal("0.25"),
+            )
 
     def test_build_moving_average_strategy_payload_is_preview_only(self) -> None:
         payload = build_moving_average_strategy_payload(
@@ -73,6 +80,24 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["short_window"], 3)
         self.assertEqual(scanner["long_window"], 15)
         self.assertTrue(scanner["preview"]["enabled"])
+        self.assertFalse(scanner["submit"]["enabled"])
+
+    def test_build_trend_confirmation_strategy_payload_has_tighter_risk_controls(self) -> None:
+        payload = build_trend_confirmation_strategy_payload(
+            symbol="spy",
+            target_strike=Decimal("500"),
+        )
+
+        scanner = payload["config"]["scanner"]
+        self.assertEqual(payload["name"], "Paper SPY confirmed trend call preview")
+        self.assertEqual(scanner["type"], "trend_confirmation")
+        self.assertEqual(scanner["short_window"], 8)
+        self.assertEqual(scanner["long_window"], 21)
+        self.assertEqual(scanner["min_change_percent"], "0.20")
+        self.assertEqual(scanner["preview"]["max_estimated_notional"], "200.00")
+        self.assertEqual(scanner["preview"]["max_spread"], "0.20")
+        self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
+        self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
         self.assertFalse(scanner["submit"]["enabled"])
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:

@@ -240,7 +240,15 @@ def _signal_specs_from_scanner(
             market_data_client=market_data_client,
             no_signal_reasons=no_signal_reasons,
         )
-    raise ValueError("scanner.type must be price_threshold, percent_change, or moving_average")
+    if scanner_type == "trend_confirmation":
+        return _trend_confirmation_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    raise ValueError("scanner.type must be price_threshold, percent_change, moving_average, or trend_confirmation")
 
 
 def _price_threshold_signal_specs(
@@ -550,6 +558,134 @@ def _moving_average_signal_specs(
                     "previous_long_average": str(previous_long),
                     "current_short_average": str(current_short),
                     "current_long_average": str(current_long),
+                    "bars": _stock_bars_context(stock_bars),
+                },
+                "dedupe_minutes": scanner_config.get(
+                    "dedupe_minutes",
+                    DEFAULT_DEDUPE_MINUTES,
+                ),
+            }
+        )
+
+    return signal_specs
+
+
+def _trend_confirmation_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    direction = _scanner_string(scanner_config, "direction", default="bullish")
+    if direction not in {"bullish", "bearish"}:
+        raise ValueError("scanner.direction must be bullish or bearish")
+
+    short_window = _positive_int(scanner_config, "short_window", default=5)
+    long_window = _positive_int(scanner_config, "long_window", default=20)
+    if short_window >= long_window:
+        raise ValueError("scanner.short_window must be less than scanner.long_window")
+
+    min_change_percent = _optional_decimal(scanner_config, "min_change_percent")
+    if min_change_percent is None:
+        min_change_percent = Decimal("0.25")
+    if min_change_percent <= Decimal("0"):
+        raise ValueError("scanner.min_change_percent must be greater than 0")
+
+    lookback_minutes = _positive_int(scanner_config, "lookback_minutes", default=1440)
+    timeframe = _scanner_string(scanner_config, "timeframe", default="5Min")
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 5, long_window + 2),
+    )
+    signal_specs: list[dict[str, Any]] = []
+
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no stock bars returned for trend confirmation window"
+            )
+            continue
+        if len(stock_bars.bars) < long_window:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: fewer than {long_window} stock bars returned for trend confirmation window"
+            )
+            continue
+
+        first_bar = stock_bars.bars[0]
+        last_bar = stock_bars.bars[-1]
+        if first_bar.close == Decimal("0"):
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: first close was 0, trend confirmation unavailable"
+            )
+            continue
+
+        closes = [bar.close for bar in stock_bars.bars]
+        short_average = _average(closes[-short_window:])
+        long_average = _average(closes[-long_window:])
+        change_percent = (
+            (last_bar.close - first_bar.close) / first_bar.close
+        ) * Decimal("100")
+
+        if direction == "bullish":
+            aligned = short_average > long_average and last_bar.close > long_average
+            momentum_confirmed = change_percent >= min_change_percent
+        else:
+            aligned = short_average < long_average and last_bar.close < long_average
+            momentum_confirmed = change_percent <= -min_change_percent
+
+        if not aligned:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: moving averages were not aligned for {direction} trend confirmation"
+            )
+            continue
+        if not momentum_confirmed:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: percent change {change_percent} did not confirm {direction} trend"
+            )
+            continue
+
+        signal_specs.append(
+            {
+                "symbol": symbol,
+                "underlying_symbol": symbol,
+                "signal_type": _scanner_string(
+                    scanner_config,
+                    "signal_type",
+                    default="trend_confirmation",
+                ),
+                "direction": direction,
+                "confidence": scanner_config.get("confidence"),
+                "rationale": _scanner_string(
+                    scanner_config,
+                    "rationale",
+                    default="Trend confirmation scanner triggered",
+                ),
+                "market_context": {
+                    "source": "scanner.trend_confirmation",
+                    "direction": direction,
+                    "short_window": short_window,
+                    "long_window": long_window,
+                    "lookback_minutes": lookback_minutes,
+                    "timeframe": timeframe,
+                    "data_feed": feed,
+                    "first_close": str(first_bar.close),
+                    "last_close": str(last_bar.close),
+                    "change_percent": str(change_percent),
+                    "min_change_percent": str(min_change_percent),
+                    "short_average": str(short_average),
+                    "long_average": str(long_average),
                     "bars": _stock_bars_context(stock_bars),
                 },
                 "dedupe_minutes": scanner_config.get(

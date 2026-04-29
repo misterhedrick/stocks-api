@@ -315,10 +315,12 @@ Tune paper strategies:
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py list --active-only
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average --dry-run --sample-price 500
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-confirmed-trend --dry-run --sample-price 500
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-confirmed-trend
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --short-window 8 --long-window 21 --lookback-minutes 1440 --timeframe 5Min
 ```
 
-The tuning script lists scanner/preview/submit state, creates or updates one preview-first moving-average strategy, and deep-merges scanner config patches. The moving-average strategy keeps `scanner.submit.enabled=false` by default.
+The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, and deep-merges scanner config patches. Seeded strategies keep `scanner.submit.enabled=false` by default.
 
 Smoke test the configured local environment:
 
@@ -446,6 +448,29 @@ A moving-average rule uses recent Alpaca stock bars:
 ```
 
 Supported moving-average triggers are `bullish_cross`, `bearish_cross`, `bullish_trend`, and `bearish_trend`.
+
+A confirmed-trend rule requires moving-average alignment plus a minimum lookback price change:
+
+```json
+{
+  "scanner": {
+    "type": "trend_confirmation",
+    "symbols": ["SPY"],
+    "short_window": 8,
+    "long_window": 21,
+    "lookback_minutes": 1440,
+    "timeframe": "5Min",
+    "min_change_percent": "0.20",
+    "signal_type": "confirmed_trend",
+    "direction": "bullish",
+    "confidence": "0.6800",
+    "data_feed": "iex",
+    "dedupe_minutes": 360
+  }
+}
+```
+
+This scanner is meant to reduce moving-average whipsaw by requiring both trend alignment and recent price movement. It still creates previews only unless strategy submit settings and global submit switches are intentionally enabled.
 When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.preview.enabled=true` can automatically create previewed order intents. This still does not submit orders while `MARKET_CYCLE_SUBMIT_ENABLED=false`.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
 Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, optional `max_orders_per_trading_day`, optional `trading_day_timezone`, optional `trade_windows`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.

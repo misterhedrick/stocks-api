@@ -558,6 +558,87 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_skipped, 1)
         self.assertIn("short_window must be less than", result.errors[0])
 
+    def test_scan_signals_creates_signal_when_trend_confirmation_is_met(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "trend_confirmation",
+                    "symbols": ["SPY"],
+                    "direction": "bullish",
+                    "short_window": 2,
+                    "long_window": 4,
+                    "min_change_percent": "1.00",
+                    "signal_type": "confirmed_trend",
+                    "confidence": "0.68",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["100.00", "100.50", "101.00", "102.00", "103.00"]}
+            ),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].signal_type, "confirmed_trend")
+        self.assertEqual(signals[-1].direction, "bullish")
+        self.assertEqual(signals[-1].market_context["source"], "scanner.trend_confirmation")
+        self.assertEqual(signals[-1].market_context["min_change_percent"], "1.00")
+
+    def test_scan_signals_requires_momentum_for_trend_confirmation(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "trend_confirmation",
+                    "symbols": ["SPY"],
+                    "direction": "bullish",
+                    "short_window": 2,
+                    "long_window": 4,
+                    "min_change_percent": "2.00",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["100.00", "100.10", "100.20", "100.30", "100.40"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertIn("did not confirm bullish trend", result.no_signal_reasons[0])
+
+    def test_scan_signals_requires_alignment_for_trend_confirmation(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "trend_confirmation",
+                    "symbols": ["SPY"],
+                    "direction": "bullish",
+                    "short_window": 2,
+                    "long_window": 4,
+                    "min_change_percent": "0.10",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={"SPY": ["100.00", "105.00", "104.00", "103.00", "102.00"]}
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertIn("moving averages were not aligned", result.no_signal_reasons[0])
+
     def test_scan_signals_suppresses_recent_duplicate_signal(self) -> None:
         strategy = build_strategy(
             config={

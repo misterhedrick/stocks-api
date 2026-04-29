@@ -53,6 +53,10 @@ def build_preview_first_strategy_payloads(
             symbol="SPY",
             target_strike=_whole_dollar(prices["SPY"]),
         ),
+        build_trend_confirmation_strategy_payload(
+            symbol="SPY",
+            target_strike=_whole_dollar(prices["SPY"]),
+        ),
     ]
 
 
@@ -111,6 +115,69 @@ def build_moving_average_strategy_payload(
                 ),
                 "exit": _exit_config(),
                 "submit": _disabled_submit_config(),
+            }
+        },
+    }
+
+
+def build_trend_confirmation_strategy_payload(
+    *,
+    symbol: str,
+    target_strike: Decimal,
+    name: str | None = None,
+    option_type: str = "call",
+    direction: str = "bullish",
+    short_window: int = 8,
+    long_window: int = 21,
+    lookback_minutes: int = 1440,
+    timeframe: str = "5Min",
+    min_change_percent: str = "0.20",
+    confidence: str = "0.6800",
+) -> dict[str, Any]:
+    clean_symbol = symbol.strip().upper()
+    if name is None:
+        name = f"Paper {clean_symbol} confirmed trend {option_type} preview"
+
+    return {
+        "name": name,
+        "description": (
+            f"Preview-first {clean_symbol} {option_type} strategy that requires "
+            "moving-average alignment plus price momentum confirmation. "
+            "Auto-submit stays disabled."
+        ),
+        "is_active": True,
+        "config": {
+            "scanner": {
+                "type": "trend_confirmation",
+                "symbols": [clean_symbol],
+                "short_window": short_window,
+                "long_window": long_window,
+                "lookback_minutes": lookback_minutes,
+                "timeframe": timeframe,
+                "min_change_percent": min_change_percent,
+                "signal_type": "confirmed_trend",
+                "direction": direction,
+                "confidence": confidence,
+                "rationale": (
+                    f"{clean_symbol} confirmed trend scanner found "
+                    f"{direction} MA alignment and momentum"
+                ),
+                "data_feed": "iex",
+                "dedupe_minutes": 360,
+                "preview": _preview_config(
+                    symbol=clean_symbol,
+                    option_type=option_type,
+                    target_strike=target_strike,
+                    rationale=f"{name}: preview only; does not submit.",
+                    max_estimated_notional="200.00",
+                    max_spread="0.20",
+                ),
+                "exit": _exit_config(
+                    profit_target_percent="25",
+                    stop_loss_percent="15",
+                    max_spread="0.25",
+                ),
+                "submit": _disabled_submit_config(max_notional_per_order="200.00"),
             }
         },
     }
@@ -200,6 +267,8 @@ def _preview_config(
     option_type: str,
     target_strike: Decimal,
     rationale: str,
+    max_estimated_notional: str = "250.00",
+    max_spread: str = "0.25",
 ) -> dict[str, Any]:
     return {
         "enabled": True,
@@ -211,20 +280,20 @@ def _preview_config(
         "order_type": "limit",
         "time_in_force": "day",
         "data_feed": "indicative",
-        "max_estimated_notional": "250.00",
-        "max_spread": "0.25",
+        "max_estimated_notional": max_estimated_notional,
+        "max_spread": max_spread,
         "limit": 100,
         "rationale": rationale,
     }
 
 
-def _disabled_submit_config() -> dict[str, Any]:
+def _disabled_submit_config(*, max_notional_per_order: str = "250.00") -> dict[str, Any]:
     return {
         "enabled": False,
         "max_orders_per_cycle": 1,
         "max_contracts_per_order": 1,
         "max_contracts_per_cycle": 1,
-        "max_notional_per_order": "250.00",
+        "max_notional_per_order": max_notional_per_order,
         "max_open_contracts_per_symbol": 1,
         "max_open_contracts_per_strategy": 2,
         "max_orders_per_trading_day": 1,
@@ -240,18 +309,23 @@ def _disabled_submit_config() -> dict[str, Any]:
     }
 
 
-def _exit_config() -> dict[str, Any]:
+def _exit_config(
+    *,
+    profit_target_percent: str = "30",
+    stop_loss_percent: str = "20",
+    max_spread: str = "0.30",
+) -> dict[str, Any]:
     return {
         "enabled": True,
-        "profit_target_percent": "30",
-        "stop_loss_percent": "20",
+        "profit_target_percent": profit_target_percent,
+        "stop_loss_percent": stop_loss_percent,
         "max_days_to_expiration": 1,
         "max_contracts_per_exit": 1,
         "order_type": "limit",
         "limit_price_source": "bid",
         "time_in_force": "day",
         "data_feed": "indicative",
-        "max_spread": "0.30",
+        "max_spread": max_spread,
         "submit": {
             "enabled": True,
             "max_orders_per_cycle": 1,

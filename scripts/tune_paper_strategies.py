@@ -21,6 +21,7 @@ from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import build_moving_average_strategy_payload
+from app.services.strategy_templates import build_trend_confirmation_strategy_payload
 
 
 def main() -> None:
@@ -59,6 +60,24 @@ def main() -> None:
     )
     seed_parser.add_argument("--dry-run", action="store_true")
 
+    confirmed_parser = subparsers.add_parser(
+        "seed-confirmed-trend",
+        help="Create or update one preview-first trend-confirmation paper strategy.",
+    )
+    confirmed_parser.add_argument("--name")
+    confirmed_parser.add_argument("--symbol", default="SPY")
+    confirmed_parser.add_argument("--option-type", choices=["call", "put"], default="call")
+    confirmed_parser.add_argument("--direction", choices=["bullish", "bearish"], default="bullish")
+    confirmed_parser.add_argument("--short-window", type=int, default=8)
+    confirmed_parser.add_argument("--long-window", type=int, default=21)
+    confirmed_parser.add_argument("--lookback-minutes", type=int, default=1440)
+    confirmed_parser.add_argument("--timeframe", default="5Min")
+    confirmed_parser.add_argument("--min-change-percent", default="0.20")
+    confirmed_parser.add_argument("--confidence", default="0.6800")
+    confirmed_parser.add_argument("--target-strike")
+    confirmed_parser.add_argument("--sample-price")
+    confirmed_parser.add_argument("--dry-run", action="store_true")
+
     patch_parser = subparsers.add_parser(
         "patch-scanner",
         help="Merge a JSON object into an existing strategy scanner config.",
@@ -96,6 +115,17 @@ def main() -> None:
             db.commit()
             action = "created" if created else "updated"
             print(f"Moving-average strategy {action}: {payload['name']}")
+            return
+
+        if args.command == "seed-confirmed-trend":
+            payload = trend_confirmation_payload_from_args(args)
+            if args.dry_run:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return
+            created = upsert_strategy(db, payload, source="strategy_tuning_script")
+            db.commit()
+            action = "created" if created else "updated"
+            print(f"Confirmed-trend strategy {action}: {payload['name']}")
             return
 
         if args.command == "patch-scanner":
@@ -166,6 +196,28 @@ def scanner_patch_from_args(args: argparse.Namespace) -> dict[str, Any]:
             "provide --scanner-json or at least one scanner patch flag"
         )
     return scanner_patch
+
+
+def trend_confirmation_payload_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    symbol = args.symbol.strip().upper()
+    target_strike = (
+        Decimal(args.target_strike)
+        if args.target_strike is not None
+        else _whole_dollar(_price_for_symbol(symbol, sample_price=args.sample_price))
+    )
+    return build_trend_confirmation_strategy_payload(
+        symbol=symbol,
+        target_strike=target_strike,
+        name=args.name,
+        option_type=args.option_type,
+        direction=args.direction,
+        short_window=args.short_window,
+        long_window=args.long_window,
+        lookback_minutes=args.lookback_minutes,
+        timeframe=args.timeframe,
+        min_change_percent=args.min_change_percent,
+        confidence=args.confidence,
+    )
 
 
 def upsert_strategy(db: Session, payload: dict[str, Any], *, source: str) -> bool:

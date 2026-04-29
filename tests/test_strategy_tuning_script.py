@@ -12,6 +12,7 @@ from scripts.tune_paper_strategies import (
     moving_average_payload_from_args,
     patch_strategy_scanner,
     scanner_patch_from_args,
+    trend_confirmation_payload_from_args,
     upsert_strategy,
 )
 
@@ -101,6 +102,30 @@ class StrategyTuningScriptTests(unittest.TestCase):
         scanner = payload["config"]["scanner"]
         self.assertEqual(scanner["preview"]["target_strike"], "501")
         self.assertEqual(scanner["type"], "moving_average")
+        self.assertFalse(scanner["submit"]["enabled"])
+
+    def test_trend_confirmation_payload_from_args_uses_sample_price(self) -> None:
+        payload = trend_confirmation_payload_from_args(
+            Namespace(
+                symbol="spy",
+                target_strike=None,
+                sample_price="501.40",
+                name=None,
+                option_type="call",
+                direction="bullish",
+                short_window=8,
+                long_window=21,
+                lookback_minutes=1440,
+                timeframe="5Min",
+                min_change_percent="0.20",
+                confidence="0.6800",
+            )
+        )
+
+        scanner = payload["config"]["scanner"]
+        self.assertEqual(scanner["preview"]["target_strike"], "501")
+        self.assertEqual(scanner["type"], "trend_confirmation")
+        self.assertEqual(scanner["preview"]["max_spread"], "0.20")
         self.assertFalse(scanner["submit"]["enabled"])
 
     def test_upsert_strategy_creates_and_audits(self) -> None:
