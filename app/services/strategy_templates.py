@@ -49,11 +49,71 @@ def build_preview_first_strategy_payloads(
             symbol="SPY",
             target_strike=_whole_dollar(prices["SPY"]),
         ),
+        build_moving_average_strategy_payload(
+            symbol="SPY",
+            target_strike=_whole_dollar(prices["SPY"]),
+        ),
     ]
 
 
 def required_template_symbols() -> list[str]:
     return ["SPY", "QQQ"]
+
+
+def build_moving_average_strategy_payload(
+    *,
+    symbol: str,
+    target_strike: Decimal,
+    name: str | None = None,
+    option_type: str = "call",
+    trigger: str = "bullish_trend",
+    short_window: int = 5,
+    long_window: int = 20,
+    lookback_minutes: int = 60,
+    timeframe: str = "1Min",
+    confidence: str = "0.6200",
+) -> dict[str, Any]:
+    clean_symbol = symbol.strip().upper()
+    direction = "bearish" if trigger.startswith("bearish") else "bullish"
+    if name is None:
+        name = f"Paper {clean_symbol} moving average {option_type} preview"
+
+    return {
+        "name": name,
+        "description": (
+            f"Preview-first {clean_symbol} {option_type} strategy that watches "
+            "a short/long moving-average setup. Auto-submit stays disabled."
+        ),
+        "is_active": True,
+        "config": {
+            "scanner": {
+                "type": "moving_average",
+                "symbols": [clean_symbol],
+                "short_window": short_window,
+                "long_window": long_window,
+                "lookback_minutes": lookback_minutes,
+                "timeframe": timeframe,
+                "trigger": trigger,
+                "signal_type": "moving_average_setup",
+                "direction": direction,
+                "confidence": confidence,
+                "rationale": (
+                    f"{clean_symbol} moving average scanner triggered "
+                    f"{trigger}"
+                ),
+                "data_feed": "iex",
+                "dedupe_minutes": 240,
+                "preview": _preview_config(
+                    symbol=clean_symbol,
+                    option_type=option_type,
+                    target_strike=target_strike,
+                    rationale=f"{name}: preview only; does not submit.",
+                ),
+                "exit": _exit_config(),
+                "submit": _disabled_submit_config(),
+            }
+        },
+    }
 
 
 def _price_threshold_payload(

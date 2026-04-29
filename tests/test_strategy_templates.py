@@ -5,7 +5,10 @@ import unittest
 import uuid
 
 from app.db.models import AuditLog, Strategy
-from app.services.strategy_templates import build_preview_first_strategy_payloads
+from app.services.strategy_templates import (
+    build_moving_average_strategy_payload,
+    build_preview_first_strategy_payloads,
+)
 from scripts.seed_paper_strategies import seed_strategies
 
 
@@ -43,7 +46,7 @@ class StrategyTemplateTests(unittest.TestCase):
             prices={"SPY": Decimal("500.20"), "QQQ": Decimal("430.40")}
         )
 
-        self.assertEqual(len(payloads), 3)
+        self.assertEqual(len(payloads), 4)
         for payload in payloads:
             scanner = payload["config"]["scanner"]
             self.assertTrue(payload["is_active"])
@@ -52,6 +55,25 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertEqual(scanner["preview"]["quantity"], 1)
             self.assertEqual(scanner["preview"]["max_estimated_notional"], "250.00")
             self.assertEqual(scanner["preview"]["max_spread"], "0.25")
+
+    def test_build_moving_average_strategy_payload_is_preview_only(self) -> None:
+        payload = build_moving_average_strategy_payload(
+            symbol="spy",
+            target_strike=Decimal("500"),
+            trigger="bullish_cross",
+            short_window=3,
+            long_window=15,
+        )
+
+        scanner = payload["config"]["scanner"]
+        self.assertEqual(payload["name"], "Paper SPY moving average call preview")
+        self.assertEqual(scanner["type"], "moving_average")
+        self.assertEqual(scanner["symbols"], ["SPY"])
+        self.assertEqual(scanner["trigger"], "bullish_cross")
+        self.assertEqual(scanner["short_window"], 3)
+        self.assertEqual(scanner["long_window"], 15)
+        self.assertTrue(scanner["preview"]["enabled"])
+        self.assertFalse(scanner["submit"]["enabled"])
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(

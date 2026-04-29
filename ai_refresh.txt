@@ -123,6 +123,11 @@ Current repo structure and purpose:
   - Builds SPY/QQQ strategy configs from latest IEX quote midpoints.
   - Enables scanner-driven previews and keeps scanner.submit.enabled=false.
   - Supports --dry-run, --sample-prices, and --deactivate-others.
+- scripts/tune_paper_strategies.py
+  - Lists active strategy scanner/preview/submit state.
+  - Creates or updates one preview-first moving-average paper strategy.
+  - Deep-merges JSON scanner config patches by strategy name.
+  - Supports dry-run output for moving-average seeding and scanner patch previews.
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
 - scripts/run_market_cycle_smoke.py
@@ -202,7 +207,7 @@ Current repo structure and purpose:
   - Marks order_intents rejected when Alpaca rejects.
 - app/services/strategy_templates.py
   - Builds JSON-safe preview-first paper strategy payloads.
-  - Current templates include SPY upside call preview, QQQ downside put preview, and SPY momentum call preview.
+  - Current templates include SPY upside call preview, QQQ downside put preview, SPY momentum call preview, and SPY moving-average call preview.
   - Templates cap estimated option notional/spread and leave auto-submit disabled.
 - app/services/option_contracts.py
   - Domain/service logic to select an active tradable Alpaca option contract.
