@@ -128,7 +128,8 @@ Current repo structure and purpose:
   - Creates or updates one preview-first moving-average paper strategy.
   - Creates or updates one preview-first confirmed-trend paper strategy.
   - Deep-merges JSON scanner config patches by strategy name and supports direct scanner patch flags such as --lookback-minutes and --timeframe.
-  - Supports dry-run output for moving-average/confirmed-trend seeding and scanner patch previews.
+  - Enables or disables scanner.submit with conservative paper limits via set-submit.
+  - Supports dry-run output for moving-average/confirmed-trend seeding, scanner patch previews, and submit-control previews.
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
 - scripts/run_market_cycle_smoke.py

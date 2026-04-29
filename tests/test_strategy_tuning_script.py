@@ -12,6 +12,8 @@ from scripts.tune_paper_strategies import (
     moving_average_payload_from_args,
     patch_strategy_scanner,
     scanner_patch_from_args,
+    set_strategy_submit_config,
+    submit_config_from_args,
     trend_confirmation_payload_from_args,
     upsert_strategy,
 )
@@ -190,6 +192,69 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(patch["short_window"], 8)
         self.assertEqual(patch["lookback_minutes"], 1440)
         self.assertEqual(patch["timeframe"], "5Min")
+
+    def test_submit_config_from_args_builds_conservative_limits(self) -> None:
+        submit = submit_config_from_args(
+            Namespace(
+                enable=True,
+                max_orders_per_cycle=1,
+                max_contracts_per_order=1,
+                max_contracts_per_cycle=1,
+                max_notional_per_order="200",
+                max_open_contracts_per_symbol=1,
+                max_open_contracts_per_strategy=1,
+                max_orders_per_trading_day=1,
+                trading_day_timezone="America/New_York",
+                trade_window_timezone="America/New_York",
+                trade_window_start="09:45",
+                trade_window_end="15:30",
+                allowed_sides=None,
+            )
+        )
+
+        self.assertTrue(submit["enabled"])
+        self.assertEqual(submit["max_notional_per_order"], "200.00")
+        self.assertEqual(submit["max_orders_per_trading_day"], 1)
+        self.assertEqual(submit["max_open_contracts_per_strategy"], 1)
+        self.assertEqual(submit["trade_windows"][0]["end"], "15:30")
+        self.assertEqual(submit["allowed_sides"], ["buy"])
+
+    def test_set_strategy_submit_config_updates_submit_controls(self) -> None:
+        strategy = build_strategy()
+        db = FakeTuningSession([strategy])
+        submit = {
+            "enabled": True,
+            "max_orders_per_cycle": 1,
+            "max_contracts_per_order": 1,
+            "max_contracts_per_cycle": 1,
+            "max_notional_per_order": "200.00",
+            "max_open_contracts_per_symbol": 1,
+            "max_open_contracts_per_strategy": 1,
+            "max_orders_per_trading_day": 1,
+            "trading_day_timezone": "America/New_York",
+            "trade_windows": [
+                {
+                    "timezone": "America/New_York",
+                    "start": "09:45",
+                    "end": "15:30",
+                }
+            ],
+            "allowed_sides": ["buy"],
+        }
+
+        updated = set_strategy_submit_config(
+            db,
+            name=strategy.name,
+            submit_config=submit,
+        )
+
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertTrue(updated.config["scanner"]["submit"]["enabled"])
+        self.assertEqual(
+            updated.config["scanner"]["submit"]["max_notional_per_order"],
+            "200.00",
+        )
+        self.assertEqual(audit_logs[-1].event_type, "strategy.updated")
 
     def test_list_strategy_summaries_returns_scanner_controls(self) -> None:
         strategy = build_strategy()

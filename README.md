@@ -327,9 +327,11 @@ Tune paper strategies:
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-confirmed-trend --dry-run --sample-price 500
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-confirmed-trend
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --short-window 8 --long-window 21 --lookback-minutes 1440 --timeframe 5Min
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py set-submit --name "Paper SPY confirmed trend call preview" --enable --max-notional-per-order 200 --max-orders-per-trading-day 1
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py set-submit --name "Paper SPY confirmed trend call preview" --disable
 ```
 
-The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, and deep-merges scanner config patches. Seeded strategies keep `scanner.submit.enabled=false` by default.
+The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, deep-merges scanner config patches, and can enable or disable scanner auto-submit with conservative paper limits. Seeded strategies keep `scanner.submit.enabled=false` by default.
 
 Smoke test the configured local environment:
 

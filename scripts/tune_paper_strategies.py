@@ -98,6 +98,35 @@ def main() -> None:
     )
     patch_parser.add_argument("--dry-run", action="store_true")
 
+    submit_parser = subparsers.add_parser(
+        "set-submit",
+        help="Enable or disable scanner auto-submit with conservative paper limits.",
+    )
+    submit_parser.add_argument("--name", required=True)
+    submit_group = submit_parser.add_mutually_exclusive_group(required=True)
+    submit_group.add_argument("--enable", action="store_true")
+    submit_group.add_argument("--disable", action="store_true")
+    submit_parser.add_argument("--max-orders-per-cycle", type=int, default=1)
+    submit_parser.add_argument("--max-contracts-per-order", type=int, default=1)
+    submit_parser.add_argument("--max-contracts-per-cycle", type=int, default=1)
+    submit_parser.add_argument("--max-notional-per-order", default="200.00")
+    submit_parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
+    submit_parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
+    submit_parser.add_argument("--max-orders-per-trading-day", type=int, default=1)
+    submit_parser.add_argument("--trading-day-timezone", default="America/New_York")
+    submit_parser.add_argument("--trade-window-timezone", default="America/New_York")
+    submit_parser.add_argument("--trade-window-start", default="09:45")
+    submit_parser.add_argument("--trade-window-end", default="15:30")
+    submit_parser.add_argument(
+        "--allowed-side",
+        action="append",
+        dest="allowed_sides",
+        choices=["buy", "sell"],
+        default=None,
+        help="Allowed order side. May be passed more than once.",
+    )
+    submit_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -141,6 +170,22 @@ def main() -> None:
                 return
             db.commit()
             print(f"Patched scanner config for: {strategy.name}")
+            return
+
+        if args.command == "set-submit":
+            submit_config = submit_config_from_args(args)
+            strategy = set_strategy_submit_config(
+                db,
+                name=args.name,
+                submit_config=submit_config,
+                dry_run=args.dry_run,
+            )
+            if args.dry_run:
+                print(json.dumps(_strategy_summary(strategy), indent=2, sort_keys=True, default=str))
+                return
+            db.commit()
+            state = "enabled" if submit_config["enabled"] else "disabled"
+            print(f"Scanner submit {state} for: {strategy.name}")
 
 
 def list_strategy_summaries(
@@ -196,6 +241,28 @@ def scanner_patch_from_args(args: argparse.Namespace) -> dict[str, Any]:
             "provide --scanner-json or at least one scanner patch flag"
         )
     return scanner_patch
+
+
+def submit_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "enabled": bool(args.enable),
+        "max_orders_per_cycle": args.max_orders_per_cycle,
+        "max_contracts_per_order": args.max_contracts_per_order,
+        "max_contracts_per_cycle": args.max_contracts_per_cycle,
+        "max_notional_per_order": _money_string(args.max_notional_per_order),
+        "max_open_contracts_per_symbol": args.max_open_contracts_per_symbol,
+        "max_open_contracts_per_strategy": args.max_open_contracts_per_strategy,
+        "max_orders_per_trading_day": args.max_orders_per_trading_day,
+        "trading_day_timezone": args.trading_day_timezone,
+        "trade_windows": [
+            {
+                "timezone": args.trade_window_timezone,
+                "start": args.trade_window_start,
+                "end": args.trade_window_end,
+            }
+        ],
+        "allowed_sides": args.allowed_sides or ["buy"],
+    }
 
 
 def trend_confirmation_payload_from_args(args: argparse.Namespace) -> dict[str, Any]:
@@ -300,6 +367,57 @@ def patch_strategy_scanner(
     return strategy
 
 
+def set_strategy_submit_config(
+    db: Session,
+    *,
+    name: str,
+    submit_config: dict[str, Any],
+    dry_run: bool = False,
+) -> Strategy:
+    strategy = db.scalar(select(Strategy).where(Strategy.name == name))
+    if strategy is None:
+        raise RuntimeError(f"Strategy '{name}' was not found")
+
+    config = deepcopy(strategy.config) if isinstance(strategy.config, dict) else {}
+    scanner_config = config.get("scanner")
+    if not isinstance(scanner_config, dict):
+        scanner_config = {}
+    scanner_config["submit"] = deepcopy(submit_config)
+    config["scanner"] = scanner_config
+
+    if dry_run:
+        return Strategy(
+            id=strategy.id,
+            name=strategy.name,
+            description=strategy.description,
+            is_active=strategy.is_active,
+            config=config,
+            created_at=strategy.created_at,
+            updated_at=strategy.updated_at,
+        )
+
+    strategy.config = config
+    try:
+        db.add(strategy)
+        db.flush()
+        record_audit_log(
+            db,
+            event_type="strategy.updated",
+            entity_type="strategy",
+            entity_id=strategy.id,
+            message="Strategy scanner submit controls updated by tuning script",
+            payload={
+                "source": "strategy_tuning_script",
+                "submit_config": submit_config,
+                "strategy": _strategy_audit_payload(strategy),
+            },
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+    return strategy
+
+
 def _strategy_summary(strategy: Strategy) -> dict[str, Any]:
     config = strategy.config if isinstance(strategy.config, dict) else {}
     scanner = config.get("scanner") if isinstance(config.get("scanner"), dict) else {}
@@ -344,6 +462,10 @@ def _json_object(raw_json: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError("scanner JSON must be an object")
     return value
+
+
+def _money_string(value: str | int | Decimal) -> str:
+    return str(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def _price_for_symbol(symbol: str, *, sample_price: str | None) -> Decimal:
