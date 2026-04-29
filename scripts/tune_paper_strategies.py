@@ -66,8 +66,16 @@ def main() -> None:
     patch_parser.add_argument("--name", required=True)
     patch_parser.add_argument(
         "--scanner-json",
-        required=True,
+        default=None,
         help="JSON object to deep-merge into config.scanner.",
+    )
+    patch_parser.add_argument("--short-window", type=int)
+    patch_parser.add_argument("--long-window", type=int)
+    patch_parser.add_argument("--lookback-minutes", type=int)
+    patch_parser.add_argument("--timeframe")
+    patch_parser.add_argument(
+        "--trigger",
+        choices=["bullish_cross", "bearish_cross", "bullish_trend", "bearish_trend"],
     )
     patch_parser.add_argument("--dry-run", action="store_true")
 
@@ -91,7 +99,7 @@ def main() -> None:
             return
 
         if args.command == "patch-scanner":
-            scanner_patch = _json_object(args.scanner_json)
+            scanner_patch = scanner_patch_from_args(args)
             strategy = patch_strategy_scanner(
                 db,
                 name=args.name,
@@ -135,6 +143,29 @@ def moving_average_payload_from_args(args: argparse.Namespace) -> dict[str, Any]
         timeframe=args.timeframe,
         confidence=args.confidence,
     )
+
+
+def scanner_patch_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    scanner_patch = (
+        _json_object(args.scanner_json)
+        if args.scanner_json is not None
+        else {}
+    )
+    optional_fields = {
+        "short_window": args.short_window,
+        "long_window": args.long_window,
+        "lookback_minutes": args.lookback_minutes,
+        "timeframe": args.timeframe,
+        "trigger": args.trigger,
+    }
+    for key, value in optional_fields.items():
+        if value is not None:
+            scanner_patch[key] = value
+    if not scanner_patch:
+        raise RuntimeError(
+            "provide --scanner-json or at least one scanner patch flag"
+        )
+    return scanner_patch
 
 
 def upsert_strategy(db: Session, payload: dict[str, Any], *, source: str) -> bool:

@@ -315,7 +315,7 @@ Tune paper strategies:
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py list --active-only
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average --dry-run --sample-price 500
 .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py seed-moving-average
-.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --scanner-json '{ "short_window": 8, "long_window": 21, "lookback_minutes": 1440, "timeframe": "5Min" }'
+.\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py patch-scanner --name "Paper SPY moving average call preview" --short-window 8 --long-window 21 --lookback-minutes 1440 --timeframe 5Min
 ```
 
 The tuning script lists scanner/preview/submit state, creates or updates one preview-first moving-average strategy, and deep-merges scanner config patches. The moving-average strategy keeps `scanner.submit.enabled=false` by default.

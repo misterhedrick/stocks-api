@@ -11,6 +11,7 @@ from scripts.tune_paper_strategies import (
     list_strategy_summaries,
     moving_average_payload_from_args,
     patch_strategy_scanner,
+    scanner_patch_from_args,
     upsert_strategy,
 )
 
@@ -147,6 +148,23 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertTrue(scanner["preview"]["enabled"])
         self.assertEqual(scanner["preview"]["max_spread"], "0.20")
         self.assertEqual(audit_logs[-1].event_type, "strategy.updated")
+
+    def test_scanner_patch_from_args_combines_json_and_flags(self) -> None:
+        patch = scanner_patch_from_args(
+            Namespace(
+                scanner_json='{"preview": {"max_spread": "0.20"}}',
+                short_window=8,
+                long_window=None,
+                lookback_minutes=1440,
+                timeframe="5Min",
+                trigger=None,
+            )
+        )
+
+        self.assertEqual(patch["preview"]["max_spread"], "0.20")
+        self.assertEqual(patch["short_window"], 8)
+        self.assertEqual(patch["lookback_minutes"], 1440)
+        self.assertEqual(patch["timeframe"], "5Min")
 
     def test_list_strategy_summaries_returns_scanner_controls(self) -> None:
         strategy = build_strategy()

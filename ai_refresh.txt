@@ -126,7 +126,7 @@ Current repo structure and purpose:
 - scripts/tune_paper_strategies.py
   - Lists active strategy scanner/preview/submit state.
   - Creates or updates one preview-first moving-average paper strategy.
-  - Deep-merges JSON scanner config patches by strategy name.
+  - Deep-merges JSON scanner config patches by strategy name and supports direct scanner patch flags such as --lookback-minutes and --timeframe.
   - Supports dry-run output for moving-average seeding and scanner patch previews.
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
