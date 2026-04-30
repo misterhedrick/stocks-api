@@ -1,0 +1,218 @@
+Strategy Improvement Refresh
+============================
+
+Purpose of this refresh:
+- This repository is a stock/options trading application.
+- For this refresh, assume the app is functionally complete enough to operate in paper trading mode.
+- The next AI's job is not basic app scaffolding. The job is to inspect the current trading data, understand how strategies are configured and executed, and propose or implement careful refinements to improve paper strategy performance.
+- Prefer small, evidence-driven strategy changes over broad rewrites.
+- Treat broker data and reconciled fills as the source of truth for performance review.
+
+Product context:
+- The app scans stock market signals, creates option order previews/intents, can submit paper orders through Alpaca when enabled, reconciles broker orders/fills/positions, evaluates exits, and exposes paper performance/trade-case views.
+- Current target is paper trading. Live trading comes later.
+- Strategies trade option contracts on stock underlyings such as SPY and QQQ.
+- Strategy improvement should focus on scanner thresholds, symbols, timeframes, lookback windows, confidence assumptions, option-selection constraints, risk controls, and exit rules.
+
+Infrastructure:
+- Python FastAPI application.
+- SQLAlchemy ORM with PostgreSQL/JSONB models.
+- Alembic migration currently defines the trading schema.
+- Alpaca integration is used for market data, option contract selection, paper trading orders, fills, and positions.
+- Render deployment is configured in render.yaml.
+- Main configuration is environment-variable driven through app/core/config.py and .env.
+- Bearer-protected API prefix is /api/v1.
+- Admin token is required for protected endpoints.
+
+Important app settings for strategy refinement:
+- DATABASE_URL / database_url selects the database to inspect.
+- ALPACA_API_KEY and ALPACA_API_SECRET are used for broker/data access.
+- ALPACA_PAPER should remain true for this phase.
+- MARKET_CYCLE_SCAN_ENABLED controls signal scanning in the market cycle.
+- MARKET_CYCLE_PREVIEW_ENABLED controls preview/order-intent generation.
+- MARKET_CYCLE_EXIT_ENABLED controls exit evaluation.
+- MARKET_CYCLE_NEWS_ENABLED controls news risk gating.
+- MARKET_CYCLE_SUBMIT_ENABLED controls auto-submit.
+- TRADING_AUTOMATION_ENABLED plus strategy-level submit config must also permit submit before orders are sent.
+- For refinement work, prefer preview-first changes unless explicitly asked to enable submit.
+
+Where to inspect the database schema and usable strategy data:
+- app/db/models.py
+  - Primary ORM source for tables and relationships.
+  - Key tables:
+    - strategies: strategy name, active flag, config JSONB.
+    - signals: generated/manual signals, strategy_id, direction, confidence, market_context JSONB, status.
+    - order_intents: previewed/submitted option order intents, strategy_id, signal_id, preview JSONB, rationale, status.
+    - broker_orders: reconciled/submitted broker order records, Alpaca order ID, side, status, raw_response JSONB.
+    - fills: execution records used for real paper performance, side, quantity, price, filled_at.
+    - position_snapshots: latest reconciled broker positions, cost basis, market value, unrealized P/L, raw_position JSONB.
+    - job_runs: scan/reconcile/market-cycle job details, errors, no-signal reasons, created IDs.
+    - audit_logs: workflow audit trail and strategy update history.
+- alembic/versions/0001_initial_trading_tables.py
+  - Migration-level schema definition. Use this to confirm database columns and JSONB defaults.
+- app/db/session.py
+  - SessionLocal and database connection setup.
+- app/db/migrations.py
+  - Startup migration helper.
+
+Where to inspect current strategy behavior:
+- app/services/strategy_templates.py
+  - Factory for preview-first paper strategies.
+  - Defines current moving-average and confirmed-trend default configs.
+  - Shows scanner.preview, scanner.exit, and scanner.submit config shapes.
+- app/services/signal_scanner.py
+  - Implements supported scanner types:
+    - price_threshold
+    - percent_change
+    - moving_average
+    - trend_confirmation
+  - Shows exactly which config keys are recognized.
+  - Records no_signal_reasons in job_runs.details.
+  - Adds market_context to generated signals.
+- app/services/order_intents.py
+  - Converts signals/previews into durable order intents.
+  - Inspect preview validation, option quote checks, max spread, and estimated notional logic before changing strategy preview constraints.
+- app/services/position_exits.py
+  - Implements position ownership, exit rule evaluation, unmanaged exit previews, profit target, stop loss, expiration risk, active exit order checks, and exit submit guardrails.
+- app/services/market_cycle.py
+  - Orchestrates scan, news gate, preview, exits, submit, and reconcile behavior.
+- app/services/news_scanner.py
+  - RSS/headline risk gating. This can be used to avoid new entries during broad market/news risk but is not a sentiment model.
+- app/services/broker_reconciliation.py
+  - Pulls broker orders/fills/positions into local durable tables.
+
+Where to inspect performance evidence:
+- app/services/performance_review.py
+  - FIFO-matches option buy and sell fills by symbol and strategy.
+  - Produces realized P/L, return percent, win/loss counts, win rate, average win/loss, strategy summaries, symbol summaries, recent round trips, and open lots.
+  - This is the best first source for deciding whether a strategy improved.
+- app/services/trade_lifecycle.py
+  - Provides open-position lifecycle views and trade cases.
+  - Trade cases expose the same matched round trips/open lots in a stable shape for later AI review.
+- app/api/routes/automation.py
+  - Endpoints for strategy refinement review:
+    - GET /api/v1/automation/status
+    - GET /api/v1/automation/performance?limit=500
+    - GET /api/v1/automation/trade-lifecycle?limit=100
+    - GET /api/v1/automation/trade-cases?limit=500
+    - GET /api/v1/automation/positions?limit=100
+- job_runs.details
+  - Inspect recent scan/market-cycle runs for no_signal_reasons, errors, signal counts, preview counts, submit counts, and reconciliation results.
+- signals.market_context
+  - Inspect scanner evidence captured at signal time, including quote/bar context and calculated values.
+- order_intents.preview
+  - Inspect option contract selection context, quote/spread/notional assumptions, and preview constraints.
+- broker_orders.raw_response and fills.raw_response
+  - Inspect raw Alpaca data only when needed to explain execution behavior.
+
+Useful local scripts:
+- scripts/tune_paper_strategies.py
+  - List strategy scanner summaries:
+    .\.venv\Scripts\python.exe .\scripts\tune_paper_strategies.py list --active-only
+  - Seed/update moving-average strategies.
+  - Seed/update confirmed-trend strategies.
+  - Patch scanner config on an existing strategy.
+  - Enable/disable strategy-level submit with conservative paper limits.
+- scripts/seed_paper_strategies.py
+  - Seeds preview-first paper strategy payloads from current underlying prices.
+- scripts/prepare_paper_trade_day.py
+  - Prepares the paper trading day.
+- scripts/run_market_cycle_smoke.py
+  - Runs one market-cycle pass against configured database and Alpaca clients.
+- scripts/run_paper_submit_smoke.py
+  - Runs a one-contract Alpaca paper submit smoke test.
+- scripts/run_full_smoke_suite.py
+  - Runs preflight, seeding, market-cycle smoke, paper submit/cancel, and tests.
+
+Current strategy configuration shape:
+- Strategy.config is JSONB.
+- Most active strategies use config.scanner.
+- config.scanner.type can currently be price_threshold, percent_change, moving_average, or trend_confirmation.
+- Common scanner keys include:
+  - symbols
+  - data_feed
+  - signal_type
+  - direction
+  - confidence
+  - rationale
+  - dedupe_minutes
+- price_threshold keys:
+  - price_above
+  - price_below
+- percent_change keys:
+  - lookback_minutes
+  - timeframe
+  - change_above_percent
+  - change_below_percent
+- moving_average keys:
+  - short_window
+  - long_window
+  - lookback_minutes
+  - timeframe
+  - trigger: bullish_cross, bearish_cross, bullish_trend, bearish_trend
+- trend_confirmation keys:
+  - short_window
+  - long_window
+  - lookback_minutes
+  - timeframe
+  - min_change_percent
+  - direction: bullish or bearish
+- config.scanner.preview controls option preview/order-intent generation.
+- config.scanner.exit controls managed exit behavior.
+- config.scanner.submit controls strategy-level auto-submit guardrails.
+
+Strategy improvement workflow:
+1. Inspect active strategy configs first.
+   - Use scripts/tune_paper_strategies.py list --active-only.
+   - Or query the strategies table directly through SQLAlchemy.
+   - Confirm each strategy's scanner type, symbols, preview, exit, and submit config.
+2. Inspect recent automation health.
+   - GET /api/v1/automation/status.
+   - Inspect job_runs for failed jobs, no_signal_reasons, low signal counts, duplicate suppression, preview rejection, and reconciliation errors.
+3. Inspect realized performance.
+   - GET /api/v1/automation/performance?limit=500.
+   - Focus on matched round trips, realized P/L, return percent, win rate, average win/loss, by_strategy, by_symbol, and open_positions.
+4. Inspect trade cases and lifecycle.
+   - GET /api/v1/automation/trade-cases?limit=500.
+   - GET /api/v1/automation/trade-lifecycle?limit=100.
+   - Look for holding time, entry/exit fill prices, open lots, unmanaged positions, and active exit orders.
+5. Inspect signal evidence.
+   - Query signals.market_context for bars/quotes and trigger calculations.
+   - Compare created signals to actual filled outcomes through order_intents, broker_orders, and fills.
+6. Make one small strategy change at a time.
+   - Examples: adjust MA windows, increase/decrease min_change_percent, widen/narrow dedupe_minutes, adjust max_spread, tighten max_estimated_notional, revise exit profit/stop thresholds, add bearish counterpart only if evidence supports it.
+7. Prefer preview-first validation.
+   - Keep MARKET_CYCLE_SUBMIT_ENABLED=false and strategy submit disabled unless explicitly asked to test paper submit.
+   - Let the market cycle create previews and collect evidence before risking automatic orders.
+8. Verify after changes.
+   - Run focused tests if code changed.
+   - Run dry-run script output before committing strategy config changes when possible.
+   - Use market-cycle smoke only when credentials/database are configured and the user expects live paper environment interaction.
+
+How to think about improvements:
+- Do not optimize from one trade unless the user explicitly asks for a quick tactical adjustment.
+- Separate scanner quality from order/option-selection quality:
+  - Scanner quality: Did the signal correctly identify a useful underlying move?
+  - Option selection quality: Was strike/expiration/spread/notional reasonable?
+  - Execution quality: Did limit price, spread, or timing cause missed/poor fills?
+  - Exit quality: Did profit target, stop loss, expiration rule, or active order handling improve realized P/L?
+- Watch for strategies that generate no signals. The issue may be thresholds too strict, data feed gaps, timeframe/lookback mismatch, or dedupe suppression.
+- Watch for strategies that generate too many previews. The issue may be thresholds too loose, duplicate controls too short, or lack of trend/news filters.
+- Watch for losing strategies with good entries but poor exits. Consider exit rules before changing entry logic.
+- Watch for good scanner signals but rejected previews. Consider max_spread, max_estimated_notional, option_type, target_strike, contract selection constraints, or data feed.
+- Keep paper risk small: one contract, limited daily orders, bounded notional, symbol/strategy open position caps.
+
+Boundaries and safety:
+- Do not treat this as financial advice for live trading.
+- Do not enable live trading.
+- Do not enable auto-submit unless the user explicitly asks.
+- Do not invent performance results. Pull data from the configured database/API.
+- Do not rewrite the app architecture just to improve strategies.
+- Do not change secrets in .env.
+- Prefer auditable changes through existing strategy update scripts, API endpoints, or small code changes that preserve existing architecture.
+
+Good next AI behavior:
+- Start by inspecting app/db/models.py, app/services/strategy_templates.py, app/services/signal_scanner.py, app/services/performance_review.py, and scripts/tune_paper_strategies.py.
+- Then inspect current strategy data and performance using the configured database or automation endpoints.
+- Summarize what is known, what is missing, and the exact evidence behind any recommended strategy change.
+- If implementing changes, keep them minimal, testable, and easy to revert.
