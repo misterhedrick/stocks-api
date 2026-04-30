@@ -9,7 +9,10 @@ from unittest.mock import patch
 from app.db.models import AuditLog, JobRun, OrderIntent, Signal, Strategy
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_maintenance import (
+    MarketMaintenanceResult,
     cleanup_stale_trading_state,
+    resolve_market_maintenance_phase,
+    run_market_maintenance,
     run_post_market_maintenance,
     run_pre_market_maintenance,
 )
@@ -163,7 +166,77 @@ def build_performance_result() -> PerformanceReviewResult:
     )
 
 
+def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
+    return MarketMaintenanceResult(
+        job_run=build_job_run(f"{phase}_maintenance"),
+        phase=phase,
+        cleanup={"signals_marked_stale": 0, "order_intents_marked_stale": 0},
+        reconcile={"orders_seen": 0, "fills_seen": 0, "positions_seen": 0},
+        news={"status": "disabled"} if phase == "pre_market" else None,
+        performance={"matched_round_trips": 0} if phase == "post_market" else None,
+        readiness={"active_strategies": 1},
+        settings_snapshot={"paper_mode": True},
+    )
+
+
 class MarketMaintenanceTests(unittest.TestCase):
+    def test_auto_phase_uses_utc_time_for_combined_cron(self) -> None:
+        self.assertEqual(
+            resolve_market_maintenance_phase(
+                "auto",
+                now=datetime(2026, 4, 29, 13, 15, tzinfo=timezone.utc),
+            ),
+            "pre_market",
+        )
+        self.assertEqual(
+            resolve_market_maintenance_phase(
+                "auto",
+                now=datetime(2026, 4, 29, 21, 15, tzinfo=timezone.utc),
+            ),
+            "post_market",
+        )
+
+    def test_auto_market_maintenance_uses_phase_defaults(self) -> None:
+        db = FakeMaintenanceSession()
+
+        with patch(
+            "app.services.market_maintenance.run_pre_market_maintenance",
+            return_value=build_market_maintenance_result("pre_market"),
+        ) as pre_market:
+            result = run_market_maintenance(
+                db,
+                phase="auto",
+                now=datetime(2026, 4, 29, 13, 15, tzinfo=timezone.utc),
+                news_enabled=False,
+            )
+
+        self.assertEqual(result.phase, "pre_market")
+        pre_market.assert_called_once_with(
+            db,
+            order_limit=100,
+            fill_page_size=100,
+            stale_after_hours=12,
+            news_enabled=False,
+        )
+
+        with patch(
+            "app.services.market_maintenance.run_post_market_maintenance",
+            return_value=build_market_maintenance_result("post_market"),
+        ) as post_market:
+            result = run_market_maintenance(
+                db,
+                phase="auto",
+                now=datetime(2026, 4, 29, 21, 15, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(result.phase, "post_market")
+        post_market.assert_called_once_with(
+            db,
+            order_limit=500,
+            fill_page_size=500,
+            stale_after_hours=0,
+        )
+
     def test_cleanup_stales_local_unsubmitted_state(self) -> None:
         signal = build_signal()
         order_intent = build_order_intent()

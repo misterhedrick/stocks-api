@@ -80,12 +80,12 @@ services:
       - key: ADMIN_API_TOKEN
         sync: false
   - type: cron
-    name: stocks-api-pre-market-maintenance
+    name: stocks-api-market-maintenance
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "15 13 * * 1-5"
+    schedule: "15 13,21 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -94,27 +94,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/pre-market-maintenance?order_limit=100&fill_page_size=100&stale_after_hours=12&news_enabled=true
-      - key: JOB_TIMEOUT_SECONDS
-        value: 240
-      - key: ADMIN_API_TOKEN
-        sync: false
-  - type: cron
-    name: stocks-api-post-market-maintenance
-    env: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/run_render_job.py
-    schedule: "30 20 * * 1-5"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.13
-      - key: SCHEDULED_JOBS_ENABLED
-        value: true
-      - key: STOCKS_API_BASE_URL
-        value: https://stocks-api-z11i.onrender.com
-      - key: JOB_PATH
-        value: /api/v1/jobs/post-market-maintenance?order_limit=500&fill_page_size=500&stale_after_hours=0
+        value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true
       - key: JOB_TIMEOUT_SECONDS
         value: 240
       - key: ADMIN_API_TOKEN

@@ -16,6 +16,9 @@ from app.services.news_scanner import scan_market_news
 from app.services.performance_review import get_paper_performance_review
 
 
+AUTO_POST_MARKET_START_HOUR_UTC = 17
+
+
 @dataclass(slots=True)
 class MarketMaintenanceResult:
     job_run: JobRun
@@ -26,6 +29,56 @@ class MarketMaintenanceResult:
     performance: dict[str, Any] | None
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
+
+
+def run_market_maintenance(
+    db: Session,
+    *,
+    phase: str = "auto",
+    now: datetime | None = None,
+    order_limit: int | None = None,
+    fill_page_size: int | None = None,
+    stale_after_hours: int | None = None,
+    news_enabled: bool = True,
+) -> MarketMaintenanceResult:
+    selected_phase = resolve_market_maintenance_phase(phase, now=now)
+    if selected_phase == "pre_market":
+        return run_pre_market_maintenance(
+            db,
+            order_limit=100 if order_limit is None else order_limit,
+            fill_page_size=100 if fill_page_size is None else fill_page_size,
+            stale_after_hours=12 if stale_after_hours is None else stale_after_hours,
+            news_enabled=news_enabled,
+        )
+
+    return run_post_market_maintenance(
+        db,
+        order_limit=500 if order_limit is None else order_limit,
+        fill_page_size=500 if fill_page_size is None else fill_page_size,
+        stale_after_hours=0 if stale_after_hours is None else stale_after_hours,
+    )
+
+
+def resolve_market_maintenance_phase(
+    phase: str = "auto",
+    *,
+    now: datetime | None = None,
+) -> str:
+    normalized = phase.strip().lower().replace("-", "_")
+    if normalized in {"pre", "pre_market"}:
+        return "pre_market"
+    if normalized in {"post", "post_market"}:
+        return "post_market"
+    if normalized != "auto":
+        raise ValueError("phase must be auto, pre_market, or post_market")
+
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    current_utc = current_time.astimezone(timezone.utc)
+    if current_utc.hour < AUTO_POST_MARKET_START_HOUR_UTC:
+        return "pre_market"
+    return "post_market"
 
 
 def run_pre_market_maintenance(

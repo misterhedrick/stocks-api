@@ -461,6 +461,36 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_market_maintenance_route_returns_auto_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("pre_market")
+
+        with patch(
+            "app.api.routes.jobs.run_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/market-maintenance?phase=auto&news_enabled=false",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "pre_market")
+        maintenance.assert_called_once_with(
+            db,
+            phase="auto",
+            order_limit=None,
+            fill_page_size=None,
+            stale_after_hours=None,
+            news_enabled=False,
+        )
+
     def test_pre_market_maintenance_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 

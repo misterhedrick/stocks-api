@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from app.schemas.jobs import (
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
 from app.services.market_maintenance import (
+    run_market_maintenance,
     run_post_market_maintenance,
     run_pre_market_maintenance,
 )
@@ -242,6 +243,56 @@ def market_cycle_route(
         exits=result.exits,
         news=result.news,
         submit=result.submit,
+    )
+
+
+@router.post(
+    "/market-maintenance",
+    response_model=MarketMaintenanceRead,
+    status_code=status.HTTP_200_OK,
+)
+def market_maintenance_route(
+    db: Annotated[Session, Depends(get_db)],
+    phase: Annotated[Literal["auto", "pre_market", "post_market"], Query()] = "auto",
+    order_limit: Annotated[int | None, Query(ge=1, le=500)] = None,
+    fill_page_size: Annotated[int | None, Query(ge=1, le=500)] = None,
+    stale_after_hours: Annotated[int | None, Query(ge=0, le=72)] = None,
+    news_enabled: bool = True,
+) -> MarketMaintenanceRead:
+    try:
+        result = run_market_maintenance(
+            db,
+            phase=phase,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
+            stale_after_hours=stale_after_hours,
+            news_enabled=news_enabled,
+        )
+    except NewsFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return MarketMaintenanceRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        phase=result.phase,
+        cleanup=result.cleanup,
+        reconcile=result.reconcile,
+        news=result.news,
+        performance=result.performance,
+        readiness=result.readiness,
+        settings_snapshot=result.settings_snapshot,
     )
 
 
