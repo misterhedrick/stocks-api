@@ -10,7 +10,7 @@ import uuid
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
-from app.db.models import BrokerOrder, OrderIntent, PositionSnapshot, Strategy
+from app.db.models import BrokerOrder, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
@@ -296,6 +296,29 @@ def get_position_management_statuses(
 
 
 def _latest_position_snapshots(db: Session, *, limit: int) -> list[PositionSnapshot]:
+    latest_reconciliation = db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "reconcile_broker")
+        .where(JobRun.status == "succeeded")
+        .where(JobRun.finished_at.is_not(None))
+        .order_by(JobRun.finished_at.desc())
+        .limit(1)
+    )
+    if (
+        latest_reconciliation is not None
+        and latest_reconciliation.started_at is not None
+        and latest_reconciliation.finished_at is not None
+    ):
+        statement = (
+            select(PositionSnapshot)
+            .where(PositionSnapshot.captured_at >= latest_reconciliation.started_at)
+            .where(PositionSnapshot.captured_at <= latest_reconciliation.finished_at)
+            .where(PositionSnapshot.quantity > 0)
+            .order_by(PositionSnapshot.captured_at.desc())
+            .limit(limit)
+        )
+        return list(db.scalars(statement))
+
     latest_captured_at = (
         select(
             PositionSnapshot.symbol.label("symbol"),

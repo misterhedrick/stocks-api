@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from app.db.models import AuditLog, OrderIntent, PositionSnapshot, Strategy
+from app.db.models import AuditLog, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaOptionQuote,
@@ -26,12 +26,14 @@ class FakePositionExitSession:
         entry_order_intent: OrderIntent | None = None,
         active_exit_count: int | None = 0,
         active_exit_order: OrderIntent | None = None,
+        latest_reconciliation: JobRun | None = None,
     ) -> None:
         self.positions = positions
         self.strategy = strategy
         self.entry_order_intent = entry_order_intent
         self.active_exit_count = active_exit_count
         self.active_exit_order = active_exit_order
+        self.latest_reconciliation = latest_reconciliation
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -43,8 +45,10 @@ class FakePositionExitSession:
     def scalar(self, _: object) -> object | None:
         self.scalar_calls += 1
         if self.scalar_calls == 1:
+            return self.latest_reconciliation
+        if self.scalar_calls == 2:
             return self.entry_order_intent
-        if self.scalar_calls == 2 and self.active_exit_count is None:
+        if self.scalar_calls == 3 and self.active_exit_count is None:
             return self.active_exit_order
         return self.active_exit_count
 
@@ -189,6 +193,23 @@ def build_exit_order_intent() -> OrderIntent:
     )
 
 
+def build_reconciliation_window(
+    *,
+    started_at: datetime,
+    finished_at: datetime,
+) -> JobRun:
+    now = datetime.now(timezone.utc)
+    return JobRun(
+        id=uuid.uuid4(),
+        job_name="reconcile_broker",
+        status="succeeded",
+        started_at=started_at,
+        finished_at=finished_at,
+        details={},
+        created_at=now,
+    )
+
+
 class PositionExitTests(unittest.TestCase):
     def test_evaluate_position_exits_creates_sell_intent_for_profit_target(self) -> None:
         strategy = build_strategy()
@@ -260,6 +281,29 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(result.exits_created, 0)
         self.assertEqual(result.exits_skipped, 1)
         self.assertIn("active exit order already exists", result.no_exit_reasons[0])
+
+    def test_evaluate_position_exits_ignores_stale_positions_before_latest_reconcile(self) -> None:
+        strategy = build_strategy()
+        stale_position = build_position()
+        stale_position.captured_at = datetime(2026, 4, 30, 14, 0, tzinfo=timezone.utc)
+        latest_reconciliation = build_reconciliation_window(
+            started_at=datetime(2026, 4, 30, 18, 0, tzinfo=timezone.utc),
+            finished_at=datetime(2026, 4, 30, 18, 1, tzinfo=timezone.utc),
+        )
+        db = FakePositionExitSession(
+            positions=[],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            latest_reconciliation=latest_reconciliation,
+        )
+
+        result = evaluate_position_exits(
+            db,
+            market_data_client=SuccessfulMarketDataClient(),
+        )
+
+        self.assertEqual(result.positions_seen, 0)
+        self.assertEqual(result.exits_created, 0)
 
     def test_evaluate_position_exits_reports_inactive_strategy_ownership(self) -> None:
         strategy = build_strategy()

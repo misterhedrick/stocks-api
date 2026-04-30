@@ -5,7 +5,7 @@ from decimal import Decimal
 import unittest
 import uuid
 
-from app.db.models import BrokerOrder, Fill, OrderIntent, PositionSnapshot, Strategy
+from app.db.models import BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.services.trade_lifecycle import get_trade_cases, get_trade_lifecycle
 
 
@@ -18,12 +18,14 @@ class FakeTradeLifecycleSession:
         entry_order_intent: OrderIntent,
         broker_orders: list[BrokerOrder],
         fills: list[Fill],
+        latest_reconciliation: JobRun | None = None,
     ) -> None:
         self.positions = positions
         self.strategy = strategy
         self.entry_order_intent = entry_order_intent
         self.broker_orders = broker_orders
         self.fills = fills
+        self.latest_reconciliation = latest_reconciliation
         self.scalar_calls = 0
         self.scalars_calls = 0
 
@@ -38,6 +40,8 @@ class FakeTradeLifecycleSession:
     def scalar(self, _: object) -> object | None:
         self.scalar_calls += 1
         if self.scalar_calls == 1:
+            return self.latest_reconciliation
+        if self.scalar_calls == 2:
             return self.entry_order_intent
         return None
 
