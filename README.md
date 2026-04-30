@@ -524,7 +524,7 @@ MAX_AUTO_ORDERS_PER_DAY=3
 MAX_OPEN_POSITIONS=3
 MAX_OPEN_POSITIONS_PER_SYMBOL=1
 MAX_CONTRACTS_PER_ORDER=1
-MAX_ESTIMATED_PREMIUM_PER_ORDER=250
+MAX_ESTIMATED_PREMIUM_PER_ORDER=1000
 ```
 
 Automated submit is intended for paper trading right now. To intentionally enable fully automated paper trading, set `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=true`, `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, keep `AUTO_SUBMIT_REQUIRES_PAPER=true`, and enable both `scanner.preview.enabled` and `scanner.submit.enabled` on the strategy. Manual order intent submit is unchanged.
@@ -622,6 +622,6 @@ Set these environment variables in Render:
 - `MAX_OPEN_POSITIONS=3`
 - `MAX_OPEN_POSITIONS_PER_SYMBOL=1`
 - `MAX_CONTRACTS_PER_ORDER=1`
-- `MAX_ESTIMATED_PREMIUM_PER_ORDER=250`
+- `MAX_ESTIMATED_PREMIUM_PER_ORDER=1000`
 - `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
 - `JOB_RETRY_DELAYS_SECONDS=10,30` on the cron service unless you want different retry timing

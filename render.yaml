@@ -56,7 +56,7 @@ services:
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
-        value: 250
+        value: 1000
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   - type: cron
