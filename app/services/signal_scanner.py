@@ -820,11 +820,17 @@ def _average(values: list[Decimal]) -> Decimal:
 
 
 def _price_from_quote(latest_quote: AlpacaLatestStockQuote) -> Decimal | None:
-    bid_price = latest_quote.quote.bid_price
-    ask_price = latest_quote.quote.ask_price
+    bid_price = _usable_quote_price(latest_quote.quote.bid_price)
+    ask_price = _usable_quote_price(latest_quote.quote.ask_price)
     if bid_price is not None and ask_price is not None:
         return (bid_price + ask_price) / Decimal("2")
     return ask_price or bid_price
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _stock_quote_context(latest_quote: AlpacaLatestStockQuote) -> dict[str, object]:

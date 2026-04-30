@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import unittest
 from decimal import Decimal
 from unittest.mock import patch
@@ -25,8 +26,10 @@ from app.services.option_contracts import (
 class FakeTradingClient:
     def __init__(self, contracts: list[AlpacaOptionContract]) -> None:
         self.contracts = contracts
+        self.calls: list[dict[str, object]] = []
 
-    def list_option_contracts(self, **_: object) -> AlpacaOptionContractsPage:
+    def list_option_contracts(self, **kwargs: object) -> AlpacaOptionContractsPage:
+        self.calls.append(kwargs)
         return AlpacaOptionContractsPage(
             contracts=self.contracts,
             raw_response={"option_contracts": []},
@@ -124,6 +127,36 @@ class OptionContractSelectionTests(unittest.TestCase):
         self.assertEqual(result.quote["midpoint"], "1.25")
         self.assertEqual(result.quote["estimated_notional"], "130.00")
         self.assertEqual(result.candidates_seen, 3)
+
+    def test_select_option_contract_resolves_relative_expiration_filters(self) -> None:
+        trading_client = FakeTradingClient(
+            [
+                build_contract(
+                    "SPY260501C00510000",
+                    expiration_date="2026-05-01",
+                    strike_price="510",
+                )
+            ]
+        )
+
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                min_days_to_expiration=1,
+                max_days_to_expiration=7,
+            ),
+            trading_client=trading_client,
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260501C00510000")
+        self.assertEqual(trading_client.calls[-1]["expiration_date"], None)
+        self.assertGreaterEqual(
+            trading_client.calls[-1]["expiration_date_gte"],
+            date.today(),
+        )
+        self.assertIsNotNone(trading_client.calls[-1]["expiration_date_lte"])
 
     def test_select_option_contract_skips_quotes_over_notional_cap(self) -> None:
         result = select_option_contract(

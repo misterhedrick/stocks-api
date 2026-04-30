@@ -299,6 +299,28 @@ class SignalScannerTests(unittest.TestCase):
             "2026-04-23T16:00:00+00:00",
         )
 
+    def test_scan_signals_ignores_zero_quote_side_when_pricing_threshold(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY"],
+                    "price_above": "680",
+                    "data_feed": "iex",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient({"SPY": ("689.60", "0")}),
+        )
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].market_context["price"], "689.60")
+
     def test_scan_signals_does_not_create_signal_when_threshold_is_not_met(self) -> None:
         strategy = build_strategy(
             config={

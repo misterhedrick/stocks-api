@@ -149,8 +149,8 @@ def _latest_midpoint_prices(symbols: list[str]) -> dict[str, Decimal]:
         latest_quote = quotes.get(symbol)
         if latest_quote is None:
             raise RuntimeError(f"No latest stock quote returned for {symbol}")
-        bid_price = latest_quote.quote.bid_price
-        ask_price = latest_quote.quote.ask_price
+        bid_price = _usable_quote_price(latest_quote.quote.bid_price)
+        ask_price = _usable_quote_price(latest_quote.quote.ask_price)
         if bid_price is not None and ask_price is not None:
             prices[symbol] = (bid_price + ask_price) / Decimal("2")
         elif ask_price is not None:
@@ -167,6 +167,12 @@ def _sample_prices() -> dict[str, Decimal]:
         "SPY": Decimal("500.00"),
         "QQQ": Decimal("430.00"),
     }
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _audit_payload(strategy: Strategy) -> dict:

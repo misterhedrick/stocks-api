@@ -54,12 +54,13 @@ def main() -> None:
     )
     parser.add_argument("--sample-price", action="append", default=[])
     parser.add_argument("--max-notional-per-order", default="500.00")
-    parser.add_argument("--max-spread", default="0.35")
-    parser.add_argument("--max-orders-per-cycle", type=int, default=20)
-    parser.add_argument("--max-orders-per-day", type=int, default=50)
-    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=50)
-    parser.add_argument("--trade-window-start", default="09:35")
-    parser.add_argument("--trade-window-end", default="15:50")
+    parser.add_argument("--max-spread", default="0.25")
+    parser.add_argument("--max-orders-per-cycle", type=int, default=1)
+    parser.add_argument("--max-orders-per-day", type=int, default=2)
+    parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
+    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
+    parser.add_argument("--trade-window-start", default="09:45")
+    parser.add_argument("--trade-window-end", default="15:30")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -74,6 +75,7 @@ def main() -> None:
         max_spread=str(args.max_spread),
         max_orders_per_cycle=args.max_orders_per_cycle,
         max_orders_per_day=args.max_orders_per_day,
+        max_open_contracts_per_symbol=args.max_open_contracts_per_symbol,
         max_open_contracts_per_strategy=args.max_open_contracts_per_strategy,
         trade_window_start=args.trade_window_start,
         trade_window_end=args.trade_window_end,
@@ -121,6 +123,7 @@ def _strategy_payloads(
     max_spread: str,
     max_orders_per_cycle: int,
     max_orders_per_day: int,
+    max_open_contracts_per_symbol: int | None,
     max_open_contracts_per_strategy: int,
     trade_window_start: str,
     trade_window_end: str,
@@ -161,6 +164,7 @@ def _strategy_payloads(
         max_notional_per_order=max_notional_per_order,
         max_orders_per_cycle=max_orders_per_cycle,
         max_orders_per_day=max_orders_per_day,
+        max_open_contracts_per_symbol=max_open_contracts_per_symbol,
         max_open_contracts_per_strategy=max_open_contracts_per_strategy,
         trade_window_start=trade_window_start,
         trade_window_end=trade_window_end,
@@ -178,6 +182,7 @@ def _submit_config(
     max_notional_per_order: str,
     max_orders_per_cycle: int,
     max_orders_per_day: int,
+    max_open_contracts_per_symbol: int | None,
     max_open_contracts_per_strategy: int,
     trade_window_start: str,
     trade_window_end: str,
@@ -188,7 +193,7 @@ def _submit_config(
         "max_contracts_per_order": 1,
         "max_contracts_per_cycle": max_orders_per_cycle,
         "max_notional_per_order": max_notional_per_order,
-        "max_open_contracts_per_symbol": None,
+        "max_open_contracts_per_symbol": max_open_contracts_per_symbol,
         "max_open_contracts_per_strategy": max_open_contracts_per_strategy,
         "max_orders_per_trading_day": max_orders_per_day,
         "trading_day_timezone": "America/New_York",
@@ -257,8 +262,8 @@ def _prices_for_symbols(
 
 def _price_from_quote(symbol: str, latest_quote: object) -> Decimal:
     quote = latest_quote.quote
-    bid_price = quote.bid_price
-    ask_price = quote.ask_price
+    bid_price = _usable_quote_price(quote.bid_price)
+    ask_price = _usable_quote_price(quote.ask_price)
     if bid_price is not None and ask_price is not None:
         return (bid_price + ask_price) / Decimal("2")
     if ask_price is not None:
@@ -266,6 +271,12 @@ def _price_from_quote(symbol: str, latest_quote: object) -> Decimal:
     if bid_price is not None:
         return bid_price
     raise RuntimeError(f"Latest stock quote for {symbol} had no bid or ask")
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _sample_prices(raw_values: list[str]) -> dict[str, Decimal]:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from zoneinfo import ZoneInfo
 
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
@@ -32,12 +33,13 @@ def select_option_contract(
     market_data_client: AlpacaMarketDataClient | None = None,
 ) -> OptionContractSelectionRead:
     trading = trading_client or AlpacaTradingClient.from_settings()
+    expiration_date_gte, expiration_date_lte = _expiration_range(payload)
     contracts_page = trading.list_option_contracts(
         underlying_symbol=payload.underlying_symbol,
         option_type=payload.option_type,
         expiration_date=payload.expiration_date,
-        expiration_date_gte=payload.expiration_date_gte,
-        expiration_date_lte=payload.expiration_date_lte,
+        expiration_date_gte=expiration_date_gte,
+        expiration_date_lte=expiration_date_lte,
         limit=payload.limit,
     )
     target_strike = payload.target_strike or payload.underlying_price
@@ -111,6 +113,31 @@ def _select_quoted_contract(
         "No active tradable option contract matched the quote constraints: "
         + "; ".join(rejected_reasons[:5])
     )
+
+
+def _expiration_range(
+    payload: OptionContractSelectionCreate,
+    *,
+    today: date | None = None,
+) -> tuple[date | None, date | None]:
+    if (
+        payload.min_days_to_expiration is None
+        and payload.max_days_to_expiration is None
+    ):
+        return payload.expiration_date_gte, payload.expiration_date_lte
+
+    base_date = today or datetime.now(ZoneInfo("America/New_York")).date()
+    expiration_date_gte = (
+        base_date + timedelta(days=payload.min_days_to_expiration)
+        if payload.min_days_to_expiration is not None
+        else None
+    )
+    expiration_date_lte = (
+        base_date + timedelta(days=payload.max_days_to_expiration)
+        if payload.max_days_to_expiration is not None
+        else None
+    )
+    return expiration_date_gte, expiration_date_lte
 
 
 def _quote_rejection_reason(
@@ -198,8 +225,8 @@ def _build_quote_context(
     side: str,
     raw_quote: dict,
 ) -> dict[str, object]:
-    bid_price = quote.bid_price
-    ask_price = quote.ask_price
+    bid_price = _usable_quote_price(quote.bid_price)
+    ask_price = _usable_quote_price(quote.ask_price)
     midpoint = _midpoint(bid_price, ask_price)
     spread = ask_price - bid_price if bid_price is not None and ask_price is not None else None
     estimated_price = _side_price(
@@ -255,6 +282,12 @@ def _decimal_to_string(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _decimal_from_context(value: object) -> Decimal | None:

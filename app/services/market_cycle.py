@@ -624,6 +624,8 @@ def _contract_selection_for_signal(
         expiration_date=preview_config.get("expiration_date"),
         expiration_date_gte=preview_config.get("expiration_date_gte"),
         expiration_date_lte=preview_config.get("expiration_date_lte"),
+        min_days_to_expiration=preview_config.get("min_days_to_expiration"),
+        max_days_to_expiration=preview_config.get("max_days_to_expiration"),
         target_strike=preview_config.get("target_strike"),
         underlying_price=preview_config.get("underlying_price"),
         max_estimated_notional=preview_config.get("max_estimated_notional"),

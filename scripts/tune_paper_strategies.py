@@ -477,8 +477,8 @@ def _price_for_symbol(symbol: str, *, sample_price: str | None) -> Decimal:
     if latest_quote is None:
         raise RuntimeError(f"No latest stock quote returned for {symbol}")
 
-    bid_price = latest_quote.quote.bid_price
-    ask_price = latest_quote.quote.ask_price
+    bid_price = _usable_quote_price(latest_quote.quote.bid_price)
+    ask_price = _usable_quote_price(latest_quote.quote.ask_price)
     if bid_price is not None and ask_price is not None:
         return (bid_price + ask_price) / Decimal("2")
     if ask_price is not None:
@@ -486,6 +486,12 @@ def _price_for_symbol(symbol: str, *, sample_price: str | None) -> Decimal:
     if bid_price is not None:
         return bid_price
     raise RuntimeError(f"Latest stock quote for {symbol} had no bid or ask")
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _whole_dollar(value: Decimal) -> Decimal:

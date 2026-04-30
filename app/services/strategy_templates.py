@@ -269,11 +269,15 @@ def _preview_config(
     rationale: str,
     max_estimated_notional: str = "250.00",
     max_spread: str = "0.25",
+    min_days_to_expiration: int = 1,
+    max_days_to_expiration: int = 7,
 ) -> dict[str, Any]:
     return {
         "enabled": True,
         "underlying_symbol": symbol,
         "option_type": option_type,
+        "min_days_to_expiration": min_days_to_expiration,
+        "max_days_to_expiration": max_days_to_expiration,
         "target_strike": _decimal_string(target_strike),
         "side": "buy",
         "quantity": 1,
