@@ -54,7 +54,7 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertTrue(scanner["preview"]["enabled"])
             self.assertFalse(scanner["submit"]["enabled"])
             self.assertEqual(scanner["preview"]["quantity"], 1)
-            self.assertEqual(scanner["preview"]["min_days_to_expiration"], 1)
+            self.assertEqual(scanner["preview"]["min_days_to_expiration"], 2)
             self.assertEqual(scanner["preview"]["max_days_to_expiration"], 7)
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_estimated_notional"]),

@@ -269,7 +269,7 @@ def _preview_config(
     rationale: str,
     max_estimated_notional: str = "250.00",
     max_spread: str = "0.25",
-    min_days_to_expiration: int = 1,
+    min_days_to_expiration: int = 2,
     max_days_to_expiration: int = 7,
 ) -> dict[str, Any]:
     return {

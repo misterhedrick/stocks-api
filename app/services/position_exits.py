@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 import re
 import uuid
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import BrokerOrder, JobRun, OrderIntent, PositionSnapshot, Strategy
@@ -92,6 +93,7 @@ ACTIVE_EXIT_ORDER_STATUSES = {
     "partially_filled",
     "submitted",
 }
+BROKER_ACTIVE_EXIT_ORDER_STATUSES = ACTIVE_EXIT_ORDER_STATUSES - {"previewed"}
 ENTRY_BROKER_ORDER_STATUSES = {
     "new",
     "accepted",
@@ -581,7 +583,7 @@ def _has_active_exit_order(db: Session, symbol: str) -> bool:
         select(func.count(OrderIntent.id))
         .where(OrderIntent.option_symbol == symbol)
         .where(func.lower(OrderIntent.side) == "sell")
-        .where(OrderIntent.status.in_(ACTIVE_EXIT_ORDER_STATUSES))
+        .where(_active_exit_order_status_filter())
     )
     value = db.scalar(statement)
     try:
@@ -598,7 +600,7 @@ def _latest_active_exit_order(
         select(OrderIntent)
         .where(OrderIntent.option_symbol == symbol)
         .where(func.lower(OrderIntent.side) == "sell")
-        .where(OrderIntent.status.in_(ACTIVE_EXIT_ORDER_STATUSES))
+        .where(_active_exit_order_status_filter())
         .order_by(OrderIntent.created_at.desc())
         .limit(1)
     )
@@ -616,6 +618,27 @@ def _latest_active_exit_order(
         if order_intent.created_at is not None
         else None,
     }
+
+
+def _active_exit_order_status_filter() -> object:
+    return or_(
+        OrderIntent.status.in_(BROKER_ACTIVE_EXIT_ORDER_STATUSES),
+        and_(
+            OrderIntent.status == "previewed",
+            OrderIntent.created_at >= _current_trading_day_start_utc(),
+        ),
+    )
+
+
+def _current_trading_day_start_utc() -> datetime:
+    trading_timezone = ZoneInfo("America/New_York")
+    local_now = datetime.now(timezone.utc).astimezone(trading_timezone)
+    local_start = datetime.combine(
+        local_now.date(),
+        time.min,
+        tzinfo=trading_timezone,
+    )
+    return local_start.astimezone(timezone.utc)
 
 
 def _position_recommendation(
