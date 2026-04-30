@@ -75,3 +75,14 @@ class MarketCycleRead(BaseModel):
     exits: dict[str, Any] | None
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
+
+
+class MarketMaintenanceRead(BaseModel):
+    job_run: JobRunRead
+    phase: str
+    cleanup: dict[str, Any]
+    reconcile: dict[str, Any] | None
+    news: dict[str, Any] | None
+    performance: dict[str, Any] | None
+    readiness: dict[str, Any]
+    settings_snapshot: dict[str, Any]

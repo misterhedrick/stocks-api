@@ -20,6 +20,7 @@ from app.schemas.automation import (
 )
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
+from app.services.market_maintenance import MarketMaintenanceResult
 from app.services.news_scanner import NewsScanResult
 from app.services.performance_review import PerformanceReviewResult
 from app.services.position_exits import ExitEvaluationResult
@@ -460,6 +461,66 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_pre_market_maintenance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("pre_market")
+
+        with patch(
+            "app.api.routes.jobs.run_pre_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/pre-market-maintenance?order_limit=25&fill_page_size=50&stale_after_hours=8&news_enabled=false",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "pre_market")
+        self.assertEqual(response.json()["cleanup"]["signals_marked_stale"], 1)
+        self.assertEqual(response.json()["reconcile"]["orders_seen"], 2)
+        maintenance.assert_called_once_with(
+            db,
+            order_limit=25,
+            fill_page_size=50,
+            stale_after_hours=8,
+            news_enabled=False,
+        )
+
+    def test_post_market_maintenance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("post_market")
+
+        with patch(
+            "app.api.routes.jobs.run_post_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/post-market-maintenance?order_limit=250&fill_page_size=250&stale_after_hours=0",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "post_market")
+        self.assertEqual(response.json()["performance"]["matched_round_trips"], 1)
+        maintenance.assert_called_once_with(
+            db,
+            order_limit=250,
+            fill_page_size=250,
+            stale_after_hours=0,
+        )
+
     def test_evaluate_exits_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -872,6 +933,46 @@ def build_market_cycle_result() -> MarketCycleResult:
         exits={"status": "disabled"},
         news={"status": "disabled"},
         submit={"status": "disabled"},
+    )
+
+
+def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name=f"{phase}_maintenance",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+
+    return MarketMaintenanceResult(
+        job_run=job_run,
+        phase=phase,
+        cleanup={
+            "signals_marked_stale": 1,
+            "order_intents_marked_stale": 1,
+            "signal_ids": [str(uuid.uuid4())],
+            "order_intent_ids": [str(uuid.uuid4())],
+        },
+        reconcile={"orders_seen": 2, "fills_seen": 1, "positions_seen": 1},
+        news={"status": "disabled"} if phase == "pre_market" else None,
+        performance={
+            "fills_seen": 2,
+            "matched_round_trips": 1,
+            "totals": {"realized_pnl": "25"},
+        }
+        if phase == "post_market"
+        else None,
+        readiness={
+            "active_strategies": 1,
+            "preview_enabled_strategies": 1,
+            "submit_enabled_strategies": 1,
+        },
+        settings_snapshot={"paper_mode": True},
     )
 
 

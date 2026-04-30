@@ -12,6 +12,7 @@ from app.integrations.alpaca import (
 from app.schemas.jobs import (
     BrokerReconciliationRead,
     JobRunRead,
+    MarketMaintenanceRead,
     MarketCycleRead,
     NewsScanRead,
     PositionExitEvaluationRead,
@@ -19,6 +20,10 @@ from app.schemas.jobs import (
 )
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
+from app.services.market_maintenance import (
+    run_post_market_maintenance,
+    run_pre_market_maintenance,
+)
 from app.services.news_scanner import NewsFetchError, scan_market_news
 from app.services.position_exits import evaluate_position_exits
 from app.services.position_exits import preview_unmanaged_position_exits
@@ -237,4 +242,93 @@ def market_cycle_route(
         exits=result.exits,
         news=result.news,
         submit=result.submit,
+    )
+
+
+@router.post(
+    "/pre-market-maintenance",
+    response_model=MarketMaintenanceRead,
+    status_code=status.HTTP_200_OK,
+)
+def pre_market_maintenance_route(
+    db: Annotated[Session, Depends(get_db)],
+    order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    stale_after_hours: Annotated[int, Query(ge=0, le=72)] = 12,
+    news_enabled: bool = True,
+) -> MarketMaintenanceRead:
+    try:
+        result = run_pre_market_maintenance(
+            db,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
+            stale_after_hours=stale_after_hours,
+            news_enabled=news_enabled,
+        )
+    except NewsFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return MarketMaintenanceRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        phase=result.phase,
+        cleanup=result.cleanup,
+        reconcile=result.reconcile,
+        news=result.news,
+        performance=result.performance,
+        readiness=result.readiness,
+        settings_snapshot=result.settings_snapshot,
+    )
+
+
+@router.post(
+    "/post-market-maintenance",
+    response_model=MarketMaintenanceRead,
+    status_code=status.HTTP_200_OK,
+)
+def post_market_maintenance_route(
+    db: Annotated[Session, Depends(get_db)],
+    order_limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 500,
+    stale_after_hours: Annotated[int, Query(ge=0, le=72)] = 0,
+) -> MarketMaintenanceRead:
+    try:
+        result = run_post_market_maintenance(
+            db,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
+            stale_after_hours=stale_after_hours,
+        )
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return MarketMaintenanceRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        phase=result.phase,
+        cleanup=result.cleanup,
+        reconcile=result.reconcile,
+        news=result.news,
+        performance=result.performance,
+        readiness=result.readiness,
+        settings_snapshot=result.settings_snapshot,
     )
