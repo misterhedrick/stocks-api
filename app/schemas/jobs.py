@@ -91,6 +91,7 @@ class MarketMaintenanceRead(BaseModel):
 class TradingDataResetRead(BaseModel):
     job_run: JobRunRead
     dry_run: bool
+    include_history: bool
     counts_before: dict[str, int]
     deleted: dict[str, int]
     kept_tables: list[str]

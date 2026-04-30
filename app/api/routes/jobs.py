@@ -398,10 +398,16 @@ def post_market_maintenance_route(
 def reset_trading_data_route(
     db: Annotated[Session, Depends(get_db)],
     dry_run: bool = True,
+    include_history: bool = True,
     confirm: Annotated[str | None, Query(max_length=64)] = None,
 ) -> TradingDataResetRead:
     try:
-        result = run_trading_data_reset(db, dry_run=dry_run, confirm=confirm)
+        result = run_trading_data_reset(
+            db,
+            dry_run=dry_run,
+            include_history=include_history,
+            confirm=confirm,
+        )
     except TradingDataResetConfirmationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -411,6 +417,7 @@ def reset_trading_data_route(
     return TradingDataResetRead(
         job_run=JobRunRead.model_validate(result.job_run),
         dry_run=result.dry_run,
+        include_history=result.include_history,
         counts_before=result.counts_before,
         deleted=result.deleted,
         kept_tables=result.kept_tables,

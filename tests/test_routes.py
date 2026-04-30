@@ -577,6 +577,7 @@ class RouteBehaviorTests(unittest.TestCase):
         reset.assert_called_once_with(
             db,
             dry_run=False,
+            include_history=True,
             confirm="RESET_TRADING_DATA",
         )
 
@@ -1051,12 +1052,15 @@ def build_trading_data_reset_result() -> TradingDataResetResult:
     return TradingDataResetResult(
         job_run=job_run,
         dry_run=False,
+        include_history=True,
         counts_before={
             "fills": 2,
             "broker_orders": 3,
             "order_intents": 4,
             "signals": 5,
             "position_snapshots": 6,
+            "audit_logs": 7,
+            "job_runs": 8,
         },
         deleted={
             "fills": 2,
@@ -1064,8 +1068,10 @@ def build_trading_data_reset_result() -> TradingDataResetResult:
             "order_intents": 4,
             "signals": 5,
             "position_snapshots": 6,
+            "audit_logs": 7,
+            "job_runs": 8,
         },
-        kept_tables=["strategies", "job_runs", "audit_logs"],
+        kept_tables=["strategies"],
         confirmation_phrase="RESET_TRADING_DATA",
     )
 

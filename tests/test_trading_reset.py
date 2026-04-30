@@ -69,21 +69,24 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertEqual(db.executed, [])
 
     def test_dry_run_counts_runtime_tables_without_deleting(self) -> None:
-        db = FakeResetSession(counts=[2, 3, 4, 5, 6])
+        db = FakeResetSession(counts=[2, 3, 4, 5, 6, 7, 8])
 
         result = run_trading_data_reset(db)
 
         self.assertTrue(result.dry_run)
+        self.assertTrue(result.include_history)
         self.assertEqual(result.counts_before["fills"], 2)
         self.assertEqual(result.counts_before["position_snapshots"], 6)
+        self.assertEqual(result.counts_before["audit_logs"], 7)
+        self.assertEqual(result.counts_before["job_runs"], 8)
         self.assertEqual(result.deleted["fills"], 0)
         self.assertEqual(db.executed, [])
         self.assertEqual(db.commit_count, 1)
 
-    def test_confirmed_reset_deletes_runtime_tables_and_keeps_config_history(self) -> None:
+    def test_confirmed_reset_deletes_runtime_tables_and_history(self) -> None:
         db = FakeResetSession(
-            counts=[2, 3, 4, 5, 6],
-            rowcounts=[2, 3, 4, 5, 6],
+            counts=[2, 3, 4, 5, 6, 7, 8],
+            rowcounts=[2, 3, 4, 5, 6, 7, 8],
         )
 
         result = run_trading_data_reset(
@@ -98,13 +101,34 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertEqual(result.deleted["order_intents"], 4)
         self.assertEqual(result.deleted["signals"], 5)
         self.assertEqual(result.deleted["position_snapshots"], 6)
-        self.assertEqual(result.kept_tables, ["strategies", "job_runs", "audit_logs"])
-        self.assertEqual(len(db.executed), 5)
+        self.assertEqual(result.deleted["audit_logs"], 7)
+        self.assertEqual(result.deleted["job_runs"], 8)
+        self.assertEqual(result.kept_tables, ["strategies"])
+        self.assertEqual(len(db.executed), 7)
         self.assertEqual(db.commit_count, 1)
         job_runs = [item for item in db.added if isinstance(item, JobRun)]
         self.assertEqual(job_runs[-1].status, "succeeded")
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "trading_data_reset.succeeded")
+
+    def test_reset_can_preserve_job_and_audit_history(self) -> None:
+        db = FakeResetSession(
+            counts=[2, 3, 4, 5, 6],
+            rowcounts=[2, 3, 4, 5, 6],
+        )
+
+        result = run_trading_data_reset(
+            db,
+            dry_run=False,
+            include_history=False,
+            confirm=RESET_TRADING_DATA_CONFIRMATION,
+        )
+
+        self.assertFalse(result.include_history)
+        self.assertNotIn("audit_logs", result.deleted)
+        self.assertNotIn("job_runs", result.deleted)
+        self.assertEqual(result.kept_tables, ["strategies", "job_runs", "audit_logs"])
+        self.assertEqual(len(db.executed), 5)
 
 
 if __name__ == "__main__":
