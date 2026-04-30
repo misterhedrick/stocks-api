@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 import uuid
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.jobs import JobRunRead
 
@@ -72,6 +72,8 @@ class PaperPerformanceRead(BaseModel):
     by_strategy: list[dict[str, Any]]
     by_symbol: list[dict[str, Any]]
     recent_round_trips: list[dict[str, Any]]
+    unmatched_closing_fills: list[dict[str, Any]] = Field(default_factory=list)
+    ignored_fills: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TradeLifecycleRead(BaseModel):
@@ -91,3 +93,5 @@ class TradeCasesRead(BaseModel):
     totals: dict[str, Any]
     by_strategy: list[dict[str, Any]]
     by_symbol: list[dict[str, Any]]
+    unmatched_closing_fills: list[dict[str, Any]] = Field(default_factory=list)
+    ignored_fills: list[dict[str, Any]] = Field(default_factory=list)

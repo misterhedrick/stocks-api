@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -41,6 +41,8 @@ class TradeCasesResult:
     totals: dict[str, Any]
     by_strategy: list[dict[str, Any]]
     by_symbol: list[dict[str, Any]]
+    unmatched_closing_fills: list[dict[str, Any]] = field(default_factory=list)
+    ignored_fills: list[dict[str, Any]] = field(default_factory=list)
 
 
 def get_trade_lifecycle(
@@ -79,6 +81,8 @@ def get_trade_cases(
         totals=review.totals,
         by_strategy=review.by_strategy,
         by_symbol=review.by_symbol,
+        unmatched_closing_fills=review.unmatched_closing_fills,
+        ignored_fills=review.ignored_fills,
     )
 
 
