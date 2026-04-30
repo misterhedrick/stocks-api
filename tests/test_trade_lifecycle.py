@@ -86,7 +86,7 @@ def build_entry_intent(strategy: Strategy) -> OrderIntent:
         strategy_id=strategy.id,
         signal_id=None,
         underlying_symbol="SPY",
-        option_symbol="SPY260501C00500000",
+        option_symbol="SPY260619C00500000",
         side="buy",
         quantity=1,
         order_type="limit",
@@ -105,7 +105,7 @@ def build_position() -> PositionSnapshot:
     now = datetime.now(timezone.utc)
     return PositionSnapshot(
         id=uuid.uuid4(),
-        symbol="SPY260501C00500000",
+        symbol="SPY260619C00500000",
         quantity=Decimal("1"),
         market_value=Decimal("125"),
         cost_basis=Decimal("100"),
@@ -171,7 +171,7 @@ class TradeLifecycleTests(unittest.TestCase):
         self.assertEqual(result.positions_seen, 1)
         self.assertEqual(result.managed_positions, 1)
         position = result.positions[0]
-        self.assertEqual(position["symbol"], "SPY260501C00500000")
+        self.assertEqual(position["symbol"], "SPY260619C00500000")
         self.assertEqual(position["underlying_symbol"], "SPY")
         self.assertTrue(position["ownership"]["managed"])
         self.assertEqual(position["entry_order_intent"]["id"], str(entry_intent.id))

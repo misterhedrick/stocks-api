@@ -6,7 +6,12 @@ from io import BytesIO, StringIO
 from urllib.error import HTTPError
 from unittest.mock import patch
 
-from scripts.run_render_job import build_job_url, is_enabled, run_job_from_env
+from scripts.run_render_job import (
+    build_job_url,
+    format_response_body_for_logs,
+    is_enabled,
+    run_job_from_env,
+)
 
 
 class FakeResponse:
@@ -41,6 +46,26 @@ class RenderJobRunnerTests(unittest.TestCase):
             ),
             "https://stocks-api-z11i.onrender.com/api/v1/jobs/reconcile-broker?order_limit=100",
         )
+
+    def test_format_response_body_compacts_large_job_payloads(self) -> None:
+        body = (
+            '{"job_run":{"id":"job-123","job_name":"pre_market_maintenance",'
+            '"status":"succeeded"},"phase":"pre_market",'
+            '"cleanup":{"signals_marked_stale":153,"order_intents_marked_stale":29,'
+            '"signal_ids":["a","b","c"]},'
+            '"reconcile":{"orders_seen":63,"orders_updated":63,"fills_seen":57,'
+            '"positions_seen":4},'
+            '"news":{"risk_assessment":{"market_risk_level":"high",'
+            '"should_block_new_entries":true,'
+            '"manual_review_symbols":["AAPL","AMD","AMZN"]}}}'
+        )
+
+        summary = format_response_body_for_logs(body)
+
+        self.assertIn("job=pre_market_maintenance", summary)
+        self.assertIn("cleanup.signals_marked_stale=153", summary)
+        self.assertIn("news.market_risk_level=high", summary)
+        self.assertNotIn("signal_ids", summary)
 
     def test_disabled_job_exits_successfully_without_required_secrets(self) -> None:
         with patch.dict(os.environ, {"SCHEDULED_JOBS_ENABLED": "false"}, clear=True), patch(

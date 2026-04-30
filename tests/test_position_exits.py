@@ -222,7 +222,7 @@ class PositionExitTests(unittest.TestCase):
     def test_evaluate_position_exits_skips_when_no_rule_triggers(self) -> None:
         strategy = build_strategy()
         position = build_position(
-            symbol="SPY260501C00500000",
+            symbol="SPY260619C00500000",
             unrealized_pl=Decimal("5"),
             cost_basis=Decimal("100"),
         )
@@ -394,7 +394,7 @@ class PositionExitTests(unittest.TestCase):
     def test_get_position_management_statuses_reports_hold(self) -> None:
         strategy = build_strategy()
         position = build_position(
-            symbol="SPY260501C00500000",
+            symbol="SPY260619C00500000",
             unrealized_pl=Decimal("5"),
             cost_basis=Decimal("100"),
         )

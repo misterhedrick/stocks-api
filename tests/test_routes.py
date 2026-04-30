@@ -26,6 +26,7 @@ from app.services.performance_review import PerformanceReviewResult
 from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 from app.services.trade_lifecycle import TradeCasesResult, TradeLifecycleResult
+from app.services.trading_reset import TradingDataResetResult
 
 
 class FakeRouteSession:
@@ -551,6 +552,34 @@ class RouteBehaviorTests(unittest.TestCase):
             stale_after_hours=0,
         )
 
+    def test_reset_trading_data_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_trading_data_reset_result()
+
+        with patch(
+            "app.api.routes.jobs.run_trading_data_reset",
+            return_value=result,
+        ) as reset:
+            response = client.post(
+                "/api/v1/jobs/reset-trading-data?dry_run=false&confirm=RESET_TRADING_DATA",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["dry_run"])
+        self.assertEqual(response.json()["deleted"]["signals"], 5)
+        reset.assert_called_once_with(
+            db,
+            dry_run=False,
+            confirm="RESET_TRADING_DATA",
+        )
+
     def test_evaluate_exits_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -1003,6 +1032,41 @@ def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
             "submit_enabled_strategies": 1,
         },
         settings_snapshot={"paper_mode": True},
+    )
+
+
+def build_trading_data_reset_result() -> TradingDataResetResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="trading_data_reset",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+
+    return TradingDataResetResult(
+        job_run=job_run,
+        dry_run=False,
+        counts_before={
+            "fills": 2,
+            "broker_orders": 3,
+            "order_intents": 4,
+            "signals": 5,
+            "position_snapshots": 6,
+        },
+        deleted={
+            "fills": 2,
+            "broker_orders": 3,
+            "order_intents": 4,
+            "signals": 5,
+            "position_snapshots": 6,
+        },
+        kept_tables=["strategies", "job_runs", "audit_logs"],
+        confirmation_phrase="RESET_TRADING_DATA",
     )
 
 

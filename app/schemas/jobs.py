@@ -86,3 +86,12 @@ class MarketMaintenanceRead(BaseModel):
     performance: dict[str, Any] | None
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
+
+
+class TradingDataResetRead(BaseModel):
+    job_run: JobRunRead
+    dry_run: bool
+    counts_before: dict[str, int]
+    deleted: dict[str, int]
+    kept_tables: list[str]
+    confirmation_phrase: str

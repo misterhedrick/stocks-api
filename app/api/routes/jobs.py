@@ -17,6 +17,7 @@ from app.schemas.jobs import (
     NewsScanRead,
     PositionExitEvaluationRead,
     SignalScanRead,
+    TradingDataResetRead,
 )
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
@@ -29,6 +30,10 @@ from app.services.news_scanner import NewsFetchError, scan_market_news
 from app.services.position_exits import evaluate_position_exits
 from app.services.position_exits import preview_unmanaged_position_exits
 from app.services.signal_scanner import scan_signals
+from app.services.trading_reset import (
+    TradingDataResetConfirmationError,
+    run_trading_data_reset,
+)
 
 router = APIRouter(
     prefix="/jobs",
@@ -382,4 +387,32 @@ def post_market_maintenance_route(
         performance=result.performance,
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
+    )
+
+
+@router.post(
+    "/reset-trading-data",
+    response_model=TradingDataResetRead,
+    status_code=status.HTTP_200_OK,
+)
+def reset_trading_data_route(
+    db: Annotated[Session, Depends(get_db)],
+    dry_run: bool = True,
+    confirm: Annotated[str | None, Query(max_length=64)] = None,
+) -> TradingDataResetRead:
+    try:
+        result = run_trading_data_reset(db, dry_run=dry_run, confirm=confirm)
+    except TradingDataResetConfirmationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return TradingDataResetRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        dry_run=result.dry_run,
+        counts_before=result.counts_before,
+        deleted=result.deleted,
+        kept_tables=result.kept_tables,
+        confirmation_phrase=result.confirmation_phrase,
     )
