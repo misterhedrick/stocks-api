@@ -53,6 +53,9 @@ class FakeMarketCycleSession:
             return self.scalar_results.pop(0)
         return 0
 
+    def scalars(self, _: object) -> list[object]:
+        return []
+
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
             obj.id = uuid.uuid4()
@@ -338,6 +341,44 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.preview["signals_seen"], 1)
         self.assertEqual(result.preview["previews_created"], 1)
         self.assertEqual(result.preview["previews_skipped"], 0)
+        self.assertEqual(result.preview["order_intent_ids"], [str(order_intent.id)])
+        preview.assert_called_once()
+
+    def test_run_market_cycle_auto_previews_pending_unpreviewed_signals_when_enabled(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+        order_intent = build_order_intent(signal)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=SignalScanResult(
+                job_run=build_job_run("scan_signals"),
+                strategies_seen=2,
+                strategies_scanned=0,
+                signals_created=0,
+                signals_skipped=1,
+                errors=["duplicate signal suppressed"],
+                no_signal_reasons=[],
+                created_signal_ids=[],
+            ),
+        ), patch(
+            "app.services.market_cycle._signal_ids_for_preview",
+            return_value=[signal.id],
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ) as preview:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.preview["signals_seen"], 1)
+        self.assertEqual(result.preview["previews_created"], 1)
         self.assertEqual(result.preview["order_intent_ids"], [str(order_intent.id)])
         preview.assert_called_once()
 

@@ -141,8 +141,10 @@ def preview_order_intent_from_signal(
             "selection": _selection_preview(selection),
         },
     )
+    signal.status = "previewed"
 
     db.add(order_intent)
+    db.add(signal)
     db.flush()
     record_audit_log(
         db,

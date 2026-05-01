@@ -121,12 +121,17 @@ def run_market_cycle(
             )
 
         if preview_enabled:
+            signal_ids_for_preview = _signal_ids_for_preview(
+                db,
+                created_signal_ids,
+                limit=scan_limit,
+            )
             if news_blocks_entries:
                 preview = {
                     "status": "blocked",
-                    "signals_seen": len(created_signal_ids),
+                    "signals_seen": len(signal_ids_for_preview),
                     "previews_created": 0,
-                    "previews_skipped": len(created_signal_ids),
+                    "previews_skipped": len(signal_ids_for_preview),
                     "errors": ["News risk gate blocked new entry previews"],
                     "order_intent_ids": [],
                     "news_risk": news.get("risk_assessment")
@@ -134,7 +139,7 @@ def run_market_cycle(
                     else None,
                 }
             else:
-                preview = _preview_created_signals(db, created_signal_ids)
+                preview = _preview_created_signals(db, signal_ids_for_preview)
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
 
         if exit_enabled:
@@ -283,6 +288,37 @@ def _preview_created_signals(
         "errors": errors,
         "order_intent_ids": order_intent_ids,
     }
+
+
+def _signal_ids_for_preview(
+    db: Session,
+    created_signal_ids: list[uuid.UUID],
+    *,
+    limit: int,
+) -> list[uuid.UUID]:
+    signal_ids = list(created_signal_ids)
+    seen = set(signal_ids)
+    pending_limit = max(limit - len(signal_ids), 0)
+    if pending_limit == 0:
+        return signal_ids
+
+    has_order_intent = (
+        select(OrderIntent.id)
+        .where(OrderIntent.signal_id == Signal.id)
+        .exists()
+    )
+    pending_signal_ids = db.scalars(
+        select(Signal.id)
+        .where(Signal.status == "new")
+        .where(~has_order_intent)
+        .order_by(Signal.created_at.asc())
+        .limit(pending_limit)
+    )
+    for signal_id in pending_signal_ids:
+        if signal_id not in seen:
+            signal_ids.append(signal_id)
+            seen.add(signal_id)
+    return signal_ids
 
 
 def _submit_previewed_order_intents(
