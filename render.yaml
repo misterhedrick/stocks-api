@@ -92,7 +92,7 @@ services:
       - key: JOB_TIMEOUT_SECONDS
         value: 240
       - key: JOB_RETRY_DELAYS_SECONDS
-        value: 10,30
+        value: 60,180
       - key: JOB_SKIP_HTTP_STATUS_CODES
         value: 429
       - key: ADMIN_API_TOKEN
