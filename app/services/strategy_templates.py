@@ -355,7 +355,7 @@ def _preview_config(
         "max_spread_percent": max_spread_percent,
         "min_open_interest": min_open_interest,
         "min_quote_size": min_quote_size,
-        "limit": 100,
+        "limit": 20,
         "rationale": rationale,
     }
 

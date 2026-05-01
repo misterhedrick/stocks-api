@@ -598,7 +598,7 @@ def _contract_selection_for_signal(
         min_open_interest=preview_config.get("min_open_interest"),
         min_quote_size=preview_config.get("min_quote_size"),
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
-        limit=_int_config(preview_config, "limit", default=100),
+        limit=_int_config(preview_config, "limit", default=20),
     )
 
 
