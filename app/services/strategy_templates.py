@@ -4,6 +4,60 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 
+LIQUID_OPTIONS_UNIVERSE = (
+    "SPY",
+    "QQQ",
+    "NVDA",
+    "TSLA",
+    "IWM",
+    "AMZN",
+    "MSFT",
+    "GOOGL",
+    "META",
+    "AAPL",
+    "INTC",
+    "AMD",
+    "GOOG",
+    "QCOM",
+    "NFLX",
+    "NOK",
+    "SOFI",
+    "MSTR",
+    "TLT",
+    "MU",
+    "MARA",
+    "IBIT",
+    "EEM",
+    "HYG",
+    "PLTR",
+    "HOOD",
+    "TQQQ",
+    "SLV",
+    "IGV",
+    "XLB",
+    "USO",
+    "PAGP",
+    "RIVN",
+    "AVGO",
+    "IREN",
+    "ORCL",
+    "EFA",
+    "SOXL",
+    "WULF",
+    "SNDK",
+    "GLD",
+    "SMH",
+    "GME",
+    "POET",
+    "CRWV",
+    "TSLL",
+    "BE",
+    "WDC",
+    "LLY",
+    "NOW",
+)
+
+
 def build_preview_first_strategy_payloads(
     *,
     prices: dict[str, Decimal],
@@ -76,6 +130,7 @@ def build_moving_average_strategy_payload(
     lookback_minutes: int = 1440,
     timeframe: str = "5Min",
     confidence: str = "0.6200",
+    min_change_percent: str = "0.10",
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     direction = "bearish" if trigger.startswith("bearish") else "bullish"
@@ -101,6 +156,10 @@ def build_moving_average_strategy_payload(
                 "signal_type": "moving_average_setup",
                 "direction": direction,
                 "confidence": confidence,
+                "min_change_percent": min_change_percent,
+                "require_short_average_slope": True,
+                "require_price_confirmation": True,
+                "market_regime": _market_regime_config(direction),
                 "rationale": (
                     f"{clean_symbol} moving average scanner triggered "
                     f"{trigger}"
@@ -131,7 +190,7 @@ def build_trend_confirmation_strategy_payload(
     long_window: int = 21,
     lookback_minutes: int = 1440,
     timeframe: str = "5Min",
-    min_change_percent: str = "0.20",
+    min_change_percent: str = "0.35",
     confidence: str = "0.6800",
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
@@ -158,6 +217,10 @@ def build_trend_confirmation_strategy_payload(
                 "signal_type": "confirmed_trend",
                 "direction": direction,
                 "confidence": confidence,
+                "require_short_average_slope": True,
+                "require_price_above_short_average": direction == "bullish",
+                "require_price_below_short_average": direction == "bearish",
+                "market_regime": _market_regime_config(direction),
                 "rationale": (
                     f"{clean_symbol} confirmed trend scanner found "
                     f"{direction} MA alignment and momentum"
@@ -169,7 +232,7 @@ def build_trend_confirmation_strategy_payload(
                     option_type=option_type,
                     target_strike=target_strike,
                     rationale=f"{name}: preview only; does not submit.",
-                    max_estimated_notional="200.00",
+                    max_estimated_notional="2500.00",
                     max_spread="0.20",
                 ),
                 "exit": _exit_config(
@@ -267,8 +330,11 @@ def _preview_config(
     option_type: str,
     target_strike: Decimal,
     rationale: str,
-    max_estimated_notional: str = "250.00",
-    max_spread: str = "0.25",
+    max_estimated_notional: str = "2500.00",
+    max_spread: str = "0.20",
+    max_spread_percent: str = "20",
+    min_open_interest: int = 100,
+    min_quote_size: int = 1,
     min_days_to_expiration: int = 2,
     max_days_to_expiration: int = 7,
 ) -> dict[str, Any]:
@@ -286,12 +352,15 @@ def _preview_config(
         "data_feed": "indicative",
         "max_estimated_notional": max_estimated_notional,
         "max_spread": max_spread,
+        "max_spread_percent": max_spread_percent,
+        "min_open_interest": min_open_interest,
+        "min_quote_size": min_quote_size,
         "limit": 100,
         "rationale": rationale,
     }
 
 
-def _disabled_submit_config(*, max_notional_per_order: str = "250.00") -> dict[str, Any]:
+def _disabled_submit_config(*, max_notional_per_order: str = "2500.00") -> dict[str, Any]:
     return {
         "enabled": False,
         "max_orders_per_cycle": 1,
@@ -315,9 +384,9 @@ def _disabled_submit_config(*, max_notional_per_order: str = "250.00") -> dict[s
 
 def _exit_config(
     *,
-    profit_target_percent: str = "30",
-    stop_loss_percent: str = "20",
-    max_spread: str = "0.30",
+    profit_target_percent: str = "25",
+    stop_loss_percent: str = "15",
+    max_spread: str = "0.25",
 ) -> dict[str, Any]:
     return {
         "enabled": True,
@@ -360,3 +429,13 @@ def _whole_dollar(price: Decimal) -> Decimal:
 
 def _decimal_string(value: Decimal) -> str:
     return str(value)
+
+
+def _market_regime_config(direction: str) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "symbols": ["SPY", "QQQ"],
+        "bullish_min_change_percent": "0.05",
+        "bearish_max_change_percent": "-0.05",
+        "direction": direction,
+    }

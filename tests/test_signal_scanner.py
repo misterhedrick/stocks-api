@@ -556,6 +556,39 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_created, 0)
         self.assertIn("moving average trigger bullish_cross was not met", result.no_signal_reasons[0])
 
+    def test_scan_signals_blocks_bullish_moving_average_when_market_regime_is_weak(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "moving_average",
+                    "symbols": ["AAPL"],
+                    "short_window": 2,
+                    "long_window": 3,
+                    "trigger": "bullish_trend",
+                    "market_regime": {
+                        "enabled": True,
+                        "symbols": ["SPY", "QQQ"],
+                        "bullish_min_change_percent": "0.05",
+                    },
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(
+            db,
+            market_data_client=FakeMarketDataClient(
+                bars={
+                    "AAPL": ["100.00", "101.00", "102.00", "103.00"],
+                    "SPY": ["500.00", "499.00", "498.00", "497.00"],
+                    "QQQ": ["400.00", "399.00", "398.00", "397.00"],
+                }
+            ),
+        )
+
+        self.assertEqual(result.signals_created, 0)
+        self.assertIn("market regime did not confirm", result.no_signal_reasons[0])
+
     def test_scan_signals_records_malformed_moving_average_config_as_skipped(self) -> None:
         strategy = build_strategy(
             config={

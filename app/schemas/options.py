@@ -20,6 +20,9 @@ class OptionContractSelectionCreate(BaseModel):
     underlying_price: Decimal | None = Field(default=None, gt=0)
     max_estimated_notional: Decimal | None = Field(default=None, gt=0)
     max_spread: Decimal | None = Field(default=None, ge=0)
+    max_spread_percent: Decimal | None = Field(default=None, ge=0)
+    min_open_interest: Decimal | None = Field(default=None, ge=0)
+    min_quote_size: Decimal | None = Field(default=None, ge=0)
     data_feed: Literal["indicative", "opra"] = "indicative"
     limit: int = Field(default=100, ge=1, le=500)
 

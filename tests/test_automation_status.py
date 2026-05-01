@@ -121,10 +121,12 @@ class AutomationStatusTests(unittest.TestCase):
             "app.services.automation_status.settings",
             market_cycle_preview_enabled=True,
             market_cycle_news_enabled=False,
-            max_auto_orders_per_day=3,
-            max_open_positions=3,
-            max_open_positions_per_symbol=1,
+            max_auto_orders_per_cycle=100,
+            max_auto_orders_per_day=500,
+            max_open_positions=500,
+            max_open_positions_per_symbol=100,
             max_contracts_per_order=1,
+            max_estimated_premium_per_order="2500",
         ):
             result = get_automation_status(db)
 
@@ -134,12 +136,12 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertFalse(result.trading_automation_enabled)
         self.assertTrue(result.auto_submit_requires_paper)
         self.assertTrue(result.paper_mode)
-        self.assertEqual(result.max_auto_orders_per_cycle, 1)
-        self.assertEqual(result.max_auto_orders_per_day, 3)
-        self.assertEqual(result.max_open_positions, 3)
-        self.assertEqual(result.max_open_positions_per_symbol, 1)
+        self.assertEqual(result.max_auto_orders_per_cycle, 100)
+        self.assertEqual(result.max_auto_orders_per_day, 500)
+        self.assertEqual(result.max_open_positions, 500)
+        self.assertEqual(result.max_open_positions_per_symbol, 100)
         self.assertEqual(result.max_contracts_per_order, 1)
-        self.assertEqual(str(result.max_estimated_premium_per_order), "250")
+        self.assertEqual(str(result.max_estimated_premium_per_order), "2500")
         self.assertEqual(result.operational_summary["effective_mode"], "previewing")
         self.assertNotIn(
             "news risk gate is blocking new entry previews",

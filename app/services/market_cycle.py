@@ -594,6 +594,9 @@ def _contract_selection_for_signal(
         underlying_price=preview_config.get("underlying_price"),
         max_estimated_notional=preview_config.get("max_estimated_notional"),
         max_spread=preview_config.get("max_spread"),
+        max_spread_percent=preview_config.get("max_spread_percent"),
+        min_open_interest=preview_config.get("min_open_interest"),
+        min_quote_size=preview_config.get("min_quote_size"),
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
         limit=_int_config(preview_config, "limit", default=100),
     )

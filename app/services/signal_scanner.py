@@ -477,8 +477,10 @@ def _moving_average_signal_specs(
     start = end - timedelta(minutes=lookback_minutes)
 
     client = market_data_client or AlpacaMarketDataClient.from_settings()
+    market_regime = _market_regime_config(scanner_config)
+    requested_symbols = _unique_symbols([*symbols, *market_regime.get("symbols", [])])
     bars_by_symbol = client.get_stock_bars(
-        symbols,
+        requested_symbols,
         timeframe=timeframe,
         start=start,
         end=end,
@@ -506,6 +508,10 @@ def _moving_average_signal_specs(
         current_short = _average(closes[-short_window:])
         current_long = _average(closes[-long_window:])
 
+        first_bar = stock_bars.bars[0]
+        last_bar = stock_bars.bars[-1]
+        change_percent = _change_percent(first_bar.close, last_bar.close)
+
         triggered = (
             (
                 trigger == "bullish_cross"
@@ -527,6 +533,51 @@ def _moving_average_signal_specs(
             continue
 
         bullish = trigger.startswith("bullish")
+        if _bool_config(scanner_config, "require_short_average_slope", default=False):
+            slope_confirmed = (
+                current_short > previous_short if bullish else current_short < previous_short
+            )
+            if not slope_confirmed:
+                no_signal_reasons.append(
+                    f"{strategy_name}.{symbol}: short moving average slope did not confirm {trigger}"
+                )
+                continue
+
+        if _bool_config(scanner_config, "require_price_confirmation", default=False):
+            price_confirmed = (
+                last_bar.close > current_short if bullish else last_bar.close < current_short
+            )
+            if not price_confirmed:
+                no_signal_reasons.append(
+                    f"{strategy_name}.{symbol}: latest close did not confirm {trigger}"
+                )
+                continue
+
+        min_change_percent = _optional_decimal(scanner_config, "min_change_percent")
+        if min_change_percent is not None:
+            momentum_confirmed = (
+                change_percent >= min_change_percent
+                if bullish
+                else change_percent <= -min_change_percent
+            )
+            if not momentum_confirmed:
+                no_signal_reasons.append(
+                    f"{strategy_name}.{symbol}: percent change {change_percent} did not confirm {trigger}"
+                )
+                continue
+
+        market_regime_context = _market_regime_context(
+            bars_by_symbol,
+            market_regime,
+            direction="bullish" if bullish else "bearish",
+        )
+        if market_regime_context["enabled"] and not market_regime_context["passed"]:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: market regime did not confirm {trigger}: "
+                f"{market_regime_context['reason']}"
+            )
+            continue
+
         signal_specs.append(
             {
                 "symbol": symbol,
@@ -558,6 +609,14 @@ def _moving_average_signal_specs(
                     "previous_long_average": str(previous_long),
                     "current_short_average": str(current_short),
                     "current_long_average": str(current_long),
+                    "short_average_slope": str(current_short - previous_short),
+                    "first_close": str(first_bar.close),
+                    "last_close": str(last_bar.close),
+                    "change_percent": str(change_percent),
+                    "min_change_percent": str(min_change_percent)
+                    if min_change_percent is not None
+                    else None,
+                    "market_regime": market_regime_context,
                     "bars": _stock_bars_context(stock_bars),
                 },
                 "dedupe_minutes": scanner_config.get(
@@ -600,8 +659,10 @@ def _trend_confirmation_signal_specs(
     start = end - timedelta(minutes=lookback_minutes)
 
     client = market_data_client or AlpacaMarketDataClient.from_settings()
+    market_regime = _market_regime_config(scanner_config)
+    requested_symbols = _unique_symbols([*symbols, *market_regime.get("symbols", [])])
     bars_by_symbol = client.get_stock_bars(
-        symbols,
+        requested_symbols,
         timeframe=timeframe,
         start=start,
         end=end,
@@ -632,17 +693,38 @@ def _trend_confirmation_signal_specs(
             continue
 
         closes = [bar.close for bar in stock_bars.bars]
+        previous_short_average = _average(closes[-short_window - 1 : -1])
         short_average = _average(closes[-short_window:])
         long_average = _average(closes[-long_window:])
-        change_percent = (
-            (last_bar.close - first_bar.close) / first_bar.close
-        ) * Decimal("100")
+        change_percent = _change_percent(first_bar.close, last_bar.close)
 
         if direction == "bullish":
-            aligned = short_average > long_average and last_bar.close > long_average
+            aligned = (
+                short_average > long_average
+                and last_bar.close > long_average
+                and (
+                    not _bool_config(
+                        scanner_config,
+                        "require_price_above_short_average",
+                        default=False,
+                    )
+                    or last_bar.close > short_average
+                )
+            )
             momentum_confirmed = change_percent >= min_change_percent
         else:
-            aligned = short_average < long_average and last_bar.close < long_average
+            aligned = (
+                short_average < long_average
+                and last_bar.close < long_average
+                and (
+                    not _bool_config(
+                        scanner_config,
+                        "require_price_below_short_average",
+                        default=False,
+                    )
+                    or last_bar.close < short_average
+                )
+            )
             momentum_confirmed = change_percent <= -min_change_percent
 
         if not aligned:
@@ -653,6 +735,30 @@ def _trend_confirmation_signal_specs(
         if not momentum_confirmed:
             no_signal_reasons.append(
                 f"{strategy_name}.{symbol}: percent change {change_percent} did not confirm {direction} trend"
+            )
+            continue
+
+        if _bool_config(scanner_config, "require_short_average_slope", default=False):
+            slope_confirmed = (
+                short_average > previous_short_average
+                if direction == "bullish"
+                else short_average < previous_short_average
+            )
+            if not slope_confirmed:
+                no_signal_reasons.append(
+                    f"{strategy_name}.{symbol}: short moving average slope did not confirm {direction} trend"
+                )
+                continue
+
+        market_regime_context = _market_regime_context(
+            bars_by_symbol,
+            market_regime,
+            direction=direction,
+        )
+        if market_regime_context["enabled"] and not market_regime_context["passed"]:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: market regime did not confirm {direction} trend: "
+                f"{market_regime_context['reason']}"
             )
             continue
 
@@ -684,8 +790,11 @@ def _trend_confirmation_signal_specs(
                     "last_close": str(last_bar.close),
                     "change_percent": str(change_percent),
                     "min_change_percent": str(min_change_percent),
+                    "previous_short_average": str(previous_short_average),
                     "short_average": str(short_average),
                     "long_average": str(long_average),
+                    "short_average_slope": str(short_average - previous_short_average),
+                    "market_regime": market_regime_context,
                     "bars": _stock_bars_context(stock_bars),
                 },
                 "dedupe_minutes": scanner_config.get(
@@ -803,6 +912,19 @@ def _positive_int(config: dict[str, Any], key: str, *, default: int) -> int:
     return int_value
 
 
+def _bool_config(config: dict[str, Any], key: str, *, default: bool) -> bool:
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(f"scanner.{key} must be a boolean")
+
+
 def _scanner_string(
     scanner_config: dict[str, Any],
     key: str,
@@ -817,6 +939,134 @@ def _scanner_string(
 
 def _average(values: list[Decimal]) -> Decimal:
     return sum(values, Decimal("0")) / Decimal(len(values))
+
+
+def _change_percent(first_close: Decimal, last_close: Decimal) -> Decimal:
+    if first_close == Decimal("0"):
+        return Decimal("0")
+    return ((last_close - first_close) / first_close) * Decimal("100")
+
+
+def _market_regime_config(scanner_config: dict[str, Any]) -> dict[str, Any]:
+    raw_config = scanner_config.get("market_regime")
+    if raw_config is None:
+        return {"enabled": False, "symbols": []}
+    if not isinstance(raw_config, dict):
+        raise ValueError("scanner.market_regime must be an object")
+
+    enabled = _bool_config(raw_config, "enabled", default=False)
+    raw_symbols = raw_config.get("symbols", ["SPY", "QQQ"])
+    if not isinstance(raw_symbols, list) or not raw_symbols:
+        raise ValueError("scanner.market_regime.symbols must be a non-empty list")
+
+    symbols = []
+    for raw_symbol in raw_symbols:
+        if not isinstance(raw_symbol, str) or not raw_symbol.strip():
+            raise ValueError("scanner.market_regime.symbols must contain strings")
+        symbols.append(raw_symbol.strip().upper())
+
+    return {
+        "enabled": enabled,
+        "symbols": _unique_symbols(symbols) if enabled else [],
+        "bullish_min_change_percent": _optional_decimal(
+            raw_config,
+            "bullish_min_change_percent",
+        ),
+        "bearish_max_change_percent": _optional_decimal(
+            raw_config,
+            "bearish_max_change_percent",
+        ),
+    }
+
+
+def _market_regime_context(
+    bars_by_symbol: dict[str, AlpacaStockBars],
+    market_regime: dict[str, Any],
+    *,
+    direction: str,
+) -> dict[str, Any]:
+    if market_regime.get("enabled") is not True:
+        return {"enabled": False, "passed": True, "reason": "disabled"}
+
+    symbol_contexts = []
+    changes = []
+    for symbol in market_regime["symbols"]:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            symbol_contexts.append(
+                {
+                    "symbol": symbol,
+                    "bars_seen": 0 if stock_bars is None else len(stock_bars.bars),
+                    "change_percent": None,
+                }
+            )
+            continue
+        first_bar = stock_bars.bars[0]
+        last_bar = stock_bars.bars[-1]
+        change_percent = _change_percent(first_bar.close, last_bar.close)
+        changes.append(change_percent)
+        symbol_contexts.append(
+            {
+                "symbol": symbol,
+                "bars_seen": len(stock_bars.bars),
+                "first_close": str(first_bar.close),
+                "last_close": str(last_bar.close),
+                "change_percent": str(change_percent),
+            }
+        )
+
+    if not changes:
+        return {
+            "enabled": True,
+            "passed": False,
+            "reason": "no usable market regime bars",
+            "symbols": symbol_contexts,
+        }
+
+    average_change = _average(changes)
+    if direction == "bullish":
+        threshold = market_regime.get("bullish_min_change_percent")
+        passed = threshold is None or average_change >= threshold
+        reason = (
+            f"average market change {average_change} below bullish minimum {threshold}"
+            if not passed
+            else "bullish market regime confirmed"
+        )
+    else:
+        threshold = market_regime.get("bearish_max_change_percent")
+        passed = threshold is None or average_change <= threshold
+        reason = (
+            f"average market change {average_change} above bearish maximum {threshold}"
+            if not passed
+            else "bearish market regime confirmed"
+        )
+
+    return {
+        "enabled": True,
+        "passed": passed,
+        "reason": reason,
+        "average_change_percent": str(average_change),
+        "bullish_min_change_percent": str(
+            market_regime.get("bullish_min_change_percent")
+        )
+        if market_regime.get("bullish_min_change_percent") is not None
+        else None,
+        "bearish_max_change_percent": str(
+            market_regime.get("bearish_max_change_percent")
+        )
+        if market_regime.get("bearish_max_change_percent") is not None
+        else None,
+        "symbols": symbol_contexts,
+    }
+
+
+def _unique_symbols(symbols: list[str]) -> list[str]:
+    unique = []
+    for symbol in symbols:
+        clean_symbol = symbol.strip().upper()
+        if clean_symbol and clean_symbol not in unique:
+            unique.append(clean_symbol)
+    return unique
 
 
 def _price_from_quote(latest_quote: AlpacaLatestStockQuote) -> Decimal | None:

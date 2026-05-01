@@ -64,6 +64,9 @@ def select_option_contract(
         side=payload.side,
         max_estimated_notional=payload.max_estimated_notional,
         max_spread=payload.max_spread,
+        max_spread_percent=payload.max_spread_percent,
+        min_open_interest=payload.min_open_interest,
+        min_quote_size=payload.min_quote_size,
     )
 
     return OptionContractSelectionRead(
@@ -87,9 +90,15 @@ def _select_quoted_contract(
     side: str,
     max_estimated_notional: Decimal | None,
     max_spread: Decimal | None,
+    max_spread_percent: Decimal | None,
+    min_open_interest: Decimal | None,
+    min_quote_size: Decimal | None,
 ) -> tuple[AlpacaOptionContract, AlpacaLatestOptionQuote]:
     rejected_reasons: list[str] = []
-    for contract in candidates:
+    accepted: list[
+        tuple[int, AlpacaOptionContract, AlpacaLatestOptionQuote, dict[str, object]]
+    ] = []
+    for index, contract in enumerate(candidates):
         latest_quote = market_data_client.get_latest_option_quote(
             contract.symbol,
             feed=feed,
@@ -104,10 +113,18 @@ def _select_quoted_contract(
             quote_context,
             max_estimated_notional=max_estimated_notional,
             max_spread=max_spread,
+            max_spread_percent=max_spread_percent,
+            min_open_interest=min_open_interest,
+            min_quote_size=min_quote_size,
         )
         if rejection_reason is None:
-            return contract, latest_quote
+            accepted.append((index, contract, latest_quote, quote_context))
+            continue
         rejected_reasons.append(rejection_reason)
+
+    if accepted:
+        _, selected, latest_quote, _ = sorted(accepted, key=_quoted_contract_sort_key)[0]
+        return selected, latest_quote
 
     raise OptionContractNotFoundError(
         "No active tradable option contract matched the quote constraints: "
@@ -146,9 +163,33 @@ def _quote_rejection_reason(
     *,
     max_estimated_notional: Decimal | None,
     max_spread: Decimal | None,
+    max_spread_percent: Decimal | None,
+    min_open_interest: Decimal | None,
+    min_quote_size: Decimal | None,
 ) -> str | None:
+    if min_open_interest is not None and (
+        contract.open_interest is None or contract.open_interest < min_open_interest
+    ):
+        return (
+            f"{contract.symbol} open interest {contract.open_interest} "
+            f"is below min {min_open_interest}"
+        )
+
+    bid_price = _decimal_from_context(quote_context.get("bid_price"))
+    ask_price = _decimal_from_context(quote_context.get("ask_price"))
+    if bid_price is None or ask_price is None:
+        return f"{contract.symbol} had no usable two-sided quote"
+
+    bid_size = _decimal_from_context(quote_context.get("bid_size"))
+    ask_size = _decimal_from_context(quote_context.get("ask_size"))
+    if min_quote_size is not None:
+        side_size = ask_size if quote_context.get("side") == "buy" else bid_size
+        if side_size is None or side_size < min_quote_size:
+            return f"{contract.symbol} quote size {side_size} is below min {min_quote_size}"
+
     estimated_notional = _decimal_from_context(quote_context.get("estimated_notional"))
     spread = _decimal_from_context(quote_context.get("spread"))
+    midpoint = _decimal_from_context(quote_context.get("midpoint"))
 
     if (
         max_estimated_notional is not None
@@ -161,7 +202,43 @@ def _quote_rejection_reason(
         )
     if max_spread is not None and spread is not None and spread > max_spread:
         return f"{contract.symbol} spread {spread} exceeds max {max_spread}"
+    if (
+        max_spread_percent is not None
+        and spread is not None
+        and midpoint is not None
+        and midpoint > Decimal("0")
+    ):
+        spread_percent = (spread / midpoint) * Decimal("100")
+        if spread_percent > max_spread_percent:
+            return (
+                f"{contract.symbol} spread percent {spread_percent} "
+                f"exceeds max {max_spread_percent}"
+            )
     return None
+
+
+def _quoted_contract_sort_key(
+    item: tuple[int, AlpacaOptionContract, AlpacaLatestOptionQuote, dict[str, object]],
+) -> tuple:
+    candidate_rank, contract, _, quote_context = item
+    spread = _decimal_from_context(quote_context.get("spread")) or Decimal("999999")
+    midpoint = _decimal_from_context(quote_context.get("midpoint")) or Decimal("0")
+    spread_percent = (
+        (spread / midpoint) * Decimal("100") if midpoint > Decimal("0") else Decimal("999999")
+    )
+    bid_size = _decimal_from_context(quote_context.get("bid_size")) or Decimal("0")
+    ask_size = _decimal_from_context(quote_context.get("ask_size")) or Decimal("0")
+    open_interest = contract.open_interest or Decimal("0")
+    return (
+        candidate_rank,
+        spread_percent,
+        spread,
+        -(bid_size + ask_size),
+        -open_interest,
+        contract.expiration_date,
+        contract.strike_price,
+        contract.symbol,
+    )
 
 
 def _contract_sort_key(
@@ -246,6 +323,7 @@ def _build_quote_context(
         "spread": _decimal_to_string(spread),
         "estimated_price": _decimal_to_string(estimated_price),
         "estimated_notional": _decimal_to_string(estimated_notional),
+        "side": side,
         "contract_multiplier": "100",
         "quote_timestamp": quote.timestamp.isoformat()
         if quote.timestamp is not None

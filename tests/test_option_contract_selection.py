@@ -72,23 +72,25 @@ def build_contract(
     strike_price: str,
     status: str = "active",
     tradable: bool = True,
+    open_interest: str | None = None,
 ) -> AlpacaOptionContract:
-    return AlpacaOptionContract.model_validate(
-        {
-            "id": f"{symbol}-id",
-            "symbol": symbol,
-            "name": symbol,
-            "status": status,
-            "tradable": tradable,
-            "expiration_date": expiration_date,
-            "root_symbol": "SPY",
-            "underlying_symbol": "SPY",
-            "type": "call",
-            "style": "american",
-            "strike_price": strike_price,
-            "size": "100",
-        }
-    )
+    payload = {
+        "id": f"{symbol}-id",
+        "symbol": symbol,
+        "name": symbol,
+        "status": status,
+        "tradable": tradable,
+        "expiration_date": expiration_date,
+        "root_symbol": "SPY",
+        "underlying_symbol": "SPY",
+        "type": "call",
+        "style": "american",
+        "strike_price": strike_price,
+        "size": "100",
+    }
+    if open_interest is not None:
+        payload["open_interest"] = open_interest
+    return AlpacaOptionContract.model_validate(payload)
 
 
 class OptionContractSelectionTests(unittest.TestCase):
@@ -201,6 +203,34 @@ class OptionContractSelectionTests(unittest.TestCase):
 
         self.assertEqual(result.selected_contract.symbol, "SPY260417C00720000")
         self.assertEqual(result.quote["estimated_notional"], "130.00")
+
+    def test_select_option_contract_skips_contracts_below_open_interest_floor(self) -> None:
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                min_open_interest=Decimal("100"),
+            ),
+            trading_client=FakeTradingClient(
+                [
+                    build_contract(
+                        "SPY260417C00500000",
+                        expiration_date="2026-04-17",
+                        strike_price="500",
+                        open_interest="10",
+                    ),
+                    build_contract(
+                        "SPY260417C00505000",
+                        expiration_date="2026-04-17",
+                        strike_price="505",
+                        open_interest="1000",
+                    ),
+                ]
+            ),
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260417C00505000")
 
     def test_select_option_contract_ignores_inactive_or_untradable_contracts(self) -> None:
         result = select_option_contract(

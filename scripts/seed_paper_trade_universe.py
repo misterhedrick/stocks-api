@@ -21,25 +21,13 @@ from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import (
+    LIQUID_OPTIONS_UNIVERSE,
     build_moving_average_strategy_payload,
     build_trend_confirmation_strategy_payload,
 )
 
 
-DEFAULT_UNIVERSE = (
-    "SPY",
-    "QQQ",
-    "AAPL",
-    "MSFT",
-    "NVDA",
-    "AMD",
-    "TSLA",
-    "META",
-    "AMZN",
-    "GOOGL",
-    "NFLX",
-    "AVGO",
-)
+DEFAULT_UNIVERSE = LIQUID_OPTIONS_UNIVERSE
 
 
 def main() -> None:
@@ -53,12 +41,15 @@ def main() -> None:
         help="Ticker to seed. May be passed more than once. Defaults to a liquid universe.",
     )
     parser.add_argument("--sample-price", action="append", default=[])
-    parser.add_argument("--max-notional-per-order", default="500.00")
-    parser.add_argument("--max-spread", default="0.25")
-    parser.add_argument("--max-orders-per-cycle", type=int, default=1)
-    parser.add_argument("--max-orders-per-day", type=int, default=2)
-    parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
-    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
+    parser.add_argument("--max-notional-per-order", default="2500.00")
+    parser.add_argument("--max-spread", default="0.20")
+    parser.add_argument("--max-spread-percent", default="20")
+    parser.add_argument("--min-open-interest", type=int, default=100)
+    parser.add_argument("--min-quote-size", type=int, default=1)
+    parser.add_argument("--max-orders-per-cycle", type=int, default=100)
+    parser.add_argument("--max-orders-per-day", type=int, default=500)
+    parser.add_argument("--max-open-contracts-per-symbol", type=int, default=100)
+    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=100)
     parser.add_argument("--trade-window-start", default="09:45")
     parser.add_argument("--trade-window-end", default="15:30")
     parser.add_argument("--dry-run", action="store_true")
@@ -73,6 +64,9 @@ def main() -> None:
         prices=prices,
         max_notional_per_order=_money_string(args.max_notional_per_order),
         max_spread=str(args.max_spread),
+        max_spread_percent=str(args.max_spread_percent),
+        min_open_interest=args.min_open_interest,
+        min_quote_size=args.min_quote_size,
         max_orders_per_cycle=args.max_orders_per_cycle,
         max_orders_per_day=args.max_orders_per_day,
         max_open_contracts_per_symbol=args.max_open_contracts_per_symbol,
@@ -121,6 +115,9 @@ def _strategy_payloads(
     prices: dict[str, Decimal],
     max_notional_per_order: str,
     max_spread: str,
+    max_spread_percent: str,
+    min_open_interest: int,
+    min_quote_size: int,
     max_orders_per_cycle: int,
     max_orders_per_day: int,
     max_open_contracts_per_symbol: int | None,
@@ -173,6 +170,9 @@ def _strategy_payloads(
         scanner = payload["config"]["scanner"]
         scanner["preview"]["max_estimated_notional"] = max_notional_per_order
         scanner["preview"]["max_spread"] = max_spread
+        scanner["preview"]["max_spread_percent"] = max_spread_percent
+        scanner["preview"]["min_open_interest"] = min_open_interest
+        scanner["preview"]["min_quote_size"] = min_quote_size
         scanner["submit"] = deepcopy(submit_config)
     return payloads
 
