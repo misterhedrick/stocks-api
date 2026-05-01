@@ -110,6 +110,43 @@ class RenderJobRunnerTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(0)
 
+    def test_job_skips_configured_http_status_without_retrying(self) -> None:
+        skippable_error = HTTPError(
+            "https://example.test/api/v1/jobs/market-cycle",
+            429,
+            "Too Many Requests",
+            hdrs=None,
+            fp=BytesIO(b"Too Many Requests"),
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-cycle",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+                "JOB_SKIP_HTTP_STATUS_CODES": "429",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=skippable_error,
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
     def test_job_does_not_retry_non_retryable_http_errors(self) -> None:
         non_retryable_error = HTTPError(
             "https://example.test/api/v1/jobs/market-cycle",

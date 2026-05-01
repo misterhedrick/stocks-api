@@ -551,6 +551,8 @@ JOB_RETRY_DELAYS_SECONDS=10,30
 
 Retryable responses are `429`, `500`, `502`, `503`, and `504`, giving the job up to three total attempts.
 
+For high-frequency market-cycle crons, set `JOB_SKIP_HTTP_STATUS_CODES=429` so a platform throttle is treated as a skipped cycle instead of a failed cron run that keeps retrying into the next scheduled run.
+
 To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
 
 Market-cycle behavior is controlled by these web-service env vars:

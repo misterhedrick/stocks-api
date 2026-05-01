@@ -33,6 +33,9 @@ def run_job_from_env() -> int:
     job_path = os.getenv("JOB_PATH", "/api/v1/jobs/reconcile-broker")
     timeout_seconds = int(os.getenv("JOB_TIMEOUT_SECONDS", "90"))
     retry_delays = _retry_delays_from_env()
+    skippable_http_status_codes = _http_status_codes_from_env(
+        "JOB_SKIP_HTTP_STATUS_CODES"
+    )
 
     url = build_job_url(base_url, job_path)
     request = Request(
@@ -51,6 +54,14 @@ def run_job_from_env() -> int:
             return 0
 
         status_code = result
+        if status_code in skippable_http_status_codes:
+            print(
+                f"Job POST {url} skipped after HTTP {status_code}; "
+                "treating as success.",
+                file=sys.stderr,
+            )
+            return 0
+
         if (
             status_code not in RETRYABLE_HTTP_STATUS_CODES
             or attempt == attempts
@@ -252,6 +263,23 @@ def _retry_delays_from_env() -> tuple[int, ...]:
             raise RuntimeError("JOB_RETRY_DELAYS_SECONDS values must be greater than or equal to 0")
         retry_delays.append(retry_delay)
     return tuple(retry_delays)
+
+
+def _http_status_codes_from_env(name: str) -> set[int]:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return set()
+
+    status_codes = set()
+    for item in raw_value.split(","):
+        try:
+            status_code = int(item.strip())
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must be comma-separated integers") from exc
+        if status_code < 100 or status_code > 599:
+            raise RuntimeError(f"{name} values must be valid HTTP status codes")
+        status_codes.add(status_code)
+    return status_codes
 
 
 if __name__ == "__main__":
