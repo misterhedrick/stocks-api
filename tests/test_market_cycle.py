@@ -674,7 +674,7 @@ class MarketCycleTests(unittest.TestCase):
             [audit_log.event_type for audit_log in audit_logs],
         )
 
-    def test_run_market_cycle_enforces_submit_max_contracts_per_order(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_contracts_per_order(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_contracts_per_order"] = 1
         signal = build_signal(strategy)
@@ -709,15 +709,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_contracts_per_order", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_contracts_per_cycle(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_contracts_per_cycle(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_contracts_per_order"] = 5
         strategy.config["scanner"]["submit"]["max_contracts_per_cycle"] = 1
@@ -750,15 +750,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_contracts_per_cycle", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_notional_per_order(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_notional_per_order(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_notional_per_order"] = "100.00"
         signal = build_signal(strategy)
@@ -790,15 +790,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_notional_per_order", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_orders_per_trading_day(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_orders_per_trading_day(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_orders_per_trading_day"] = 1
         signal = build_signal(strategy)
@@ -830,13 +830,13 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_orders_per_trading_day", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
     def test_run_market_cycle_enforces_submit_trade_windows(self) -> None:
         strategy = build_strategy()
@@ -897,7 +897,7 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
         submit.assert_not_called()
 
-    def test_run_market_cycle_enforces_submit_max_open_contracts_per_symbol(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_open_contracts_per_symbol(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_strategy")
         strategy.config["scanner"]["submit"]["max_open_contracts_per_symbol"] = 1
@@ -930,15 +930,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_open_contracts_per_symbol", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_open_contracts_per_strategy(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_open_contracts_per_strategy(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_symbol")
         strategy.config["scanner"]["submit"]["max_open_contracts_per_strategy"] = 2
@@ -971,13 +971,13 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_open_contracts_per_strategy", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
     def test_run_market_cycle_honors_disabled_scan_and_reconcile_switches(self) -> None:
         db = FakeMarketCycleSession()
