@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
+from time import perf_counter
 from typing import Any
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -38,6 +39,7 @@ class MarketCycleResult:
     exits: dict[str, Any] | None
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
+    timings: dict[str, float] | None = None
 
 
 EXPOSURE_BROKER_ORDER_STATUSES = (
@@ -56,8 +58,16 @@ def run_market_cycle(
     scan_limit: int = 100,
     order_limit: int = 100,
     fill_page_size: int = 100,
+    scan_enabled_override: bool | None = None,
+    reconcile_enabled_override: bool | None = None,
+    preview_enabled_override: bool | None = None,
+    exit_enabled_override: bool | None = None,
+    news_enabled_override: bool | None = None,
+    submit_enabled_override: bool | None = None,
 ) -> MarketCycleResult:
     started_at = datetime.now(timezone.utc)
+    cycle_started = perf_counter()
+    timings: dict[str, float] = {}
     job_run = JobRun(
         job_name="market_cycle",
         status="running",
@@ -67,12 +77,21 @@ def run_market_cycle(
     db.add(job_run)
     db.flush()
 
-    scan_enabled = settings.market_cycle_scan_enabled
-    reconcile_enabled = settings.market_cycle_reconcile_enabled
-    preview_enabled = settings.market_cycle_preview_enabled
-    exit_enabled = settings.market_cycle_exit_enabled
-    news_enabled = settings.market_cycle_news_enabled
-    submit_enabled = settings.market_cycle_submit_enabled
+    scan_enabled = _switch(settings.market_cycle_scan_enabled, scan_enabled_override)
+    reconcile_enabled = _switch(
+        settings.market_cycle_reconcile_enabled,
+        reconcile_enabled_override,
+    )
+    preview_enabled = _switch(
+        settings.market_cycle_preview_enabled,
+        preview_enabled_override,
+    )
+    exit_enabled = _switch(settings.market_cycle_exit_enabled, exit_enabled_override)
+    news_enabled = _switch(settings.market_cycle_news_enabled, news_enabled_override)
+    submit_enabled = _switch(
+        settings.market_cycle_submit_enabled,
+        submit_enabled_override,
+    )
 
     scan = None
     reconcile = None
@@ -86,7 +105,9 @@ def run_market_cycle(
         submittable_order_intent_ids: list[uuid.UUID] = []
         news_blocks_entries = False
         if scan_enabled:
+            step_started = perf_counter()
             scan_result = scan_signals(db, limit=scan_limit)
+            timings["scan_seconds"] = _elapsed_seconds(step_started)
             created_signal_ids = scan_result.created_signal_ids
             scan = {
                 "job_run_id": str(scan_result.job_run.id),
@@ -102,9 +123,12 @@ def run_market_cycle(
             }
         else:
             scan = _disabled_step("scan")
+            timings["scan_seconds"] = 0.0
 
         if news_enabled:
+            step_started = perf_counter()
             news_result = scan_market_news(db)
+            timings["news_seconds"] = _elapsed_seconds(step_started)
             news = {
                 "job_run_id": str(news_result.job_run.id),
                 "market_items": news_result.market_items,
@@ -119,8 +143,11 @@ def run_market_cycle(
                 isinstance(risk_assessment, dict)
                 and risk_assessment.get("should_block_new_entries") is True
             )
+        else:
+            timings["news_seconds"] = 0.0
 
         if preview_enabled:
+            step_started = perf_counter()
             signal_ids_for_preview = _signal_ids_for_preview(
                 db,
                 created_signal_ids,
@@ -141,9 +168,14 @@ def run_market_cycle(
             else:
                 preview = _preview_created_signals(db, signal_ids_for_preview)
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
+            timings["preview_seconds"] = _elapsed_seconds(step_started)
+        else:
+            timings["preview_seconds"] = 0.0
 
         if exit_enabled:
+            step_started = perf_counter()
             exit_result = evaluate_position_exits(db, limit=scan_limit)
+            timings["exit_seconds"] = _elapsed_seconds(step_started)
             exits = {
                 "status": "completed",
                 "positions_seen": exit_result.positions_seen,
@@ -159,20 +191,28 @@ def run_market_cycle(
                 ],
             }
             submittable_order_intent_ids.extend(exit_result.order_intent_ids)
+        else:
+            timings["exit_seconds"] = 0.0
 
         if submit_enabled:
+            step_started = perf_counter()
             submit = _submit_previewed_order_intents(
                 db,
                 submittable_order_intent_ids,
                 cycle_id=str(job_run.id),
             )
+            timings["submit_seconds"] = _elapsed_seconds(step_started)
+        else:
+            timings["submit_seconds"] = 0.0
 
         if reconcile_enabled:
+            step_started = perf_counter()
             reconciliation_result = reconcile_broker_state(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
             )
+            timings["reconcile_seconds"] = _elapsed_seconds(step_started)
             reconcile = {
                 "job_run_id": str(reconciliation_result.job_run.id),
                 "orders_seen": reconciliation_result.orders_seen,
@@ -185,6 +225,9 @@ def run_market_cycle(
             }
         else:
             reconcile = _disabled_step("reconcile")
+            timings["reconcile_seconds"] = 0.0
+
+        timings["total_seconds"] = _elapsed_seconds(cycle_started)
 
         details = {
             "scan_enabled": scan_enabled,
@@ -199,6 +242,7 @@ def run_market_cycle(
             "exits": exits,
             "news": news,
             "submit": submit,
+            "timings": timings,
         }
         job_run.status = "succeeded"
         job_run.finished_at = datetime.now(timezone.utc)
@@ -239,6 +283,14 @@ def run_market_cycle(
 
 def _disabled_step(step_name: str) -> dict[str, Any]:
     return {"status": "disabled", "step": step_name}
+
+
+def _switch(default: bool, override: bool | None) -> bool:
+    return default if override is None else override
+
+
+def _elapsed_seconds(started: float) -> float:
+    return round(perf_counter() - started, 3)
 
 
 def _preview_created_signals(

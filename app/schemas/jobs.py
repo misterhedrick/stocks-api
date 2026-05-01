@@ -75,6 +75,7 @@ class MarketCycleRead(BaseModel):
     exits: dict[str, Any] | None
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
+    timings: dict[str, float] | None = None
 
 
 class MarketMaintenanceRead(BaseModel):

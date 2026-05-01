@@ -248,6 +248,61 @@ def market_cycle_route(
         exits=result.exits,
         news=result.news,
         submit=result.submit,
+        timings=result.timings,
+    )
+
+
+@router.post(
+    "/market-cycle-stress",
+    response_model=MarketCycleRead,
+    status_code=status.HTTP_200_OK,
+)
+def market_cycle_stress_route(
+    db: Annotated[Session, Depends(get_db)],
+    scan_limit: Annotated[int, Query(ge=1, le=500)] = 130,
+    order_limit: Annotated[int, Query(ge=1, le=500)] = 25,
+    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 25,
+    preview_enabled: bool = True,
+    reconcile_enabled: bool = True,
+) -> MarketCycleRead:
+    try:
+        result = run_market_cycle(
+            db,
+            scan_limit=scan_limit,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
+            preview_enabled_override=preview_enabled,
+            reconcile_enabled_override=reconcile_enabled,
+            exit_enabled_override=False,
+            news_enabled_override=False,
+            submit_enabled_override=False,
+        )
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return MarketCycleRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        scan_enabled=result.scan_enabled,
+        reconcile_enabled=result.reconcile_enabled,
+        preview_enabled=result.preview_enabled,
+        exit_enabled=result.exit_enabled,
+        news_enabled=result.news_enabled,
+        submit_enabled=result.submit_enabled,
+        scan=result.scan,
+        reconcile=result.reconcile,
+        preview=result.preview,
+        exits=result.exits,
+        news=result.news,
+        submit=result.submit,
+        timings=result.timings,
     )
 
 

@@ -373,6 +373,20 @@ Smoke test the configured local environment:
 `smoke_preflight.py` checks sanitized settings, external Postgres connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation. `run_market_cycle_smoke.py` runs one market-cycle pass. `run_paper_submit_smoke.py` creates a one-contract paper order intent, submits it to Alpaca paper, requests cancellation by default, and reconciles. `run_full_smoke_suite.py` runs preflight, strategy seeding, market-cycle smoke, paper submit/cancel, and deterministic unit tests; use `--skip-paper-submit` for a non-ordering smoke run.
 
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
+
+No-submit stress test the market cycle path without placing paper orders:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_market_cycle_stress.py --scan-limit 130 --order-limit 25 --fill-page-size 25
+```
+
+Or call the API route:
+
+```text
+POST /api/v1/jobs/market-cycle-stress?scan_limit=130&order_limit=25&fill_page_size=25
+```
+
+The stress route forces submit, news, and exit evaluation off, but still scans, previews option contracts, optionally reconciles, and writes phase timings into `job_run.details.timings`.
 When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 
 Example strategy config:

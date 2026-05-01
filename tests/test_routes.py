@@ -462,6 +462,40 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_market_cycle_stress_route_forces_no_submit_overrides(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_cycle_result()
+
+        with patch(
+            "app.api.routes.jobs.run_market_cycle",
+            return_value=result,
+        ) as market_cycle:
+            response = client.post(
+                "/api/v1/jobs/market-cycle-stress?scan_limit=130&order_limit=25&fill_page_size=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["submit_enabled"])
+        self.assertEqual(response.json()["timings"]["total_seconds"], 1.23)
+        market_cycle.assert_called_once_with(
+            db,
+            scan_limit=130,
+            order_limit=25,
+            fill_page_size=25,
+            preview_enabled_override=True,
+            reconcile_enabled_override=True,
+            exit_enabled_override=False,
+            news_enabled_override=False,
+            submit_enabled_override=False,
+        )
+
     def test_market_maintenance_route_returns_auto_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -993,6 +1027,7 @@ def build_market_cycle_result() -> MarketCycleResult:
         exits={"status": "disabled"},
         news={"status": "disabled"},
         submit={"status": "disabled"},
+        timings={"total_seconds": 1.23},
     )
 
 
