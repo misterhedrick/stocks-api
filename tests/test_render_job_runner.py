@@ -4,7 +4,7 @@ import os
 import unittest
 from io import BytesIO, StringIO
 from email.message import Message
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from scripts.run_render_job import (
@@ -236,6 +236,34 @@ class RenderJobRunnerTests(unittest.TestCase):
         ), patch(
             "scripts.run_render_job.urlopen",
             side_effect=[TimeoutError("timed out"), FakeResponse()],
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0)
+
+    def test_job_retries_url_errors_as_transient_wakeups(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-maintenance",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=[URLError("service is waking up"), FakeResponse()],
         ) as urlopen, patch(
             "scripts.run_render_job.time.sleep",
         ) as sleep, patch(

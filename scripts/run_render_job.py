@@ -99,7 +99,7 @@ def _post_job(request: Request, url: str, timeout_seconds: int) -> tuple[int, in
         return exc.code, _retry_after_seconds(exc)
     except URLError as exc:
         print(f"Job POST {url} failed: {exc}", file=sys.stderr)
-        return 1, None
+        return 503, None
     except TimeoutError as exc:
         print(f"Job POST {url} timed out: {exc}", file=sys.stderr)
         return 504, None
