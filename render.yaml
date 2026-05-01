@@ -2,6 +2,7 @@ services:
   - type: web
     name: stocks-api
     env: python
+    region: virginia
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: bash ./start.sh
@@ -62,6 +63,7 @@ services:
   - type: cron
     name: stocks-api-market-cycle
     env: python
+    region: virginia
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
@@ -84,6 +86,7 @@ services:
   - type: cron
     name: stocks-api-market-maintenance
     env: python
+    region: virginia
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
