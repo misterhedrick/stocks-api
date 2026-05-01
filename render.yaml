@@ -115,8 +115,8 @@ services:
       - key: JOB_PATH
         value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true
       - key: JOB_TIMEOUT_SECONDS
-        value: 240
+        value: 300
       - key: JOB_RETRY_DELAYS_SECONDS
-        value: 10,30
+        value: 60,180,300,600
       - key: ADMIN_API_TOKEN
         sync: false

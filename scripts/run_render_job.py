@@ -5,6 +5,9 @@ import os
 import socket
 import sys
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from math import ceil
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
@@ -49,11 +52,10 @@ def run_job_from_env() -> int:
 
     attempts = len(retry_delays) + 1
     for attempt in range(1, attempts + 1):
-        result = _post_job(request, url, timeout_seconds)
-        if result == 0:
+        status_code, retry_after_seconds = _post_job(request, url, timeout_seconds)
+        if status_code == 0:
             return 0
 
-        status_code = result
         if status_code in skippable_http_status_codes:
             print(
                 f"Job POST {url} skipped after HTTP {status_code}; "
@@ -69,6 +71,8 @@ def run_job_from_env() -> int:
             return 1
 
         retry_delay = retry_delays[attempt - 1]
+        if retry_after_seconds is not None:
+            retry_delay = max(retry_delay, retry_after_seconds)
         print(
             f"Job POST {url} will retry after HTTP {status_code} "
             f"in {retry_delay} seconds ({attempt}/{attempts})",
@@ -79,29 +83,29 @@ def run_job_from_env() -> int:
     return 1
 
 
-def _post_job(request: Request, url: str, timeout_seconds: int) -> int:
+def _post_job(request: Request, url: str, timeout_seconds: int) -> tuple[int, int | None]:
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
             body = response.read().decode("utf-8")
             print(f"Job POST {url} returned {response.status}")
             if body:
                 print(format_response_body_for_logs(body))
-            return 0
+            return 0, None
     except HTTPError as exc:
         body = exc.read().decode("utf-8")
         print(f"Job POST {url} failed with HTTP {exc.code}", file=sys.stderr)
         if body:
             print(body, file=sys.stderr)
-        return exc.code
+        return exc.code, _retry_after_seconds(exc)
     except URLError as exc:
         print(f"Job POST {url} failed: {exc}", file=sys.stderr)
-        return 1
+        return 1, None
     except TimeoutError as exc:
         print(f"Job POST {url} timed out: {exc}", file=sys.stderr)
-        return 504
+        return 504, None
     except socket.timeout as exc:
         print(f"Job POST {url} timed out: {exc}", file=sys.stderr)
-        return 504
+        return 504, None
 
 
 def format_response_body_for_logs(body: str) -> str:
@@ -263,6 +267,26 @@ def _retry_delays_from_env() -> tuple[int, ...]:
             raise RuntimeError("JOB_RETRY_DELAYS_SECONDS values must be greater than or equal to 0")
         retry_delays.append(retry_delay)
     return tuple(retry_delays)
+
+
+def _retry_after_seconds(exc: HTTPError) -> int | None:
+    retry_after = exc.headers.get("Retry-After") if exc.headers is not None else None
+    if retry_after is None or not retry_after.strip():
+        return None
+
+    retry_after = retry_after.strip()
+    try:
+        seconds = int(retry_after)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(retry_after)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        seconds = ceil((retry_at - datetime.now(timezone.utc)).total_seconds())
+
+    return max(seconds, 0)
 
 
 def _http_status_codes_from_env(name: str) -> set[int]:
