@@ -534,7 +534,7 @@ Automated submit is intended for paper trading right now. To intentionally enabl
 `render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 2 minutes from 9:00am to 5:00pm Eastern on weekdays and calls:
 
 ```text
-POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+POST /api/v1/jobs/market-cycle?scan_limit=130&order_limit=100&fill_page_size=100
 ```
 
 It is disabled by default with:

@@ -88,7 +88,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-cycle?scan_limit=130&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 300
       - key: JOB_RETRY_DELAYS_SECONDS
