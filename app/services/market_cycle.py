@@ -263,6 +263,12 @@ def _preview_created_signals(
             errors.append(f"Signal '{signal_id}' has no strategy")
             continue
 
+        delay_reason = _entry_preview_delay_reason(strategy)
+        if delay_reason is not None:
+            previews_skipped += 1
+            errors.append(f"Signal '{signal_id}': {delay_reason}")
+            continue
+
         try:
             payload = _preview_payload_for_signal(signal, strategy)
         except ValueError as exc:
@@ -288,6 +294,22 @@ def _preview_created_signals(
         "errors": errors,
         "order_intent_ids": order_intent_ids,
     }
+
+
+def _entry_preview_delay_reason(strategy: Strategy) -> str | None:
+    if not settings.market_cycle_submit_enabled:
+        return None
+
+    try:
+        submit_config = _submit_config_for_strategy(strategy)
+    except ValueError:
+        return None
+
+    try:
+        _validate_trade_windows(submit_config, now=datetime.now(timezone.utc))
+    except ValueError as exc:
+        return f"auto-preview delayed until scanner.submit.trade_windows opens: {exc}"
+    return None
 
 
 def _signal_ids_for_preview(

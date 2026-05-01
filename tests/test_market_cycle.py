@@ -408,6 +408,37 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("scanner.preview config is required", result.preview["errors"][0])
         preview.assert_not_called()
 
+    def test_run_market_cycle_delays_entry_preview_outside_submit_window(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value="auto-preview delayed until scanner.submit.trade_windows opens",
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+        ) as preview:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.preview["signals_seen"], 1)
+        self.assertEqual(result.preview["previews_created"], 0)
+        self.assertEqual(result.preview["previews_skipped"], 1)
+        self.assertIn("auto-preview delayed", result.preview["errors"][0])
+        preview.assert_not_called()
+
     def test_run_market_cycle_auto_submits_current_cycle_previews_when_enabled(self) -> None:
         strategy = build_strategy()
         signal = build_signal(strategy)
@@ -434,6 +465,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
         ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
@@ -574,6 +608,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
@@ -616,6 +653,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
         ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=blocked_decision,
@@ -661,6 +701,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
         ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
@@ -830,6 +873,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
         ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
