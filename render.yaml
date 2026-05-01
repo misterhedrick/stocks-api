@@ -90,7 +90,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "30 20 * * 1-5"
+    schedule: "0 13,21 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
