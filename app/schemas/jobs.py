@@ -76,6 +76,8 @@ class MarketCycleRead(BaseModel):
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
     timings: dict[str, float] | None = None
+    phase_timeout_seconds: int | None = None
+    diagnostics: dict[str, Any] | None = None
 
 
 class MarketMaintenanceRead(BaseModel):

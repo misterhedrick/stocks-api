@@ -309,6 +309,15 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/evaluate-exits?limit=100" \
 
 The exit evaluator reads the latest reconciled position snapshots, links each position back to its most recent entry order intent and strategy when possible, checks `scanner.exit` rules, and creates previewed sell order intents when a rule triggers. It supports profit target, stop loss, and days-to-expiration rules. The response includes `position_ownership` so unmanaged positions are visible with reasons such as no linked entry order, inactive strategy, or missing exit config. Market-cycle exit evaluation is controlled by `MARKET_CYCLE_EXIT_ENABLED`; auto-submit of exit intents still requires `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and a strategy `scanner.exit.submit.enabled=true`.
 
+Run the fast exit-only cycle:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-cycle-exits?limit=100&phase_timeout_seconds=45" \
+  -H "Authorization: Bearer change-me"
+```
+
+This job reconciles broker state first, skips entry scanning/news/previews, evaluates exits, and then submits exit intents only when the normal global and strategy-level submit gates allow it. It is intended for high-frequency cron coverage so exits are not blocked behind a full market scan.
+
 Preview exits for unmanaged positions:
 
 ```bash
@@ -352,6 +361,8 @@ Tune paper strategies:
 
 The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, deep-merges scanner config patches, and can enable or disable scanner auto-submit with conservative paper limits. Seeded strategies keep `scanner.submit.enabled=false` by default.
 
+Template strategy thresholds can be tuned through env before seeding or refreshing: `PAPER_STRATEGY_MIN_CHANGE_PERCENT`, `PAPER_STRATEGY_TREND_MIN_CHANGE_PERCENT`, `PAPER_STRATEGY_MAX_SPREAD`, `PAPER_STRATEGY_MAX_SPREAD_PERCENT`, `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, and `PAPER_STRATEGY_STOP_LOSS_PERCENT`.
+
 Seed a broader paper-trading universe:
 
 ```powershell
@@ -372,6 +383,16 @@ Smoke test the configured local environment:
 
 `smoke_preflight.py` checks sanitized settings, external Postgres connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation. `run_market_cycle_smoke.py` runs one market-cycle pass. `run_paper_submit_smoke.py` creates a one-contract paper order intent, submits it to Alpaca paper, requests cancellation by default, and reconciles. `run_full_smoke_suite.py` runs preflight, strategy seeding, market-cycle smoke, paper submit/cancel, and deterministic unit tests; use `--skip-paper-submit` for a non-ordering smoke run.
 
+Weekend/off-hours analysis:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\analyze_paper_learning.py --limit 500
+.\.venv\Scripts\python.exe .\scripts\replay_paper_decisions.py --limit 100
+.\.venv\Scripts\python.exe .\scripts\run_exit_cycle_smoke.py --phase-timeout-seconds 45
+```
+
+The learning report groups trades, non-trade rejection reasons, strategy/symbol performance, open lots, and recent job failures. The replay script reads recorded signals and order intents and reports whether they would preview or submit under current settings without placing orders.
+
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 
 No-submit stress test the market cycle path without placing paper orders:
@@ -387,6 +408,7 @@ POST /api/v1/jobs/market-cycle-stress?scan_limit=50&order_limit=25&fill_page_siz
 ```
 
 The stress route forces submit, news, and exit evaluation off, but still scans, previews option contracts, optionally reconciles, and writes phase timings into `job_run.details.timings`.
+Market-cycle responses also include `phase_timeout_seconds` and `diagnostics`; `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS` is a soft budget that skips later phases once the cycle has already spent that many seconds.
 When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 
 Example strategy config:

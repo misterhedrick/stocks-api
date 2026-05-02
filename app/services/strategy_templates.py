@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from app.core.config import settings
+
 
 LIQUID_OPTIONS_UNIVERSE = (
     "SPY",
@@ -90,7 +92,7 @@ def build_moving_average_strategy_payload(
     lookback_minutes: int = 1440,
     timeframe: str = "5Min",
     confidence: str = "0.6200",
-    min_change_percent: str = "0.10",
+    min_change_percent: str | None = None,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     direction = "bearish" if trigger.startswith("bearish") else "bullish"
@@ -116,7 +118,8 @@ def build_moving_average_strategy_payload(
                 "signal_type": "moving_average_setup",
                 "direction": direction,
                 "confidence": confidence,
-                "min_change_percent": min_change_percent,
+                "min_change_percent": min_change_percent
+                or _decimal_string(settings.paper_strategy_min_change_percent),
                 "require_short_average_slope": True,
                 "require_price_confirmation": True,
                 "market_regime": _market_regime_config(direction),
@@ -150,7 +153,7 @@ def build_trend_confirmation_strategy_payload(
     long_window: int = 21,
     lookback_minutes: int = 1440,
     timeframe: str = "5Min",
-    min_change_percent: str = "0.35",
+    min_change_percent: str | None = None,
     confidence: str = "0.6800",
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
@@ -173,7 +176,8 @@ def build_trend_confirmation_strategy_payload(
                 "long_window": long_window,
                 "lookback_minutes": lookback_minutes,
                 "timeframe": timeframe,
-                "min_change_percent": min_change_percent,
+                "min_change_percent": min_change_percent
+                or _decimal_string(settings.paper_strategy_trend_min_change_percent),
                 "signal_type": "confirmed_trend",
                 "direction": direction,
                 "confidence": confidence,
@@ -193,11 +197,11 @@ def build_trend_confirmation_strategy_payload(
                     target_strike=target_strike,
                     rationale=f"{name}: preview only; does not submit.",
                     max_estimated_notional="2500.00",
-                    max_spread="0.20",
+                    max_spread=None,
                 ),
                 "exit": _exit_config(
-                    profit_target_percent="25",
-                    stop_loss_percent="15",
+                    profit_target_percent=None,
+                    stop_loss_percent=None,
                     max_spread="0.25",
                 ),
                 "submit": _disabled_submit_config(max_notional_per_order="200.00"),
@@ -291,8 +295,8 @@ def _preview_config(
     target_strike: Decimal,
     rationale: str,
     max_estimated_notional: str = "2500.00",
-    max_spread: str = "0.20",
-    max_spread_percent: str = "20",
+    max_spread: str | None = None,
+    max_spread_percent: str | None = None,
     min_open_interest: int = 100,
     min_quote_size: int = 1,
     min_days_to_expiration: int = 2,
@@ -311,8 +315,9 @@ def _preview_config(
         "time_in_force": "day",
         "data_feed": "indicative",
         "max_estimated_notional": max_estimated_notional,
-        "max_spread": max_spread,
-        "max_spread_percent": max_spread_percent,
+        "max_spread": max_spread or _decimal_string(settings.paper_strategy_max_spread),
+        "max_spread_percent": max_spread_percent
+        or _decimal_string(settings.paper_strategy_max_spread_percent),
         "min_open_interest": min_open_interest,
         "min_quote_size": min_quote_size,
         "limit": 20,
@@ -344,14 +349,16 @@ def _disabled_submit_config(*, max_notional_per_order: str = "2500.00") -> dict[
 
 def _exit_config(
     *,
-    profit_target_percent: str = "25",
-    stop_loss_percent: str = "15",
+    profit_target_percent: str | None = None,
+    stop_loss_percent: str | None = None,
     max_spread: str = "0.25",
 ) -> dict[str, Any]:
     return {
         "enabled": True,
-        "profit_target_percent": profit_target_percent,
-        "stop_loss_percent": stop_loss_percent,
+        "profit_target_percent": profit_target_percent
+        or _decimal_string(settings.paper_strategy_profit_target_percent),
+        "stop_loss_percent": stop_loss_percent
+        or _decimal_string(settings.paper_strategy_stop_loss_percent),
         "max_days_to_expiration": 1,
         "max_contracts_per_exit": 1,
         "order_type": "limit",

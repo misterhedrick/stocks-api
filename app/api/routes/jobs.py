@@ -215,13 +215,18 @@ def market_cycle_route(
     scan_limit: Annotated[int, Query(ge=1, le=500)] = 100,
     order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
     fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
 ) -> MarketCycleRead:
     try:
+        cycle_kwargs = {}
+        if phase_timeout_seconds is not None:
+            cycle_kwargs["phase_timeout_seconds"] = phase_timeout_seconds
         result = run_market_cycle(
             db,
             scan_limit=scan_limit,
             order_limit=order_limit,
             fill_page_size=fill_page_size,
+            **cycle_kwargs,
         )
     except AlpacaTradingConfigurationError as exc:
         raise HTTPException(
@@ -249,6 +254,69 @@ def market_cycle_route(
         news=result.news,
         submit=result.submit,
         timings=result.timings,
+        phase_timeout_seconds=result.phase_timeout_seconds,
+        diagnostics=result.diagnostics,
+    )
+
+
+@router.post(
+    "/market-cycle-exits",
+    response_model=MarketCycleRead,
+    status_code=status.HTTP_200_OK,
+)
+def market_cycle_exits_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    submit_enabled: bool | None = None,
+    phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
+) -> MarketCycleRead:
+    try:
+        cycle_kwargs = {}
+        if phase_timeout_seconds is not None:
+            cycle_kwargs["phase_timeout_seconds"] = phase_timeout_seconds
+        result = run_market_cycle(
+            db,
+            scan_limit=limit,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
+            scan_enabled_override=False,
+            preview_enabled_override=False,
+            news_enabled_override=False,
+            exit_enabled_override=True,
+            submit_enabled_override=submit_enabled,
+            reconcile_before_exit=True,
+            **cycle_kwargs,
+        )
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.detail,
+        ) from exc
+
+    return MarketCycleRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        scan_enabled=result.scan_enabled,
+        reconcile_enabled=result.reconcile_enabled,
+        preview_enabled=result.preview_enabled,
+        exit_enabled=result.exit_enabled,
+        news_enabled=result.news_enabled,
+        submit_enabled=result.submit_enabled,
+        scan=result.scan,
+        reconcile=result.reconcile,
+        preview=result.preview,
+        exits=result.exits,
+        news=result.news,
+        submit=result.submit,
+        timings=result.timings,
+        phase_timeout_seconds=result.phase_timeout_seconds,
+        diagnostics=result.diagnostics,
     )
 
 
@@ -264,8 +332,12 @@ def market_cycle_stress_route(
     fill_page_size: Annotated[int, Query(ge=1, le=500)] = 25,
     preview_enabled: bool = True,
     reconcile_enabled: bool = True,
+    phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
 ) -> MarketCycleRead:
     try:
+        cycle_kwargs = {}
+        if phase_timeout_seconds is not None:
+            cycle_kwargs["phase_timeout_seconds"] = phase_timeout_seconds
         result = run_market_cycle(
             db,
             scan_limit=scan_limit,
@@ -276,6 +348,7 @@ def market_cycle_stress_route(
             exit_enabled_override=False,
             news_enabled_override=False,
             submit_enabled_override=False,
+            **cycle_kwargs,
         )
     except AlpacaTradingConfigurationError as exc:
         raise HTTPException(
@@ -303,6 +376,8 @@ def market_cycle_stress_route(
         news=result.news,
         submit=result.submit,
         timings=result.timings,
+        phase_timeout_seconds=result.phase_timeout_seconds,
+        diagnostics=result.diagnostics,
     )
 
 

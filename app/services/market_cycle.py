@@ -40,6 +40,8 @@ class MarketCycleResult:
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
     timings: dict[str, float] | None = None
+    phase_timeout_seconds: int | None = None
+    diagnostics: dict[str, Any] | None = None
 
 
 EXPOSURE_BROKER_ORDER_STATUSES = (
@@ -64,6 +66,8 @@ def run_market_cycle(
     exit_enabled_override: bool | None = None,
     news_enabled_override: bool | None = None,
     submit_enabled_override: bool | None = None,
+    reconcile_before_exit: bool = False,
+    phase_timeout_seconds: int | None = None,
 ) -> MarketCycleResult:
     started_at = datetime.now(timezone.utc)
     cycle_started = perf_counter()
@@ -92,6 +96,11 @@ def run_market_cycle(
         settings.market_cycle_submit_enabled,
         submit_enabled_override,
     )
+    phase_timeout = (
+        settings.market_cycle_phase_timeout_seconds
+        if phase_timeout_seconds is None
+        else phase_timeout_seconds
+    )
 
     scan = None
     reconcile = None
@@ -104,7 +113,7 @@ def run_market_cycle(
         created_signal_ids: list[uuid.UUID] = []
         submittable_order_intent_ids: list[uuid.UUID] = []
         news_blocks_entries = False
-        if scan_enabled:
+        if scan_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             scan_result = scan_signals(db, limit=scan_limit)
             timings["scan_seconds"] = _elapsed_seconds(step_started)
@@ -122,10 +131,14 @@ def run_market_cycle(
                 ],
             }
         else:
-            scan = _disabled_step("scan")
+            scan = (
+                _timeout_step("scan", phase_timeout)
+                if scan_enabled
+                else _disabled_step("scan")
+            )
             timings["scan_seconds"] = 0.0
 
-        if news_enabled:
+        if news_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             news_result = scan_market_news(db)
             timings["news_seconds"] = _elapsed_seconds(step_started)
@@ -145,8 +158,10 @@ def run_market_cycle(
             )
         else:
             timings["news_seconds"] = 0.0
+            if news_enabled:
+                news = _timeout_step("news", phase_timeout)
 
-        if preview_enabled:
+        if preview_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             signal_ids_for_preview = _signal_ids_for_preview(
                 db,
@@ -171,8 +186,23 @@ def run_market_cycle(
             timings["preview_seconds"] = _elapsed_seconds(step_started)
         else:
             timings["preview_seconds"] = 0.0
+            if preview_enabled:
+                preview = _timeout_step("preview", phase_timeout)
 
-        if exit_enabled:
+        if (
+            reconcile_enabled
+            and reconcile_before_exit
+            and not _phase_budget_exceeded(cycle_started, phase_timeout)
+        ):
+            step_started = perf_counter()
+            reconcile = _reconcile_step(
+                db,
+                order_limit=order_limit,
+                fill_page_size=fill_page_size,
+            )
+            timings["reconcile_seconds"] = _elapsed_seconds(step_started)
+
+        if exit_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             exit_result = evaluate_position_exits(db, limit=scan_limit)
             timings["exit_seconds"] = _elapsed_seconds(step_started)
@@ -193,8 +223,10 @@ def run_market_cycle(
             submittable_order_intent_ids.extend(exit_result.order_intent_ids)
         else:
             timings["exit_seconds"] = 0.0
+            if exit_enabled:
+                exits = _timeout_step("exits", phase_timeout)
 
-        if submit_enabled:
+        if submit_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             submit = _submit_previewed_order_intents(
                 db,
@@ -204,28 +236,29 @@ def run_market_cycle(
             timings["submit_seconds"] = _elapsed_seconds(step_started)
         else:
             timings["submit_seconds"] = 0.0
+            if submit_enabled:
+                submit = _timeout_step("submit", phase_timeout)
 
-        if reconcile_enabled:
+        if (
+            reconcile_enabled
+            and reconcile is None
+            and not _phase_budget_exceeded(cycle_started, phase_timeout)
+        ):
             step_started = perf_counter()
-            reconciliation_result = reconcile_broker_state(
+            reconcile = _reconcile_step(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
             )
             timings["reconcile_seconds"] = _elapsed_seconds(step_started)
-            reconcile = {
-                "job_run_id": str(reconciliation_result.job_run.id),
-                "orders_seen": reconciliation_result.orders_seen,
-                "orders_created": reconciliation_result.orders_created,
-                "orders_updated": reconciliation_result.orders_updated,
-                "fills_seen": reconciliation_result.fills_seen,
-                "fills_created": reconciliation_result.fills_created,
-                "positions_seen": reconciliation_result.positions_seen,
-                "position_snapshots_created": reconciliation_result.position_snapshots_created,
-            }
         else:
-            reconcile = _disabled_step("reconcile")
-            timings["reconcile_seconds"] = 0.0
+            if reconcile is None:
+                reconcile = (
+                    _timeout_step("reconcile", phase_timeout)
+                    if reconcile_enabled
+                    else _disabled_step("reconcile")
+                )
+                timings["reconcile_seconds"] = 0.0
 
         timings["total_seconds"] = _elapsed_seconds(cycle_started)
 
@@ -243,6 +276,15 @@ def run_market_cycle(
             "news": news,
             "submit": submit,
             "timings": timings,
+            "phase_timeout_seconds": phase_timeout,
+            "diagnostics": _diagnostics_for_steps(
+                scan=scan,
+                preview=preview,
+                exits=exits,
+                submit=submit,
+                news=news,
+                reconcile=reconcile,
+            ),
         }
         job_run.status = "succeeded"
         job_run.finished_at = datetime.now(timezone.utc)
@@ -265,7 +307,16 @@ def run_market_cycle(
         db.rollback()
         job_run.status = "failed"
         job_run.finished_at = datetime.now(timezone.utc)
-        job_run.details = {}
+        timings["total_seconds"] = _elapsed_seconds(cycle_started)
+        job_run.details = {
+            "timings": timings,
+            "phase_timeout_seconds": phase_timeout,
+            "diagnostics": {
+                "status": "failed",
+                "error_type": exc.__class__.__name__,
+                "error_category": _error_category(str(exc)),
+            },
+        }
         job_run.error = f"{exc.__class__.__name__}: {exc}"
         db.add(job_run)
         record_audit_log(
@@ -285,12 +336,86 @@ def _disabled_step(step_name: str) -> dict[str, Any]:
     return {"status": "disabled", "step": step_name}
 
 
+def _timeout_step(step_name: str, phase_timeout_seconds: int) -> dict[str, Any]:
+    return {
+        "status": "skipped",
+        "step": step_name,
+        "reason": f"market cycle phase budget reached after {phase_timeout_seconds}s",
+    }
+
+
 def _switch(default: bool, override: bool | None) -> bool:
     return default if override is None else override
 
 
 def _elapsed_seconds(started: float) -> float:
     return round(perf_counter() - started, 3)
+
+
+def _phase_budget_exceeded(started: float, phase_timeout_seconds: int) -> bool:
+    if phase_timeout_seconds <= 0:
+        return False
+    return perf_counter() - started >= phase_timeout_seconds
+
+
+def _reconcile_step(
+    db: Session,
+    *,
+    order_limit: int,
+    fill_page_size: int,
+) -> dict[str, Any]:
+    reconciliation_result = reconcile_broker_state(
+        db,
+        order_limit=order_limit,
+        fill_page_size=fill_page_size,
+    )
+    return {
+        "job_run_id": str(reconciliation_result.job_run.id),
+        "orders_seen": reconciliation_result.orders_seen,
+        "orders_created": reconciliation_result.orders_created,
+        "orders_updated": reconciliation_result.orders_updated,
+        "fills_seen": reconciliation_result.fills_seen,
+        "fills_created": reconciliation_result.fills_created,
+        "positions_seen": reconciliation_result.positions_seen,
+        "position_snapshots_created": reconciliation_result.position_snapshots_created,
+    }
+
+
+def _diagnostics_for_steps(**steps: dict[str, Any] | None) -> dict[str, Any]:
+    errors_by_category: dict[str, int] = {}
+    skipped_steps = []
+    for step_name, step in steps.items():
+        if not isinstance(step, dict):
+            continue
+        if step.get("status") == "skipped":
+            skipped_steps.append(step_name)
+        for error in step.get("errors", []) or []:
+            category = _error_category(str(error))
+            errors_by_category[category] = errors_by_category.get(category, 0) + 1
+    return {
+        "status": "completed",
+        "skipped_steps": skipped_steps,
+        "errors_by_category": errors_by_category,
+    }
+
+
+def _error_category(message: str) -> str:
+    clean_message = message.lower()
+    if "too many requests" in clean_message or "429" in clean_message:
+        return "rate_limit"
+    if "timeout" in clean_message or "timed out" in clean_message:
+        return "timeout"
+    if "trade_windows" in clean_message or "outside scanner.submit" in clean_message:
+        return "trade_window"
+    if "spread" in clean_message:
+        return "spread_filter"
+    if "no stock bars" in clean_message or "no latest stock quote" in clean_message:
+        return "market_data_missing"
+    if "duplicate signal" in clean_message:
+        return "duplicate_signal"
+    if "automation" in clean_message or "auto-submit" in clean_message:
+        return "automation_guard"
+    return "other"
 
 
 def _preview_created_signals(
