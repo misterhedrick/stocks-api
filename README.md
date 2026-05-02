@@ -389,9 +389,11 @@ Weekend/off-hours analysis:
 .\.venv\Scripts\python.exe .\scripts\analyze_paper_learning.py --limit 500
 .\.venv\Scripts\python.exe .\scripts\replay_paper_decisions.py --limit 100
 .\.venv\Scripts\python.exe .\scripts\run_exit_cycle_smoke.py --phase-timeout-seconds 45
+.\.venv\Scripts\python.exe .\scripts\market_day_dashboard.py --limit 100
 ```
 
 The learning report groups trades, non-trade rejection reasons, strategy/symbol performance, open lots, and recent job failures. The replay script reads recorded signals and order intents and reports whether they would preview or submit under current settings without placing orders.
+The dashboard script gives one market-day operating view: current mode/readiness, latest jobs and timings, exit attention, positions, P/L, and top learning summaries.
 
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
 
@@ -409,6 +411,7 @@ POST /api/v1/jobs/market-cycle-stress?scan_limit=50&order_limit=25&fill_page_siz
 
 The stress route forces submit, news, and exit evaluation off, but still scans, previews option contracts, optionally reconciles, and writes phase timings into `job_run.details.timings`.
 Market-cycle responses also include `phase_timeout_seconds` and `diagnostics`; `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS` is a soft budget that skips later phases once the cycle has already spent that many seconds.
+When exit evaluation needs attention, the market cycle writes `market_cycle.exit_attention_required` to audit logs with position counts, sampled errors/reasons, and reason categories.
 When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 
 Example strategy config:

@@ -1017,6 +1017,40 @@ class MarketCycleTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "market_cycle.failed")
 
+    def test_run_market_cycle_records_exit_attention_audit_log(self) -> None:
+        db = FakeMarketCycleSession()
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_exit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.evaluate_position_exits",
+            return_value=ExitEvaluationResult(
+                positions_seen=1,
+                positions_evaluated=1,
+                exits_created=0,
+                exits_skipped=1,
+                errors=[],
+                no_exit_reasons=["SPY: linked strategy does not have scanner.exit enabled"],
+                position_ownership=[],
+                order_intent_ids=[],
+            ),
+        ):
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.exits["exits_created"], 0)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertIn(
+            "market_cycle.exit_attention_required",
+            [audit_log.event_type for audit_log in audit_logs],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

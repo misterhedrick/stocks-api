@@ -291,6 +291,16 @@ def run_market_cycle(
         job_run.details = details
         job_run.error = None
         db.add(job_run)
+        exit_alert = _exit_alert_payload(exits)
+        if exit_alert is not None:
+            record_audit_log(
+                db,
+                event_type="market_cycle.exit_attention_required",
+                entity_type="job_run",
+                entity_id=job_run.id,
+                message="Market cycle exit evaluation needs attention",
+                payload=exit_alert,
+            )
         record_audit_log(
             db,
             event_type="market_cycle.succeeded",
@@ -416,6 +426,71 @@ def _error_category(message: str) -> str:
     if "automation" in clean_message or "auto-submit" in clean_message:
         return "automation_guard"
     return "other"
+
+
+def _exit_alert_payload(exits: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(exits, dict):
+        return None
+    if exits.get("status") == "disabled":
+        return None
+
+    errors = [str(error) for error in exits.get("errors", []) or []]
+    no_exit_reasons = [str(reason) for reason in exits.get("no_exit_reasons", []) or []]
+    positions_seen = _int_from_step(exits.get("positions_seen"))
+    positions_evaluated = _int_from_step(exits.get("positions_evaluated"))
+    exits_created = _int_from_step(exits.get("exits_created"))
+    status = str(exits.get("status", "completed"))
+
+    needs_attention = (
+        status in {"skipped", "failed"}
+        or bool(errors)
+        or (positions_seen > 0 and positions_evaluated == 0)
+        or (positions_seen > 0 and exits_created == 0 and _has_attention_reason(no_exit_reasons))
+    )
+    if not needs_attention:
+        return None
+
+    return {
+        "status": status,
+        "positions_seen": positions_seen,
+        "positions_evaluated": positions_evaluated,
+        "exits_created": exits_created,
+        "errors": errors[:25],
+        "no_exit_reasons": no_exit_reasons[:25],
+        "reason_categories": _reason_categories(errors + no_exit_reasons),
+    }
+
+
+def _int_from_step(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _has_attention_reason(reasons: list[str]) -> bool:
+    attention_terms = (
+        "missing exit config",
+        "does not have scanner.exit",
+        "inactive strategy",
+        "unmanaged",
+        "no linked entry",
+        "max spread",
+        "unable to derive",
+        "not found",
+    )
+    return any(
+        any(term in reason.lower() for term in attention_terms)
+        for reason in reasons
+    )
+
+
+def _reason_categories(reasons: list[str]) -> dict[str, int]:
+    categories: dict[str, int] = {}
+    for reason in reasons:
+        category = _error_category(reason)
+        categories[category] = categories.get(category, 0) + 1
+    return categories
 
 
 def _preview_created_signals(
