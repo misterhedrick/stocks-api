@@ -16,6 +16,6 @@ $env:MAX_CONTRACTS_PER_ORDER = "1"
 $env:MAX_ESTIMATED_PREMIUM_PER_ORDER = "250"
 
 .\.venv\Scripts\python.exe .\scripts\run_market_cycle_smoke.py `
-  --scan-limit 70 `
+  --scan-limit 50 `
   --order-limit 100 `
   --fill-page-size 100

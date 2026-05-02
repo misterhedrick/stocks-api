@@ -15,11 +15,6 @@ LIQUID_OPTIONS_UNIVERSE = (
     "GOOGL",
     "META",
     "AAPL",
-    "INTC",
-    "AMD",
-    "GOOG",
-    "QCOM",
-    "NFLX",
 )
 
 
