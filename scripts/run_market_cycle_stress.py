@@ -17,7 +17,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run a no-submit market-cycle stress test with phase timings."
     )
-    parser.add_argument("--scan-limit", type=int, default=130)
+    parser.add_argument("--scan-limit", type=int, default=70)
     parser.add_argument("--order-limit", type=int, default=25)
     parser.add_argument("--fill-page-size", type=int, default=25)
     parser.add_argument("--no-preview", action="store_true")

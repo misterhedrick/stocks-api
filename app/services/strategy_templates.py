@@ -20,21 +20,6 @@ LIQUID_OPTIONS_UNIVERSE = (
     "GOOG",
     "QCOM",
     "NFLX",
-    "NOK",
-    "SOFI",
-    "MSTR",
-    "TLT",
-    "MU",
-    "MARA",
-    "IBIT",
-    "EEM",
-    "HYG",
-    "PLTR",
-    "HOOD",
-    "TQQQ",
-    "SLV",
-    "IGV",
-    "XLB",
 )
 
 

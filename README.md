@@ -377,13 +377,13 @@ The scanner reads active strategy configs with a `scan_signals` list, validates 
 No-submit stress test the market cycle path without placing paper orders:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\run_market_cycle_stress.py --scan-limit 130 --order-limit 25 --fill-page-size 25
+.\.venv\Scripts\python.exe .\scripts\run_market_cycle_stress.py --scan-limit 70 --order-limit 25 --fill-page-size 25
 ```
 
 Or call the API route:
 
 ```text
-POST /api/v1/jobs/market-cycle-stress?scan_limit=130&order_limit=25&fill_page_size=25
+POST /api/v1/jobs/market-cycle-stress?scan_limit=70&order_limit=25&fill_page_size=25
 ```
 
 The stress route forces submit, news, and exit evaluation off, but still scans, previews option contracts, optionally reconciles, and writes phase timings into `job_run.details.timings`.
@@ -548,7 +548,7 @@ Automated submit is intended for paper trading right now. To intentionally enabl
 `render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 2 minutes from 9:00am to 5:00pm Eastern on weekdays and calls:
 
 ```text
-POST /api/v1/jobs/market-cycle?scan_limit=130&order_limit=100&fill_page_size=100
+POST /api/v1/jobs/market-cycle?scan_limit=70&order_limit=100&fill_page_size=100
 ```
 
 It is disabled by default with:
