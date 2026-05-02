@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -127,9 +129,10 @@ def _has_broker_order(db: Session, order_intent: OrderIntent) -> bool:
 
 
 def _submitted_orders_today(db: Session) -> int:
-    now = datetime.now(timezone.utc)
-    day_start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
-    day_end = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
+    trading_tz = ZoneInfo("America/New_York")
+    local_now = datetime.now(timezone.utc).astimezone(trading_tz)
+    day_start = datetime.combine(local_now.date(), time.min, tzinfo=trading_tz).astimezone(timezone.utc)
+    day_end = datetime.combine(local_now.date(), time.max, tzinfo=trading_tz).astimezone(timezone.utc)
     statement = (
         select(func.count(BrokerOrder.id))
         .where(BrokerOrder.submitted_at.is_not(None))
@@ -180,10 +183,17 @@ def _open_positions_count(
         .where(PositionSnapshot.quantity > 0)
     )
     if underlying_symbol is not None:
-        normalized = underlying_symbol.upper()
+        normalized = underlying_symbol.strip().upper()
+        # Match exact stock symbol OR option symbols where the underlying
+        # prefix is immediately followed by a digit (e.g. SPY240315C...).
+        # The digit anchor prevents "SPY" from matching "SPYG", "SPYD", etc.
         open_positions = open_positions.where(
-            (func.upper(PositionSnapshot.symbol) == normalized)
-            | (func.upper(PositionSnapshot.symbol).like(f"{normalized}%"))
+            or_(
+                func.upper(PositionSnapshot.symbol) == normalized,
+                PositionSnapshot.symbol.regexp_match(
+                    f"^{re.escape(normalized)}[0-9]", flags="i"
+                ),
+            )
         )
 
     statement = select(func.count()).select_from(open_positions.subquery())

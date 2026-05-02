@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 import re
@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.utils import current_trading_day_start_utc
 from app.db.models import BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
@@ -274,6 +275,7 @@ def get_position_management_statuses(
         )
         active_exit_order = _latest_active_exit_order(db, position.symbol)
         recommended_action, reason = _position_recommendation(
+            db,
             position,
             ownership,
             exit_config,
@@ -643,23 +645,13 @@ def _active_exit_order_status_filter() -> object:
         OrderIntent.status.in_(BROKER_ACTIVE_EXIT_ORDER_STATUSES),
         and_(
             OrderIntent.status == "previewed",
-            OrderIntent.created_at >= _current_trading_day_start_utc(),
+            OrderIntent.created_at >= current_trading_day_start_utc(),
         ),
     )
 
 
-def _current_trading_day_start_utc() -> datetime:
-    trading_timezone = ZoneInfo("America/New_York")
-    local_now = datetime.now(timezone.utc).astimezone(trading_timezone)
-    local_start = datetime.combine(
-        local_now.date(),
-        time.min,
-        tzinfo=trading_timezone,
-    )
-    return local_start.astimezone(timezone.utc)
-
-
 def _position_recommendation(
+    db: Session,
     position: PositionSnapshot,
     ownership: PositionOwnership,
     exit_config: dict[str, Any] | None,
@@ -677,10 +669,12 @@ def _position_recommendation(
     if exit_config is None:
         return ("add_exit_config", "linked strategy does not have scanner.exit enabled")
 
+    entry_time = _entry_fill_time(db, ownership)
     trigger_reason = _exit_trigger_reason(
         position,
         exit_config,
         today=datetime.now(ZoneInfo("America/New_York")).date(),
+        entry_time=entry_time,
     )
     if trigger_reason is not None:
         return ("exit_rule_triggered", trigger_reason)

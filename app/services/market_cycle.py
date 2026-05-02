@@ -12,6 +12,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.utils import current_trading_day_start_utc
 from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
@@ -585,7 +586,7 @@ def _signal_ids_for_preview(
         select(Signal.id)
         .where(Signal.status == "new")
         .where(~has_order_intent)
-        .where(Signal.created_at >= _current_trading_day_start_utc())
+        .where(Signal.created_at >= current_trading_day_start_utc())
         .order_by(Signal.created_at.asc())
         .limit(pending_limit)
     )
@@ -594,13 +595,6 @@ def _signal_ids_for_preview(
             signal_ids.append(signal_id)
             seen.add(signal_id)
     return signal_ids
-
-
-def _current_trading_day_start_utc() -> datetime:
-    trading_tz = ZoneInfo("America/New_York")
-    local_now = datetime.now(timezone.utc).astimezone(trading_tz)
-    local_start = datetime.combine(local_now.date(), time.min, tzinfo=trading_tz)
-    return local_start.astimezone(timezone.utc)
 
 
 def _submit_previewed_order_intents(

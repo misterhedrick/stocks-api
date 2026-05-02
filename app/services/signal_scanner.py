@@ -678,9 +678,9 @@ def _trend_confirmation_signal_specs(
                 f"{strategy_name}.{symbol}: no stock bars returned for trend confirmation window"
             )
             continue
-        if len(stock_bars.bars) < long_window:
+        if len(stock_bars.bars) < long_window + 1:
             no_signal_reasons.append(
-                f"{strategy_name}.{symbol}: fewer than {long_window} stock bars returned for trend confirmation window"
+                f"{strategy_name}.{symbol}: fewer than {long_window + 1} stock bars returned for trend confirmation window"
             )
             continue
 
@@ -938,6 +938,8 @@ def _scanner_string(
 
 
 def _average(values: list[Decimal]) -> Decimal:
+    if not values:
+        return Decimal("0")
     return sum(values, Decimal("0")) / Decimal(len(values))
 
 

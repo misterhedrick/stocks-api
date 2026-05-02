@@ -152,7 +152,49 @@ def _non_trade_reasons(db: Session, *, limit: int) -> list[dict[str, Any]]:
         }
         for row in db.execute(intent_statement)
     )
+    reasons.extend(_no_signal_reasons_from_job_runs(db, limit=limit))
     return sorted(reasons, key=lambda item: item["count"], reverse=True)[:limit]
+
+
+def _no_signal_reasons_from_job_runs(db: Session, *, limit: int) -> list[dict[str, Any]]:
+    """Aggregate no_signal_reasons from recent scan job_runs.
+
+    These are the most common non-trade outcomes (threshold not crossed,
+    no bars returned, dedupe suppression) and are stored in job_run details
+    rather than on Signal or OrderIntent records.
+    """
+    statement = (
+        select(JobRun)
+        .where(JobRun.job_name.in_(["scan_signals", "market_cycle"]))
+        .where(JobRun.status == "succeeded")
+        .order_by(JobRun.started_at.desc())
+        .limit(limit)
+    )
+    reason_counts: dict[str, int] = {}
+    for job_run in db.scalars(statement):
+        details = job_run.details if isinstance(job_run.details, dict) else {}
+        for reason in _extract_no_signal_reasons(details):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    return [
+        {"source": "scan_no_signal", "strategy_name": None, "reason": reason, "count": count}
+        for reason, count in reason_counts.items()
+    ]
+
+
+def _extract_no_signal_reasons(details: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    # scan_signals job stores reasons directly
+    direct = details.get("no_signal_reasons")
+    if isinstance(direct, list):
+        reasons.extend(str(r) for r in direct if r)
+    # market_cycle job nests them under the scan step
+    scan = details.get("scan")
+    if isinstance(scan, dict):
+        nested = scan.get("no_signal_reasons")
+        if isinstance(nested, list):
+            reasons.extend(str(r) for r in nested if r)
+    return reasons
 
 
 def _job_failures(db: Session, *, limit: int) -> list[dict[str, Any]]:

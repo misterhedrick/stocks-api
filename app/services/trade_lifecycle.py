@@ -98,6 +98,7 @@ def _position_lifecycle(
     )
     active_exit_order = _latest_active_exit_order(db, position.symbol)
     recommended_action, reason = _position_recommendation(
+        db,
         position,
         ownership,
         exit_config,
