@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 import re
 import uuid
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import BrokerOrder, OrderIntent, PositionSnapshot, Strategy
+from app.db.models import BrokerOrder, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
@@ -92,6 +93,7 @@ ACTIVE_EXIT_ORDER_STATUSES = {
     "partially_filled",
     "submitted",
 }
+BROKER_ACTIVE_EXIT_ORDER_STATUSES = ACTIVE_EXIT_ORDER_STATUSES - {"previewed"}
 ENTRY_BROKER_ORDER_STATUSES = {
     "new",
     "accepted",
@@ -296,6 +298,29 @@ def get_position_management_statuses(
 
 
 def _latest_position_snapshots(db: Session, *, limit: int) -> list[PositionSnapshot]:
+    latest_reconciliation = db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "reconcile_broker")
+        .where(JobRun.status == "succeeded")
+        .where(JobRun.finished_at.is_not(None))
+        .order_by(JobRun.finished_at.desc())
+        .limit(1)
+    )
+    if (
+        latest_reconciliation is not None
+        and latest_reconciliation.started_at is not None
+        and latest_reconciliation.finished_at is not None
+    ):
+        statement = (
+            select(PositionSnapshot)
+            .where(PositionSnapshot.captured_at >= latest_reconciliation.started_at)
+            .where(PositionSnapshot.captured_at <= latest_reconciliation.finished_at)
+            .where(PositionSnapshot.quantity > 0)
+            .order_by(PositionSnapshot.captured_at.desc())
+            .limit(limit)
+        )
+        return list(db.scalars(statement))
+
     latest_captured_at = (
         select(
             PositionSnapshot.symbol.label("symbol"),
@@ -558,7 +583,7 @@ def _has_active_exit_order(db: Session, symbol: str) -> bool:
         select(func.count(OrderIntent.id))
         .where(OrderIntent.option_symbol == symbol)
         .where(func.lower(OrderIntent.side) == "sell")
-        .where(OrderIntent.status.in_(ACTIVE_EXIT_ORDER_STATUSES))
+        .where(_active_exit_order_status_filter())
     )
     value = db.scalar(statement)
     try:
@@ -575,7 +600,7 @@ def _latest_active_exit_order(
         select(OrderIntent)
         .where(OrderIntent.option_symbol == symbol)
         .where(func.lower(OrderIntent.side) == "sell")
-        .where(OrderIntent.status.in_(ACTIVE_EXIT_ORDER_STATUSES))
+        .where(_active_exit_order_status_filter())
         .order_by(OrderIntent.created_at.desc())
         .limit(1)
     )
@@ -593,6 +618,27 @@ def _latest_active_exit_order(
         if order_intent.created_at is not None
         else None,
     }
+
+
+def _active_exit_order_status_filter() -> object:
+    return or_(
+        OrderIntent.status.in_(BROKER_ACTIVE_EXIT_ORDER_STATUSES),
+        and_(
+            OrderIntent.status == "previewed",
+            OrderIntent.created_at >= _current_trading_day_start_utc(),
+        ),
+    )
+
+
+def _current_trading_day_start_utc() -> datetime:
+    trading_timezone = ZoneInfo("America/New_York")
+    local_now = datetime.now(timezone.utc).astimezone(trading_timezone)
+    local_start = datetime.combine(
+        local_now.date(),
+        time.min,
+        tzinfo=trading_timezone,
+    )
+    return local_start.astimezone(timezone.utc)
 
 
 def _position_recommendation(

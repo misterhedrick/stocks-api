@@ -416,6 +416,7 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         )
 
         self.assertEqual(order_intent.status, "previewed")
+        self.assertEqual(signal.status, "previewed")
         self.assertEqual(order_intent.strategy_id, signal.strategy_id)
         self.assertEqual(order_intent.signal_id, signal.id)
         self.assertEqual(order_intent.limit_price, Decimal("1.25"))

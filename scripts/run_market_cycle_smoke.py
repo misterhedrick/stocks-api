@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -37,10 +38,22 @@ def main() -> None:
         f"submit={result.submit_enabled}",
         f"reconcile={result.reconcile_enabled}",
     )
-    print("scan", result.scan)
-    print("preview", result.preview)
-    print("submit", result.submit)
-    print("reconcile", result.reconcile)
+    _print_json_summary("scan", result.scan)
+    _print_json_summary("preview", result.preview)
+    _print_json_summary("submit", result.submit)
+    _print_json_summary("reconcile", result.reconcile)
+
+
+def _print_json_summary(label: str, payload: object) -> None:
+    print(
+        label,
+        json.dumps(
+            payload,
+            default=str,
+            ensure_ascii=True,
+            sort_keys=True,
+        ),
+    )
 
 
 if __name__ == "__main__":

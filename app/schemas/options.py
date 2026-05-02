@@ -14,10 +14,15 @@ class OptionContractSelectionCreate(BaseModel):
     expiration_date: date | None = None
     expiration_date_gte: date | None = None
     expiration_date_lte: date | None = None
+    min_days_to_expiration: int | None = Field(default=None, ge=0)
+    max_days_to_expiration: int | None = Field(default=None, ge=0)
     target_strike: Decimal | None = Field(default=None, gt=0)
     underlying_price: Decimal | None = Field(default=None, gt=0)
     max_estimated_notional: Decimal | None = Field(default=None, gt=0)
     max_spread: Decimal | None = Field(default=None, ge=0)
+    max_spread_percent: Decimal | None = Field(default=None, ge=0)
+    min_open_interest: Decimal | None = Field(default=None, ge=0)
+    min_quote_size: Decimal | None = Field(default=None, ge=0)
     data_feed: Literal["indicative", "opra"] = "indicative"
     limit: int = Field(default=100, ge=1, le=500)
 
@@ -26,9 +31,21 @@ class OptionContractSelectionCreate(BaseModel):
         if self.expiration_date is not None and (
             self.expiration_date_gte is not None
             or self.expiration_date_lte is not None
+            or self.min_days_to_expiration is not None
+            or self.max_days_to_expiration is not None
         ):
             raise ValueError(
                 "expiration_date cannot be combined with expiration date range filters"
+            )
+        if (
+            self.min_days_to_expiration is not None
+            or self.max_days_to_expiration is not None
+        ) and (
+            self.expiration_date_gte is not None
+            or self.expiration_date_lte is not None
+        ):
+            raise ValueError(
+                "relative expiration filters cannot be combined with explicit expiration date range filters"
             )
         if (
             self.expiration_date_gte is not None
@@ -36,6 +53,14 @@ class OptionContractSelectionCreate(BaseModel):
             and self.expiration_date_gte > self.expiration_date_lte
         ):
             raise ValueError("expiration_date_gte must be before expiration_date_lte")
+        if (
+            self.min_days_to_expiration is not None
+            and self.max_days_to_expiration is not None
+            and self.min_days_to_expiration > self.max_days_to_expiration
+        ):
+            raise ValueError(
+                "min_days_to_expiration must be less than or equal to max_days_to_expiration"
+            )
         return self
 
 

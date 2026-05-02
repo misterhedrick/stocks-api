@@ -97,6 +97,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 long_window=20,
                 lookback_minutes=1440,
                 timeframe="5Min",
+                min_change_percent="0.10",
                 confidence="0.6200",
             )
         )
@@ -143,6 +144,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 long_window=20,
                 lookback_minutes=1440,
                 timeframe="5Min",
+                min_change_percent="0.10",
                 confidence="0.6200",
             )
         )
@@ -193,17 +195,17 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(patch["lookback_minutes"], 1440)
         self.assertEqual(patch["timeframe"], "5Min")
 
-    def test_submit_config_from_args_builds_conservative_limits(self) -> None:
+    def test_submit_config_from_args_builds_env_aligned_metadata(self) -> None:
         submit = submit_config_from_args(
             Namespace(
                 enable=True,
-                max_orders_per_cycle=1,
+                max_orders_per_cycle=100,
                 max_contracts_per_order=1,
-                max_contracts_per_cycle=1,
-                max_notional_per_order="200",
-                max_open_contracts_per_symbol=1,
-                max_open_contracts_per_strategy=1,
-                max_orders_per_trading_day=1,
+                max_contracts_per_cycle=100,
+                max_notional_per_order="2500",
+                max_open_contracts_per_symbol=100,
+                max_open_contracts_per_strategy=100,
+                max_orders_per_trading_day=500,
                 trading_day_timezone="America/New_York",
                 trade_window_timezone="America/New_York",
                 trade_window_start="09:45",
@@ -213,9 +215,9 @@ class StrategyTuningScriptTests(unittest.TestCase):
         )
 
         self.assertTrue(submit["enabled"])
-        self.assertEqual(submit["max_notional_per_order"], "200.00")
-        self.assertEqual(submit["max_orders_per_trading_day"], 1)
-        self.assertEqual(submit["max_open_contracts_per_strategy"], 1)
+        self.assertEqual(submit["max_notional_per_order"], "2500.00")
+        self.assertEqual(submit["max_orders_per_trading_day"], 500)
+        self.assertEqual(submit["max_open_contracts_per_strategy"], 100)
         self.assertEqual(submit["trade_windows"][0]["end"], "15:30")
         self.assertEqual(submit["allowed_sides"], ["buy"])
 
@@ -224,13 +226,13 @@ class StrategyTuningScriptTests(unittest.TestCase):
         db = FakeTuningSession([strategy])
         submit = {
             "enabled": True,
-            "max_orders_per_cycle": 1,
+            "max_orders_per_cycle": 100,
             "max_contracts_per_order": 1,
-            "max_contracts_per_cycle": 1,
-            "max_notional_per_order": "200.00",
-            "max_open_contracts_per_symbol": 1,
-            "max_open_contracts_per_strategy": 1,
-            "max_orders_per_trading_day": 1,
+            "max_contracts_per_cycle": 100,
+            "max_notional_per_order": "2500.00",
+            "max_open_contracts_per_symbol": 100,
+            "max_open_contracts_per_strategy": 100,
+            "max_orders_per_trading_day": 500,
             "trading_day_timezone": "America/New_York",
             "trade_windows": [
                 {
@@ -252,7 +254,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertTrue(updated.config["scanner"]["submit"]["enabled"])
         self.assertEqual(
             updated.config["scanner"]["submit"]["max_notional_per_order"],
-            "200.00",
+            "2500.00",
         )
         self.assertEqual(audit_logs[-1].event_type, "strategy.updated")
 

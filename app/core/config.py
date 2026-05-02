@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     market_cycle_exit_enabled: bool = False
     market_cycle_news_enabled: bool = False
     market_cycle_submit_enabled: bool = False
+    market_cycle_phase_timeout_seconds: int = 70
     news_request_timeout_seconds: int = 10
     news_market_rss_feeds: str = (
         "https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,"
@@ -51,6 +52,12 @@ class Settings(BaseSettings):
     max_open_positions_per_symbol: int = 1
     max_contracts_per_order: int = 1
     max_estimated_premium_per_order: Decimal = Decimal("250")
+    paper_strategy_min_change_percent: Decimal = Decimal("0.10")
+    paper_strategy_trend_min_change_percent: Decimal = Decimal("0.35")
+    paper_strategy_max_spread: Decimal = Decimal("0.20")
+    paper_strategy_max_spread_percent: Decimal = Decimal("20")
+    paper_strategy_profit_target_percent: Decimal = Decimal("25")
+    paper_strategy_stop_loss_percent: Decimal = Decimal("15")
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

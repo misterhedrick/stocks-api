@@ -53,6 +53,9 @@ class FakeMarketCycleSession:
             return self.scalar_results.pop(0)
         return 0
 
+    def scalars(self, _: object) -> list[object]:
+        return []
+
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
             obj.id = uuid.uuid4()
@@ -341,6 +344,44 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.preview["order_intent_ids"], [str(order_intent.id)])
         preview.assert_called_once()
 
+    def test_run_market_cycle_auto_previews_pending_unpreviewed_signals_when_enabled(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+        order_intent = build_order_intent(signal)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=SignalScanResult(
+                job_run=build_job_run("scan_signals"),
+                strategies_seen=2,
+                strategies_scanned=0,
+                signals_created=0,
+                signals_skipped=1,
+                errors=["duplicate signal suppressed"],
+                no_signal_reasons=[],
+                created_signal_ids=[],
+            ),
+        ), patch(
+            "app.services.market_cycle._signal_ids_for_preview",
+            return_value=[signal.id],
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ) as preview:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.preview["signals_seen"], 1)
+        self.assertEqual(result.preview["previews_created"], 1)
+        self.assertEqual(result.preview["order_intent_ids"], [str(order_intent.id)])
+        preview.assert_called_once()
+
     def test_run_market_cycle_skips_auto_preview_without_strategy_preview_config(self) -> None:
         strategy = build_strategy()
         strategy.config = {"scanner": {"type": "price_threshold"}}
@@ -365,6 +406,37 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.preview["previews_created"], 0)
         self.assertEqual(result.preview["previews_skipped"], 1)
         self.assertIn("scanner.preview config is required", result.preview["errors"][0])
+        preview.assert_not_called()
+
+    def test_run_market_cycle_delays_entry_preview_outside_submit_window(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value="auto-preview delayed until scanner.submit.trade_windows opens",
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+        ) as preview:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.preview["signals_seen"], 1)
+        self.assertEqual(result.preview["previews_created"], 0)
+        self.assertEqual(result.preview["previews_skipped"], 1)
+        self.assertIn("auto-preview delayed", result.preview["errors"][0])
         preview.assert_not_called()
 
     def test_run_market_cycle_auto_submits_current_cycle_previews_when_enabled(self) -> None:
@@ -393,6 +465,9 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
         ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
@@ -533,6 +608,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
@@ -576,6 +654,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=blocked_decision,
         ), patch(
@@ -593,7 +674,7 @@ class MarketCycleTests(unittest.TestCase):
             [audit_log.event_type for audit_log in audit_logs],
         )
 
-    def test_run_market_cycle_enforces_submit_max_contracts_per_order(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_contracts_per_order(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_contracts_per_order"] = 1
         signal = build_signal(strategy)
@@ -621,19 +702,22 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_contracts_per_order", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_contracts_per_cycle(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_contracts_per_cycle(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_contracts_per_order"] = 5
         strategy.config["scanner"]["submit"]["max_contracts_per_cycle"] = 1
@@ -666,15 +750,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_contracts_per_cycle", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_notional_per_order(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_notional_per_order(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_notional_per_order"] = "100.00"
         signal = build_signal(strategy)
@@ -706,15 +790,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_notional_per_order", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_orders_per_trading_day(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_orders_per_trading_day(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"]["max_orders_per_trading_day"] = 1
         signal = build_signal(strategy)
@@ -746,13 +830,13 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_orders_per_trading_day", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
     def test_run_market_cycle_enforces_submit_trade_windows(self) -> None:
         strategy = build_strategy()
@@ -790,6 +874,9 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
             "app.services.market_cycle.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
@@ -810,7 +897,7 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
         submit.assert_not_called()
 
-    def test_run_market_cycle_enforces_submit_max_open_contracts_per_symbol(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_open_contracts_per_symbol(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_strategy")
         strategy.config["scanner"]["submit"]["max_open_contracts_per_symbol"] = 1
@@ -843,15 +930,15 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_open_contracts_per_symbol", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
-    def test_run_market_cycle_enforces_submit_max_open_contracts_per_strategy(self) -> None:
+    def test_run_market_cycle_ignores_strategy_max_open_contracts_per_strategy(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_symbol")
         strategy.config["scanner"]["submit"]["max_open_contracts_per_strategy"] = 2
@@ -884,13 +971,13 @@ class MarketCycleTests(unittest.TestCase):
             return_value=allowed_automation_decision(),
         ), patch(
             "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
 
-        self.assertEqual(result.submit["submitted"], 0)
-        self.assertEqual(result.submit["skipped"], 1)
-        self.assertIn("max_open_contracts_per_strategy", result.submit["errors"][0])
-        submit.assert_not_called()
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
 
     def test_run_market_cycle_honors_disabled_scan_and_reconcile_switches(self) -> None:
         db = FakeMarketCycleSession()
@@ -929,6 +1016,40 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(job_runs[-1].status, "failed")
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "market_cycle.failed")
+
+    def test_run_market_cycle_records_exit_attention_audit_log(self) -> None:
+        db = FakeMarketCycleSession()
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_exit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.evaluate_position_exits",
+            return_value=ExitEvaluationResult(
+                positions_seen=1,
+                positions_evaluated=1,
+                exits_created=0,
+                exits_skipped=1,
+                errors=[],
+                no_exit_reasons=["SPY: linked strategy does not have scanner.exit enabled"],
+                position_ownership=[],
+                order_intent_ids=[],
+            ),
+        ):
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.exits["exits_created"], 0)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertIn(
+            "market_cycle.exit_attention_required",
+            [audit_log.event_type for audit_log in audit_logs],
+        )
 
 
 if __name__ == "__main__":

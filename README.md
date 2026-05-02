@@ -272,6 +272,15 @@ curl -H "Authorization: Bearer change-me" \
 
 This read-only endpoint summarizes current reconciled positions with ownership, active exit order status, exit config availability, P/L fields, and a recommended action such as `hold`, `exit_rule_triggered`, `exit_pending`, `add_exit_config`, or `preview_unmanaged_exit`.
 
+Check open trade lifecycle details:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/trade-lifecycle?limit=100"
+```
+
+This read-only endpoint expands current reconciled positions into a trade lifecycle view: ownership, linked entry order intent, entry broker orders, entry fills, average fill price/notional, active exit order, and the current exit recommendation.
+
 Check paper performance:
 
 ```bash
@@ -279,7 +288,17 @@ curl -H "Authorization: Bearer change-me" \
   "http://127.0.0.1:8000/api/v1/automation/performance?limit=500"
 ```
 
-This read-only endpoint matches option buy/sell fills FIFO by symbol and strategy, reports realized paper P/L, win/loss counts, win rate, strategy-level summaries, recent round trips, and any still-open lots. It is intended for tuning paper strategies after automated paper trading has collected data.
+This read-only endpoint matches option buy/sell fills FIFO by symbol and strategy, reports realized paper P/L, win/loss counts, win rate, strategy-level and symbol-level summaries, recent round trips, and any still-open lots. It is intended for tuning paper strategies after automated paper trading has collected data.
+
+Check paper trade cases:
+
+```bash
+curl -H "Authorization: Bearer change-me" \
+  "http://127.0.0.1:8000/api/v1/automation/trade-cases?limit=500"
+```
+
+This read-only endpoint exposes the same FIFO-matched closed round trips and open lots in a trade-case shape so later AI review can consume stable entry/exit IDs, realized P/L, strategy summaries, and symbol summaries without changing the broker source of truth.
+
 
 Evaluate current positions for exits:
 
@@ -289,6 +308,15 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/evaluate-exits?limit=100" \
 ```
 
 The exit evaluator reads the latest reconciled position snapshots, links each position back to its most recent entry order intent and strategy when possible, checks `scanner.exit` rules, and creates previewed sell order intents when a rule triggers. It supports profit target, stop loss, and days-to-expiration rules. The response includes `position_ownership` so unmanaged positions are visible with reasons such as no linked entry order, inactive strategy, or missing exit config. Market-cycle exit evaluation is controlled by `MARKET_CYCLE_EXIT_ENABLED`; auto-submit of exit intents still requires `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and a strategy `scanner.exit.submit.enabled=true`.
+
+Run the fast exit-only cycle:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-cycle-exits?limit=100&phase_timeout_seconds=45" \
+  -H "Authorization: Bearer change-me"
+```
+
+This job reconciles broker state first, skips entry scanning/news/previews, evaluates exits, and then submits exit intents only when the normal global and strategy-level submit gates allow it. It is intended for high-frequency cron coverage so exits are not blocked behind a full market scan.
 
 Preview exits for unmanaged positions:
 
@@ -333,6 +361,17 @@ Tune paper strategies:
 
 The tuning script lists scanner/preview/submit state, creates or updates preview-first moving-average and confirmed-trend strategies, deep-merges scanner config patches, and can enable or disable scanner auto-submit with conservative paper limits. Seeded strategies keep `scanner.submit.enabled=false` by default.
 
+Template strategy thresholds can be tuned through env before seeding or refreshing: `PAPER_STRATEGY_MIN_CHANGE_PERCENT`, `PAPER_STRATEGY_TREND_MIN_CHANGE_PERCENT`, `PAPER_STRATEGY_MAX_SPREAD`, `PAPER_STRATEGY_MAX_SPREAD_PERCENT`, `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, and `PAPER_STRATEGY_STOP_LOSS_PERCENT`.
+
+Seed a broader paper-trading universe:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\seed_paper_trade_universe.py --dry-run --sample-price AAPL=180 --sample-price MSFT=420 --symbol AAPL --symbol MSFT
+.\.venv\Scripts\python.exe .\scripts\seed_paper_trade_universe.py
+```
+
+The universe seed script creates or updates bullish call and bearish put variants for moving-average and confirmed-trend scanners. By default it covers `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `AMD`, `TSLA`, `META`, `AMZN`, `GOOGL`, `NFLX`, and `AVGO`. It enables scanner submit using one contract per order, a configurable notional cap, no per-symbol cap, and the paper-trade-day time window. It is intended for collecting paper-trade data across a wider but still liquid ticker set.
+
 Smoke test the configured local environment:
 
 ```powershell
@@ -344,7 +383,35 @@ Smoke test the configured local environment:
 
 `smoke_preflight.py` checks sanitized settings, external Postgres connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation. `run_market_cycle_smoke.py` runs one market-cycle pass. `run_paper_submit_smoke.py` creates a one-contract paper order intent, submits it to Alpaca paper, requests cancellation by default, and reconciles. `run_full_smoke_suite.py` runs preflight, strategy seeding, market-cycle smoke, paper submit/cancel, and deterministic unit tests; use `--skip-paper-submit` for a non-ordering smoke run.
 
+Weekend/off-hours analysis:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\analyze_paper_learning.py --limit 500
+.\.venv\Scripts\python.exe .\scripts\replay_paper_decisions.py --limit 100
+.\.venv\Scripts\python.exe .\scripts\run_exit_cycle_smoke.py --phase-timeout-seconds 45
+.\.venv\Scripts\python.exe .\scripts\market_day_dashboard.py --limit 100
+```
+
+The learning report groups trades, non-trade rejection reasons, strategy/symbol performance, open lots, and recent job failures. The replay script reads recorded signals and order intents and reports whether they would preview or submit under current settings without placing orders.
+The dashboard script gives one market-day operating view: current mode/readiness, latest jobs and timings, exit attention, positions, P/L, and top learning summaries.
+
 The scanner reads active strategy configs with a `scan_signals` list, validates each signal spec, inserts valid `signals`, skips malformed specs, and records the run in `job_runs`. The market-cycle job can then optionally turn scanner-created signals into previewed or submitted paper orders when the feature switches and strategy config allow it.
+
+No-submit stress test the market cycle path without placing paper orders:
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\run_market_cycle_stress.py --scan-limit 50 --order-limit 25 --fill-page-size 25
+```
+
+Or call the API route:
+
+```text
+POST /api/v1/jobs/market-cycle-stress?scan_limit=50&order_limit=25&fill_page_size=25
+```
+
+The stress route forces submit, news, and exit evaluation off, but still scans, previews option contracts, optionally reconciles, and writes phase timings into `job_run.details.timings`.
+Market-cycle responses also include `phase_timeout_seconds` and `diagnostics`; `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS` is a soft budget that skips later phases once the cycle has already spent that many seconds.
+When exit evaluation needs attention, the market cycle writes `market_cycle.exit_attention_required` to audit logs with position counts, sampled errors/reasons, and reason categories.
 When a scan succeeds but does not create signals, the scan response and `job_runs.details` include `no_signal_reasons` to explain harmless no-op cases such as missing recent bars, missing quotes, or thresholds that were not crossed.
 
 Example strategy config:
@@ -496,17 +563,17 @@ MAX_AUTO_ORDERS_PER_DAY=3
 MAX_OPEN_POSITIONS=3
 MAX_OPEN_POSITIONS_PER_SYMBOL=1
 MAX_CONTRACTS_PER_ORDER=1
-MAX_ESTIMATED_PREMIUM_PER_ORDER=250
+MAX_ESTIMATED_PREMIUM_PER_ORDER=1000
 ```
 
 Automated submit is intended for paper trading right now. To intentionally enable fully automated paper trading, set `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=true`, `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, keep `AUTO_SUBMIT_REQUIRES_PAPER=true`, and enable both `scanner.preview.enabled` and `scanner.submit.enabled` on the strategy. Manual order intent submit is unchanged.
 
 ## Scheduled jobs
 
-`render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 30 minutes and calls:
+`render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 2 minutes from 9:00am to 5:00pm Eastern on weekdays and calls:
 
 ```text
-POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+POST /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100
 ```
 
 It is disabled by default with:
@@ -522,6 +589,10 @@ JOB_RETRY_DELAYS_SECONDS=10,30
 ```
 
 Retryable responses are `429`, `500`, `502`, `503`, and `504`, giving the job up to three total attempts.
+
+For high-frequency market-cycle crons, set `JOB_SKIP_HTTP_STATUS_CODES=429` so a platform throttle is treated as a skipped cycle instead of a failed cron run that keeps retrying into the next scheduled run.
+
+The `stocks-api-market-maintenance` cron runs at 8:30am and 5:30pm Eastern on weekdays.
 
 To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
 
@@ -594,6 +665,6 @@ Set these environment variables in Render:
 - `MAX_OPEN_POSITIONS=3`
 - `MAX_OPEN_POSITIONS_PER_SYMBOL=1`
 - `MAX_CONTRACTS_PER_ORDER=1`
-- `MAX_ESTIMATED_PREMIUM_PER_ORDER=250`
+- `MAX_ESTIMATED_PREMIUM_PER_ORDER=1000`
 - `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
 - `JOB_RETRY_DELAYS_SECONDS=10,30` on the cron service unless you want different retry timing

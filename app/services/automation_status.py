@@ -147,7 +147,12 @@ def _operational_summary(
         blockers.append("MARKET_CYCLE_SUBMIT_ENABLED is false")
     if not settings.trading_automation_enabled:
         blockers.append("TRADING_AUTOMATION_ENABLED is false")
-    if risk.get("should_block_new_entries") is True:
+    news_blocks_entries = (
+        settings.market_cycle_news_enabled
+        and risk.get("should_block_new_entries") is True
+    )
+
+    if news_blocks_entries:
         blockers.append("news risk gate is blocking new entry previews")
 
     effective_mode = "watching"
@@ -166,7 +171,7 @@ def _operational_summary(
         "news_gate": {
             "enabled": settings.market_cycle_news_enabled,
             "market_risk_level": risk.get("market_risk_level"),
-            "should_block_new_entries": risk.get("should_block_new_entries", False),
+            "should_block_new_entries": news_blocks_entries,
             "blocking_reasons": risk.get("blocking_reasons", []),
             "manual_review_symbols": risk.get("manual_review_symbols", []),
         },
@@ -212,7 +217,7 @@ def _paper_trading_readiness(
         warnings.append("MARKET_CYCLE_SUBMIT_ENABLED must be true to auto-submit paper orders")
     if not settings.trading_automation_enabled:
         warnings.append("TRADING_AUTOMATION_ENABLED must be true to auto-submit paper orders")
-    if risk.get("should_block_new_entries") is True:
+    if settings.market_cycle_news_enabled and risk.get("should_block_new_entries") is True:
         warnings.append("news risk gate is currently blocking new entry previews")
 
     submit_ready_strategies = []
@@ -239,7 +244,10 @@ def _paper_trading_readiness(
         and settings.market_cycle_submit_enabled
         and settings.trading_automation_enabled
         and bool(submit_ready_strategies)
-        and risk.get("should_block_new_entries") is not True,
+        and (
+            not settings.market_cycle_news_enabled
+            or risk.get("should_block_new_entries") is not True
+        ),
         "ready_after_switches": not blockers and bool(active_strategies),
         "blockers": blockers,
         "warnings": warnings,

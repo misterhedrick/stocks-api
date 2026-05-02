@@ -130,6 +130,12 @@ Current repo structure and purpose:
   - Deep-merges JSON scanner config patches by strategy name and supports direct scanner patch flags such as --lookback-minutes and --timeframe.
   - Enables or disables scanner.submit with conservative paper limits via set-submit.
   - Supports dry-run output for moving-average/confirmed-trend seeding, scanner patch previews, and submit-control previews.
+- scripts/seed_paper_trade_universe.py
+  - Seeds a broader liquid paper-trading universe.
+  - Default symbols: SPY, QQQ, AAPL, MSFT, NVDA, AMD, TSLA, META, AMZN, GOOGL, NFLX, AVGO.
+  - Creates/updates moving-average call/put and confirmed-trend call/put strategies for each symbol.
+  - Enables scanner.submit with one contract per order, configurable notional/spread caps, no per-symbol cap, and paper-trade-day windows.
+  - Supports --dry-run, repeated --symbol, and repeated --sample-price SYMBOL=PRICE.
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
 - scripts/run_market_cycle_smoke.py
@@ -147,7 +153,11 @@ Current repo structure and purpose:
   - GET /api/v1/automation/positions, bearer-protected.
   - Read-only position management status with ownership, exit config state, active exit order, P/L fields, and recommended action.
   - GET /api/v1/automation/performance, bearer-protected.
-  - Read-only paper performance review with FIFO matched option round trips, realized P/L, strategy summaries, recent round trips, and open lots.
+  - Read-only paper performance review with FIFO matched option round trips, realized P/L, strategy summaries, symbol summaries, recent round trips, and open lots.
+  - GET /api/v1/automation/trade-lifecycle, bearer-protected.
+  - Read-only open-position lifecycle view with ownership, linked entry intent, broker orders, entry fills, fill summary, active exit order, and exit recommendation.
+  - GET /api/v1/automation/trade-cases, bearer-protected.
+  - Read-only FIFO trade-case view for closed round trips and open lots, intended as the stable input shape for later AI review.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -200,10 +210,14 @@ Current repo structure and purpose:
 - app/schemas/options.py
   - Pydantic request/response schemas for option contract selection.
 - app/schemas/automation.py
-  - Pydantic response schemas for automation status.
+  - Pydantic response schemas for automation status, position management, performance, trade lifecycle, and trade cases.
 - app/services/automation_status.py
   - Service logic for reading active strategy automation config and latest job_run summaries.
   - Includes paper_trading_readiness in operational_summary so tomorrow's auto-paper switches can be checked before enabling submit.
+- app/services/trade_lifecycle.py
+  - Derived accounting views for open trade lifecycle and paper trade cases.
+  - Joins latest position snapshots to position ownership, linked entry order intent, broker orders, fills, active exit order, and exit recommendation.
+  - Reuses FIFO paper performance review for closed round trips and open lots.
 - app/services/order_intents.py
   - Domain/service logic to submit a previewed order intent through Alpaca.
   - Domain/service logic to generate a previewed order intent from a signal and latest option quote.

@@ -49,6 +49,7 @@ def main() -> None:
     seed_parser.add_argument("--long-window", type=int, default=20)
     seed_parser.add_argument("--lookback-minutes", type=int, default=1440)
     seed_parser.add_argument("--timeframe", default="5Min")
+    seed_parser.add_argument("--min-change-percent", default="0.10")
     seed_parser.add_argument("--confidence", default="0.6200")
     seed_parser.add_argument(
         "--target-strike",
@@ -72,7 +73,7 @@ def main() -> None:
     confirmed_parser.add_argument("--long-window", type=int, default=21)
     confirmed_parser.add_argument("--lookback-minutes", type=int, default=1440)
     confirmed_parser.add_argument("--timeframe", default="5Min")
-    confirmed_parser.add_argument("--min-change-percent", default="0.20")
+    confirmed_parser.add_argument("--min-change-percent", default="0.35")
     confirmed_parser.add_argument("--confidence", default="0.6800")
     confirmed_parser.add_argument("--target-strike")
     confirmed_parser.add_argument("--sample-price")
@@ -100,19 +101,19 @@ def main() -> None:
 
     submit_parser = subparsers.add_parser(
         "set-submit",
-        help="Enable or disable scanner auto-submit with conservative paper limits.",
+        help="Enable or disable scanner auto-submit metadata. Runtime volume is controlled by env.",
     )
     submit_parser.add_argument("--name", required=True)
     submit_group = submit_parser.add_mutually_exclusive_group(required=True)
     submit_group.add_argument("--enable", action="store_true")
     submit_group.add_argument("--disable", action="store_true")
-    submit_parser.add_argument("--max-orders-per-cycle", type=int, default=1)
+    submit_parser.add_argument("--max-orders-per-cycle", type=int, default=100)
     submit_parser.add_argument("--max-contracts-per-order", type=int, default=1)
-    submit_parser.add_argument("--max-contracts-per-cycle", type=int, default=1)
-    submit_parser.add_argument("--max-notional-per-order", default="200.00")
-    submit_parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
-    submit_parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
-    submit_parser.add_argument("--max-orders-per-trading-day", type=int, default=1)
+    submit_parser.add_argument("--max-contracts-per-cycle", type=int, default=100)
+    submit_parser.add_argument("--max-notional-per-order", default="2500.00")
+    submit_parser.add_argument("--max-open-contracts-per-symbol", type=int, default=100)
+    submit_parser.add_argument("--max-open-contracts-per-strategy", type=int, default=100)
+    submit_parser.add_argument("--max-orders-per-trading-day", type=int, default=500)
     submit_parser.add_argument("--trading-day-timezone", default="America/New_York")
     submit_parser.add_argument("--trade-window-timezone", default="America/New_York")
     submit_parser.add_argument("--trade-window-start", default="09:45")
@@ -216,6 +217,7 @@ def moving_average_payload_from_args(args: argparse.Namespace) -> dict[str, Any]
         long_window=args.long_window,
         lookback_minutes=args.lookback_minutes,
         timeframe=args.timeframe,
+        min_change_percent=args.min_change_percent,
         confidence=args.confidence,
     )
 
@@ -477,8 +479,8 @@ def _price_for_symbol(symbol: str, *, sample_price: str | None) -> Decimal:
     if latest_quote is None:
         raise RuntimeError(f"No latest stock quote returned for {symbol}")
 
-    bid_price = latest_quote.quote.bid_price
-    ask_price = latest_quote.quote.ask_price
+    bid_price = _usable_quote_price(latest_quote.quote.bid_price)
+    ask_price = _usable_quote_price(latest_quote.quote.ask_price)
     if bid_price is not None and ask_price is not None:
         return (bid_price + ask_price) / Decimal("2")
     if ask_price is not None:
@@ -486,6 +488,12 @@ def _price_for_symbol(symbol: str, *, sample_price: str | None) -> Decimal:
     if bid_price is not None:
         return bid_price
     raise RuntimeError(f"Latest stock quote for {symbol} had no bid or ask")
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _whole_dollar(value: Decimal) -> Decimal:

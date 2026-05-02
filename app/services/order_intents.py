@@ -141,8 +141,10 @@ def preview_order_intent_from_signal(
             "selection": _selection_preview(selection),
         },
     )
+    signal.status = "previewed"
 
     db.add(order_intent)
+    db.add(signal)
     db.flush()
     record_audit_log(
         db,
@@ -340,8 +342,8 @@ def _build_quote_preview(
     supplied_limit_price: Decimal | None,
 ) -> dict[str, object]:
     quote = latest_quote.quote
-    bid_price = quote.bid_price
-    ask_price = quote.ask_price
+    bid_price = _usable_quote_price(quote.bid_price)
+    ask_price = _usable_quote_price(quote.ask_price)
     midpoint = _midpoint(bid_price, ask_price)
     spread = ask_price - bid_price if bid_price is not None and ask_price is not None else None
     suggested_limit_price = supplied_limit_price or midpoint
@@ -460,6 +462,12 @@ def _decimal_to_string(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
 
 
 def _decimal_from_preview(value: object) -> Decimal | None:

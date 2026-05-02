@@ -2,6 +2,7 @@ services:
   - type: web
     name: stocks-api
     env: python
+    region: virginia
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: bash ./start.sh
@@ -13,18 +14,26 @@ services:
         value: production
       - key: APP_DEBUG
         value: false
+      - key: APP_NAME
+        value: stocks-api
       - key: LOG_LEVEL
         value: INFO
+      - key: API_V1_PREFIX
+        value: /api/v1
       - key: ADMIN_API_TOKEN
         sync: false
       - key: DATABASE_URL
         sync: false
+      - key: DATABASE_CONNECT_TIMEOUT_SECONDS
+        value: 5
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_API_SECRET
         sync: false
       - key: ALPACA_PAPER
         value: true
+      - key: ALPACA_REQUEST_TIMEOUT_SECONDS
+        value: 10
       - key: AUTO_MIGRATE_ON_STARTUP
         value: true
       - key: MARKET_CYCLE_SCAN_ENABLED
@@ -41,31 +50,50 @@ services:
         value: true
       - key: NEWS_REQUEST_TIMEOUT_SECONDS
         value: 10
+      - key: NEWS_MARKET_RSS_FEEDS
+        value: 'https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=Federal%20Reserve%20OR%20interest%20rates%20OR%20inflation%20OR%20CPI%20OR%20PPI%20OR%20jobs%20report&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=US%20economy%20OR%20Treasury%20yields%20OR%20dollar%20OR%20recession%20OR%20GDP&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=world%20markets%20OR%20global%20stocks%20OR%20geopolitical%20risk%20OR%20oil%20prices%20OR%20war%20OR%20tariffs&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=earnings%20guidance%20OR%20market%20volatility%20OR%20VIX%20OR%20credit%20markets%20OR%20banking%20sector&hl=en-US&gl=US&ceid=US:en'
+      - key: NEWS_TICKER_RSS_TEMPLATE
+        value: 'https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en'
       - key: TRADING_AUTOMATION_ENABLED
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
         value: true
       - key: MAX_AUTO_ORDERS_PER_CYCLE
-        value: 50
-      - key: MAX_AUTO_ORDERS_PER_DAY
-        value: 50
-      - key: MAX_OPEN_POSITIONS
         value: 100
+      - key: MAX_AUTO_ORDERS_PER_DAY
+        value: 500
+      - key: MAX_OPEN_POSITIONS
+        value: 500
       - key: MAX_OPEN_POSITIONS_PER_SYMBOL
         value: 100
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
-        value: 250
+        value: 2500
+      - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
+        value: 70
+      - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
+        value: 0.10
+      - key: PAPER_STRATEGY_TREND_MIN_CHANGE_PERCENT
+        value: 0.35
+      - key: PAPER_STRATEGY_MAX_SPREAD
+        value: 0.20
+      - key: PAPER_STRATEGY_MAX_SPREAD_PERCENT
+        value: 20
+      - key: PAPER_STRATEGY_PROFIT_TARGET_PERCENT
+        value: 25
+      - key: PAPER_STRATEGY_STOP_LOSS_PERCENT
+        value: 15
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   - type: cron
     name: stocks-api-market-cycle
     env: python
+    region: virginia
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/5 * * * *"
+    schedule: "*/2 13-20 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -74,8 +102,60 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
-        value: 90
+        value: 300
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: 60,180
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-exits
+    env: python
+    region: virginia
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "*/1 13-20 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45
+      - key: JOB_TIMEOUT_SECONDS
+        value: 180
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: 60,180
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-maintenance
+    env: python
+    region: virginia
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "30 12,21 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true
+      - key: JOB_TIMEOUT_SECONDS
+        value: 600
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: 60,180,300,600,900
       - key: ADMIN_API_TOKEN
         sync: false

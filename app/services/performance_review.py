@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import BrokerOrder, Fill, OrderIntent, Strategy
+from app.db.models import BrokerOrder, Fill, OrderIntent, Signal, Strategy
 
 
 @dataclass(slots=True)
@@ -23,6 +23,15 @@ class FillRecord:
     strategy_id: uuid.UUID | None
     strategy_name: str | None
     order_intent_id: uuid.UUID | None
+    order_intent_side: str | None
+    order_intent_rationale: str | None
+    order_intent_preview: dict[str, Any]
+    signal_id: uuid.UUID | None
+    signal_type: str | None
+    signal_direction: str | None
+    signal_confidence: Decimal | None
+    signal_rationale: str | None
+    signal_market_context: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -33,7 +42,10 @@ class PerformanceReviewResult:
     open_positions: list[dict[str, Any]]
     totals: dict[str, Any]
     by_strategy: list[dict[str, Any]]
+    by_symbol: list[dict[str, Any]]
     recent_round_trips: list[dict[str, Any]]
+    unmatched_closing_fills: list[dict[str, Any]] = field(default_factory=list)
+    ignored_fills: list[dict[str, Any]] = field(default_factory=list)
 
 
 def get_paper_performance_review(
@@ -42,7 +54,9 @@ def get_paper_performance_review(
     limit: int = 500,
 ) -> PerformanceReviewResult:
     fill_records = _fill_records(db, limit=limit)
-    round_trips, open_lots = _match_round_trips(fill_records)
+    round_trips, open_lots, unmatched_closing_fills, ignored_fills = (
+        _match_round_trips(fill_records)
+    )
 
     return PerformanceReviewResult(
         generated_at=datetime.now(timezone.utc),
@@ -51,7 +65,10 @@ def get_paper_performance_review(
         open_positions=_open_position_summaries(open_lots),
         totals=_totals(round_trips),
         by_strategy=_strategy_summaries(round_trips),
+        by_symbol=_symbol_summaries(round_trips),
         recent_round_trips=round_trips[-25:][::-1],
+        unmatched_closing_fills=unmatched_closing_fills[-25:][::-1],
+        ignored_fills=ignored_fills[-25:][::-1],
     )
 
 
@@ -67,11 +84,21 @@ def _fill_records(db: Session, *, limit: int) -> list[FillRecord]:
             OrderIntent.strategy_id,
             Strategy.name,
             OrderIntent.id,
+            OrderIntent.side,
+            OrderIntent.rationale,
+            OrderIntent.preview,
+            Signal.id,
+            Signal.signal_type,
+            Signal.direction,
+            Signal.confidence,
+            Signal.rationale,
+            Signal.market_context,
         )
         .select_from(Fill)
         .join(BrokerOrder, Fill.broker_order_id == BrokerOrder.id, isouter=True)
         .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id, isouter=True)
         .join(Strategy, OrderIntent.strategy_id == Strategy.id, isouter=True)
+        .join(Signal, OrderIntent.signal_id == Signal.id, isouter=True)
         .order_by(Fill.filled_at.asc())
         .limit(limit)
     )
@@ -83,6 +110,8 @@ def _fill_records(db: Session, *, limit: int) -> list[FillRecord]:
 
 def _coerce_fill_record(row: object) -> FillRecord:
     values = tuple(row)
+    order_intent_preview = values[11] if len(values) > 11 else {}
+    signal_market_context = values[17] if len(values) > 17 else {}
     return FillRecord(
         fill_id=values[0],
         filled_at=values[1],
@@ -93,14 +122,34 @@ def _coerce_fill_record(row: object) -> FillRecord:
         strategy_id=values[6],
         strategy_name=values[7],
         order_intent_id=values[8],
+        order_intent_side=values[9] if len(values) > 9 else None,
+        order_intent_rationale=values[10] if len(values) > 10 else None,
+        order_intent_preview=(
+            order_intent_preview if isinstance(order_intent_preview, dict) else {}
+        ),
+        signal_id=values[12] if len(values) > 12 else None,
+        signal_type=values[13] if len(values) > 13 else None,
+        signal_direction=values[14] if len(values) > 14 else None,
+        signal_confidence=values[15] if len(values) > 15 else None,
+        signal_rationale=values[16] if len(values) > 16 else None,
+        signal_market_context=(
+            signal_market_context if isinstance(signal_market_context, dict) else {}
+        ),
     )
 
 
 def _match_round_trips(
     fills: list[FillRecord],
-) -> tuple[list[dict[str, Any]], dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     open_lots: dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]] = {}
     round_trips: list[dict[str, Any]] = []
+    unmatched_closing_fills: list[dict[str, Any]] = []
+    ignored_fills: list[dict[str, Any]] = []
 
     for fill in fills:
         key = (fill.symbol, fill.strategy_id)
@@ -116,16 +165,34 @@ def _match_round_trips(
                     "entry_fill_id": fill.fill_id,
                     "entry_at": fill.filled_at,
                     "order_intent_id": fill.order_intent_id,
+                    "entry_context": _fill_learning_context(fill),
+                }
+            )
+            continue
+
+        if fill.side == "sell_short":
+            unmatched_closing_fills.append(
+                {
+                    **_fill_summary_for_learning(fill),
+                    "reason": "sell_short fill is not matched as a long-option exit",
                 }
             )
             continue
 
         if fill.side != "sell":
+            ignored_fills.append(
+                {
+                    **_fill_summary_for_learning(fill),
+                    "reason": "unsupported fill side",
+                }
+            )
             continue
 
         remaining_sell_quantity = fill.quantity
         lots = open_lots.get(key, [])
+        matched_any = False
         while remaining_sell_quantity > 0 and lots:
+            matched_any = True
             lot = lots[0]
             matched_quantity = min(remaining_sell_quantity, lot["remaining_quantity"])
             entry_price = Decimal(str(lot["entry_price"]))
@@ -161,6 +228,14 @@ def _match_round_trips(
                     "holding_seconds": holding_seconds,
                     "entry_fill_id": str(lot["entry_fill_id"]),
                     "exit_fill_id": str(fill.fill_id),
+                    "entry_order_intent_id": str(lot["order_intent_id"])
+                    if lot["order_intent_id"] is not None
+                    else None,
+                    "exit_order_intent_id": str(fill.order_intent_id)
+                    if fill.order_intent_id is not None
+                    else None,
+                    "entry_context": lot["entry_context"],
+                    "exit_context": _fill_learning_context(fill),
                 }
             )
 
@@ -169,7 +244,51 @@ def _match_round_trips(
             if lot["remaining_quantity"] <= 0:
                 lots.pop(0)
 
-    return round_trips, open_lots
+        if remaining_sell_quantity > 0 or not matched_any:
+            unmatched_closing_fills.append(
+                {
+                    **_fill_summary_for_learning(fill),
+                    "unmatched_quantity": _decimal_string(remaining_sell_quantity),
+                    "reason": "no open buy lot for symbol and strategy",
+                }
+            )
+
+    return round_trips, open_lots, unmatched_closing_fills, ignored_fills
+
+
+def _fill_learning_context(fill: FillRecord) -> dict[str, Any]:
+    return {
+        "order_intent": {
+            "id": str(fill.order_intent_id) if fill.order_intent_id is not None else None,
+            "side": fill.order_intent_side,
+            "rationale": fill.order_intent_rationale,
+            "preview": fill.order_intent_preview,
+        },
+        "signal": {
+            "id": str(fill.signal_id) if fill.signal_id is not None else None,
+            "signal_type": fill.signal_type,
+            "direction": fill.signal_direction,
+            "confidence": _optional_decimal_string(fill.signal_confidence),
+            "rationale": fill.signal_rationale,
+            "market_context": fill.signal_market_context,
+        },
+    }
+
+
+def _fill_summary_for_learning(fill: FillRecord) -> dict[str, Any]:
+    return {
+        "fill_id": str(fill.fill_id),
+        "filled_at": fill.filled_at.isoformat(),
+        "symbol": fill.symbol,
+        "side": fill.side,
+        "quantity": _decimal_string(fill.quantity),
+        "price": _decimal_string(fill.price),
+        "strategy_id": str(fill.strategy_id) if fill.strategy_id is not None else None,
+        "strategy_name": fill.strategy_name,
+        "order_intent_id": str(fill.order_intent_id)
+        if fill.order_intent_id is not None
+        else None,
+    }
 
 
 def _open_position_summaries(
@@ -286,8 +405,44 @@ def _strategy_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any
     )
 
 
+def _symbol_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in round_trips:
+        grouped.setdefault(str(item.get("symbol")), []).append(item)
+
+    summaries = []
+    for symbol, items in grouped.items():
+        totals = _totals(items)
+        strategy_names = sorted(
+            {
+                str(item["strategy_name"])
+                for item in items
+                if item.get("strategy_name") is not None
+            }
+        )
+        summaries.append(
+            {
+                "symbol": symbol,
+                "matched_round_trips": len(items),
+                "strategy_names": strategy_names,
+                **totals,
+            }
+        )
+    return sorted(
+        summaries,
+        key=lambda item: Decimal(str(item["realized_pnl"])),
+        reverse=True,
+    )
+
+
 def _decimal_string(value: Decimal) -> str:
     normalized = value.normalize()
     if normalized == normalized.to_integral():
         return str(normalized.quantize(Decimal("1")))
     return format(normalized, "f")
+
+
+def _optional_decimal_string(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return _decimal_string(Decimal(str(value)))

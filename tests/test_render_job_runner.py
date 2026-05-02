@@ -3,10 +3,16 @@ from __future__ import annotations
 import os
 import unittest
 from io import BytesIO, StringIO
-from urllib.error import HTTPError
+from email.message import Message
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
-from scripts.run_render_job import build_job_url, is_enabled, run_job_from_env
+from scripts.run_render_job import (
+    build_job_url,
+    format_response_body_for_logs,
+    is_enabled,
+    run_job_from_env,
+)
 
 
 class FakeResponse:
@@ -41,6 +47,26 @@ class RenderJobRunnerTests(unittest.TestCase):
             ),
             "https://stocks-api-z11i.onrender.com/api/v1/jobs/reconcile-broker?order_limit=100",
         )
+
+    def test_format_response_body_compacts_large_job_payloads(self) -> None:
+        body = (
+            '{"job_run":{"id":"job-123","job_name":"pre_market_maintenance",'
+            '"status":"succeeded"},"phase":"pre_market",'
+            '"cleanup":{"signals_marked_stale":153,"order_intents_marked_stale":29,'
+            '"signal_ids":["a","b","c"]},'
+            '"reconcile":{"orders_seen":63,"orders_updated":63,"fills_seen":57,'
+            '"positions_seen":4},'
+            '"news":{"risk_assessment":{"market_risk_level":"high",'
+            '"should_block_new_entries":true,'
+            '"manual_review_symbols":["AAPL","AMD","AMZN"]}}}'
+        )
+
+        summary = format_response_body_for_logs(body)
+
+        self.assertIn("job=pre_market_maintenance", summary)
+        self.assertIn("cleanup.signals_marked_stale=153", summary)
+        self.assertIn("news.market_risk_level=high", summary)
+        self.assertNotIn("signal_ids", summary)
 
     def test_disabled_job_exits_successfully_without_required_secrets(self) -> None:
         with patch.dict(os.environ, {"SCHEDULED_JOBS_ENABLED": "false"}, clear=True), patch(
@@ -85,6 +111,81 @@ class RenderJobRunnerTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(0)
 
+    def test_job_honors_retry_after_header_for_retryable_http_errors(self) -> None:
+        headers = Message()
+        headers["Retry-After"] = "45"
+        retryable_error = HTTPError(
+            "https://example.test/api/v1/jobs/market-maintenance",
+            429,
+            "Too Many Requests",
+            hdrs=headers,
+            fp=BytesIO(b"Too Many Requests"),
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-maintenance",
+                "JOB_RETRY_DELAYS_SECONDS": "10",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=[retryable_error, FakeResponse()],
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(45)
+
+    def test_job_skips_configured_http_status_without_retrying(self) -> None:
+        skippable_error = HTTPError(
+            "https://example.test/api/v1/jobs/market-cycle",
+            429,
+            "Too Many Requests",
+            hdrs=None,
+            fp=BytesIO(b"Too Many Requests"),
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-cycle",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+                "JOB_SKIP_HTTP_STATUS_CODES": "429",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=skippable_error,
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
     def test_job_does_not_retry_non_retryable_http_errors(self) -> None:
         non_retryable_error = HTTPError(
             "https://example.test/api/v1/jobs/market-cycle",
@@ -120,6 +221,62 @@ class RenderJobRunnerTests(unittest.TestCase):
 
         self.assertEqual(urlopen.call_count, 1)
         sleep.assert_not_called()
+
+    def test_job_retries_read_timeouts(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-cycle",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=[TimeoutError("timed out"), FakeResponse()],
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0)
+
+    def test_job_retries_url_errors_as_transient_wakeups(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-maintenance",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=[URLError("service is waking up"), FakeResponse()],
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 0)
+
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0)
 
 
 if __name__ == "__main__":

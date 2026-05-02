@@ -37,11 +37,12 @@ def main() -> None:
         description="Prepare real paper strategies for a higher-volume paper trading day."
     )
     parser.add_argument("--apply", action="store_true", help="Persist the strategy changes.")
-    parser.add_argument("--max-orders-per-cycle", type=int, default=20)
-    parser.add_argument("--max-orders-per-day", type=int, default=50)
-    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=50)
-    parser.add_argument("--trade-window-start", default="09:35")
-    parser.add_argument("--trade-window-end", default="15:50")
+    parser.add_argument("--max-orders-per-cycle", type=int, default=1)
+    parser.add_argument("--max-orders-per-day", type=int, default=2)
+    parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
+    parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
+    parser.add_argument("--trade-window-start", default="09:45")
+    parser.add_argument("--trade-window-end", default="15:30")
     parser.add_argument(
         "--keep-legacy-active",
         action="store_true",
@@ -91,7 +92,7 @@ def main() -> None:
                 "max_contracts_per_order": 1,
                 "max_contracts_per_cycle": args.max_orders_per_cycle,
                 "max_notional_per_order": str(max_notional),
-                "max_open_contracts_per_symbol": None,
+                "max_open_contracts_per_symbol": args.max_open_contracts_per_symbol,
                 "max_open_contracts_per_strategy": args.max_open_contracts_per_strategy,
                 "max_orders_per_trading_day": args.max_orders_per_day,
                 "trading_day_timezone": "America/New_York",
@@ -130,7 +131,7 @@ def main() -> None:
                         "source": "prepare_paper_trade_day",
                         "submit_config": submit_config,
                     },
-                    )
+                )
 
         if not args.keep_legacy_active:
             legacy_strategies = list(

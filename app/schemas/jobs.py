@@ -75,3 +75,27 @@ class MarketCycleRead(BaseModel):
     exits: dict[str, Any] | None
     news: dict[str, Any] | None
     submit: dict[str, Any] | None
+    timings: dict[str, float] | None = None
+    phase_timeout_seconds: int | None = None
+    diagnostics: dict[str, Any] | None = None
+
+
+class MarketMaintenanceRead(BaseModel):
+    job_run: JobRunRead
+    phase: str
+    cleanup: dict[str, Any]
+    reconcile: dict[str, Any] | None
+    news: dict[str, Any] | None
+    performance: dict[str, Any] | None
+    readiness: dict[str, Any]
+    settings_snapshot: dict[str, Any]
+
+
+class TradingDataResetRead(BaseModel):
+    job_run: JobRunRead
+    dry_run: bool
+    include_history: bool
+    counts_before: dict[str, int]
+    deleted: dict[str, int]
+    kept_tables: list[str]
+    confirmation_phrase: str

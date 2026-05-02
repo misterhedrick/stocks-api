@@ -20,10 +20,13 @@ from app.schemas.automation import (
 )
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
+from app.services.market_maintenance import MarketMaintenanceResult
 from app.services.news_scanner import NewsScanResult
 from app.services.performance_review import PerformanceReviewResult
 from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
+from app.services.trade_lifecycle import TradeCasesResult, TradeLifecycleResult
+from app.services.trading_reset import TradingDataResetResult
 
 
 class FakeRouteSession:
@@ -459,6 +462,159 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=75,
         )
 
+    def test_market_cycle_stress_route_forces_no_submit_overrides(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_cycle_result()
+
+        with patch(
+            "app.api.routes.jobs.run_market_cycle",
+            return_value=result,
+        ) as market_cycle:
+            response = client.post(
+                "/api/v1/jobs/market-cycle-stress?scan_limit=130&order_limit=25&fill_page_size=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["submit_enabled"])
+        self.assertEqual(response.json()["timings"]["total_seconds"], 1.23)
+        market_cycle.assert_called_once_with(
+            db,
+            scan_limit=130,
+            order_limit=25,
+            fill_page_size=25,
+            preview_enabled_override=True,
+            reconcile_enabled_override=True,
+            exit_enabled_override=False,
+            news_enabled_override=False,
+            submit_enabled_override=False,
+        )
+
+    def test_market_maintenance_route_returns_auto_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("pre_market")
+
+        with patch(
+            "app.api.routes.jobs.run_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/market-maintenance?phase=auto&news_enabled=false",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "pre_market")
+        maintenance.assert_called_once_with(
+            db,
+            phase="auto",
+            order_limit=None,
+            fill_page_size=None,
+            stale_after_hours=None,
+            news_enabled=False,
+        )
+
+    def test_pre_market_maintenance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("pre_market")
+
+        with patch(
+            "app.api.routes.jobs.run_pre_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/pre-market-maintenance?order_limit=25&fill_page_size=50&stale_after_hours=8&news_enabled=false",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "pre_market")
+        self.assertEqual(response.json()["cleanup"]["signals_marked_stale"], 1)
+        self.assertEqual(response.json()["reconcile"]["orders_seen"], 2)
+        maintenance.assert_called_once_with(
+            db,
+            order_limit=25,
+            fill_page_size=50,
+            stale_after_hours=8,
+            news_enabled=False,
+        )
+
+    def test_post_market_maintenance_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_maintenance_result("post_market")
+
+        with patch(
+            "app.api.routes.jobs.run_post_market_maintenance",
+            return_value=result,
+        ) as maintenance:
+            response = client.post(
+                "/api/v1/jobs/post-market-maintenance?order_limit=250&fill_page_size=250&stale_after_hours=0",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phase"], "post_market")
+        self.assertEqual(response.json()["performance"]["matched_round_trips"], 1)
+        maintenance.assert_called_once_with(
+            db,
+            order_limit=250,
+            fill_page_size=250,
+            stale_after_hours=0,
+        )
+
+    def test_reset_trading_data_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_trading_data_reset_result()
+
+        with patch(
+            "app.api.routes.jobs.run_trading_data_reset",
+            return_value=result,
+        ) as reset:
+            response = client.post(
+                "/api/v1/jobs/reset-trading-data?dry_run=false&confirm=RESET_TRADING_DATA",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["dry_run"])
+        self.assertEqual(response.json()["deleted"]["signals"], 5)
+        reset.assert_called_once_with(
+            db,
+            dry_run=False,
+            include_history=True,
+            confirm="RESET_TRADING_DATA",
+        )
+
     def test_evaluate_exits_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -689,6 +845,13 @@ class RouteBehaviorTests(unittest.TestCase):
                     "realized_pnl": "35",
                 }
             ],
+            by_symbol=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "matched_round_trips": 1,
+                    "realized_pnl": "35",
+                }
+            ],
             recent_round_trips=[
                 {
                     "symbol": "SPY260501C00500000",
@@ -712,6 +875,79 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["fills_seen"], 2)
         self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
         performance.assert_called_once_with(db, limit=25)
+
+    def test_trade_lifecycle_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = TradeLifecycleResult(
+            generated_at=now,
+            positions_seen=1,
+            managed_positions=1,
+            unmanaged_positions=0,
+            positions=[
+                {
+                    "symbol": "SPY260501C00500000",
+                    "ownership": {"managed": True},
+                    "entry_order_intent": {"id": str(uuid.uuid4())},
+                    "entry_fill_summary": {"filled_notional": "100"},
+                    "recommended_action": "hold",
+                }
+            ],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_trade_lifecycle",
+            return_value=result,
+        ) as lifecycle:
+            response = client.get(
+                "/api/v1/automation/trade-lifecycle?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["positions_seen"], 1)
+        self.assertEqual(response.json()["positions"][0]["recommended_action"], "hold")
+        lifecycle.assert_called_once_with(db, limit=25)
+
+    def test_trade_cases_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = TradeCasesResult(
+            generated_at=now,
+            fills_seen=2,
+            matched_round_trips=1,
+            open_positions=[],
+            recent_round_trips=[{"symbol": "SPY260501C00500000", "realized_pnl": "35"}],
+            totals={"realized_pnl": "35"},
+            by_strategy=[{"strategy_name": "Confirmed Trend", "realized_pnl": "35"}],
+            by_symbol=[{"symbol": "SPY260501C00500000", "realized_pnl": "35"}],
+        )
+
+        with patch(
+            "app.api.routes.automation.get_trade_cases",
+            return_value=result,
+        ) as trade_cases:
+            response = client.get(
+                "/api/v1/automation/trade-cases?limit=25",
+                headers={"Authorization": "Bearer change-me"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["matched_round_trips"], 1)
+        self.assertEqual(response.json()["by_symbol"][0]["realized_pnl"], "35")
+        trade_cases.assert_called_once_with(db, limit=25)
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
@@ -791,6 +1027,87 @@ def build_market_cycle_result() -> MarketCycleResult:
         exits={"status": "disabled"},
         news={"status": "disabled"},
         submit={"status": "disabled"},
+        timings={"total_seconds": 1.23},
+    )
+
+
+def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name=f"{phase}_maintenance",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+
+    return MarketMaintenanceResult(
+        job_run=job_run,
+        phase=phase,
+        cleanup={
+            "signals_marked_stale": 1,
+            "order_intents_marked_stale": 1,
+            "signal_ids": [str(uuid.uuid4())],
+            "order_intent_ids": [str(uuid.uuid4())],
+        },
+        reconcile={"orders_seen": 2, "fills_seen": 1, "positions_seen": 1},
+        news={"status": "disabled"} if phase == "pre_market" else None,
+        performance={
+            "fills_seen": 2,
+            "matched_round_trips": 1,
+            "totals": {"realized_pnl": "25"},
+        }
+        if phase == "post_market"
+        else None,
+        readiness={
+            "active_strategies": 1,
+            "preview_enabled_strategies": 1,
+            "submit_enabled_strategies": 1,
+        },
+        settings_snapshot={"paper_mode": True},
+    )
+
+
+def build_trading_data_reset_result() -> TradingDataResetResult:
+    now = datetime.now(timezone.utc)
+    job_run = JobRun(
+        id=uuid.uuid4(),
+        job_name="trading_data_reset",
+        status="succeeded",
+        started_at=now,
+        finished_at=now,
+        details={},
+        error=None,
+        created_at=now,
+    )
+
+    return TradingDataResetResult(
+        job_run=job_run,
+        dry_run=False,
+        include_history=True,
+        counts_before={
+            "fills": 2,
+            "broker_orders": 3,
+            "order_intents": 4,
+            "signals": 5,
+            "position_snapshots": 6,
+            "audit_logs": 7,
+            "job_runs": 8,
+        },
+        deleted={
+            "fills": 2,
+            "broker_orders": 3,
+            "order_intents": 4,
+            "signals": 5,
+            "position_snapshots": 6,
+            "audit_logs": 7,
+            "job_runs": 8,
+        },
+        kept_tables=["strategies"],
+        confirmation_phrase="RESET_TRADING_DATA",
     )
 
 

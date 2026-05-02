@@ -54,7 +54,10 @@ def main() -> None:
 
     trading_client = AlpacaTradingClient.from_settings()
     market_data_client = AlpacaMarketDataClient.from_settings()
-    option_symbol = _find_cheap_option_symbol(trading_client, market_data_client)
+    option_symbol, limit_price = _find_cheap_option_symbol(
+        trading_client,
+        market_data_client,
+    )
 
     with SessionLocal() as db:
         strategy = _get_or_create_strategy(db)
@@ -69,6 +72,7 @@ def main() -> None:
             market_context={
                 "source": "scripts/run_paper_submit_smoke.py",
                 "selected_option_symbol": option_symbol,
+                "selected_limit_price": str(limit_price),
             },
             status="new",
         )
@@ -97,6 +101,7 @@ def main() -> None:
                 side="buy",
                 quantity=1,
                 order_type="limit",
+                limit_price=limit_price,
                 time_in_force="day",
                 max_estimated_notional=Decimal("150.00"),
                 max_spread=MAX_SPREAD,
@@ -215,7 +220,7 @@ def _get_or_create_strategy(db) -> Strategy:
 def _find_cheap_option_symbol(
     trading_client: AlpacaTradingClient,
     market_data_client: AlpacaMarketDataClient,
-) -> str:
+) -> tuple[str, Decimal]:
     today = date.today()
     contracts_page = trading_client.list_option_contracts(
         underlying_symbol=UNDERLYING,
@@ -256,7 +261,7 @@ def _find_cheap_option_symbol(
                 f"ask={quote.ask_price}",
                 f"spread={spread}",
             )
-            return contract.symbol
+            return contract.symbol, quote.ask_price
         rejection_reasons.append(
             f"{contract.symbol}: ask={quote.ask_price} spread={spread}"
         )
