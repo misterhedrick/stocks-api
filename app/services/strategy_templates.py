@@ -86,7 +86,7 @@ def build_moving_average_strategy_payload(
     target_strike: Decimal,
     name: str | None = None,
     option_type: str = "call",
-    trigger: str = "bullish_trend",
+    trigger: str = "bullish_cross",
     short_window: int = 5,
     long_window: int = 20,
     lookback_minutes: int = 1440,

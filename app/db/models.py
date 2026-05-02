@@ -249,6 +249,136 @@ class JobRun(Base):
     )
 
 
+class TradeCase(Base):
+    __tablename__ = "trade_cases"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        index=True,
+    )
+    entry_order_intent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("order_intents.id", ondelete="SET NULL"),
+        index=True,
+    )
+    entry_fill_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fills.id", ondelete="SET NULL"),
+        index=True,
+    )
+    exit_fill_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fills.id", ondelete="SET NULL"),
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    underlying_symbol: Mapped[str | None] = mapped_column(String(16), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    entry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    exit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    exit_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    realized_pl: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    realized_pl_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 4))
+    is_open: Mapped[bool] = mapped_column(default=True, server_default=text("true"), nullable=False)
+    context: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    ai_reviews: Mapped[list["AiTradeReview"]] = relationship(back_populates="trade_case")
+
+
+class AiTradeReview(Base):
+    __tablename__ = "ai_trade_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    trade_case_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("trade_cases.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    review_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    review_status: Mapped[str] = mapped_column(
+        String(30),
+        default="pending",
+        server_default="pending",
+        nullable=False,
+    )
+    assessment: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    raw_response: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    trade_case: Mapped[TradeCase] = relationship(back_populates="ai_reviews")
+    suggestions: Mapped[list["StrategyChangeSuggestion"]] = relationship(back_populates="ai_trade_review")
+
+
+class StrategyChangeSuggestion(Base):
+    __tablename__ = "strategy_change_suggestions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    ai_trade_review_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ai_trade_reviews.id", ondelete="SET NULL"),
+        index=True,
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        index=True,
+    )
+    suggestion_type: Mapped[str] = mapped_column(String(60), index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    proposed_config_patch: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="pending",
+        server_default="pending",
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    ai_trade_review: Mapped[AiTradeReview | None] = relationship(back_populates="suggestions")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

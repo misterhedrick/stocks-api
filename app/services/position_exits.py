@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.db.models import BrokerOrder, JobRun, OrderIntent, PositionSnapshot, Strategy
+from app.db.models import BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.order_intents import (
@@ -143,7 +143,13 @@ def evaluate_position_exits(
             continue
 
         positions_evaluated += 1
-        trigger_reason = _exit_trigger_reason(position, exit_config, today=date.today())
+        entry_time = _entry_fill_time(db, ownership)
+        trigger_reason = _exit_trigger_reason(
+            position,
+            exit_config,
+            today=datetime.now(ZoneInfo("America/New_York")).date(),
+            entry_time=entry_time,
+        )
         if trigger_reason is None:
             no_exit_reasons.append(f"{position.symbol}: no exit rule triggered")
             continue
@@ -432,6 +438,7 @@ def _exit_trigger_reason(
     exit_config: dict[str, Any],
     *,
     today: date,
+    entry_time: datetime | None = None,
 ) -> str | None:
     pnl_percent = _unrealized_pl_percent(position)
     stop_loss_percent = _optional_positive_decimal(exit_config.get("stop_loss_percent"))
@@ -458,6 +465,17 @@ def _exit_trigger_reason(
         days_to_expiration = (expiration_date - today).days
         if days_to_expiration <= max_days_to_expiration:
             return f"max_days_to_expiration triggered with {days_to_expiration} days left"
+
+    max_hold_hours = _optional_int(exit_config.get("max_hold_hours"))
+    if max_hold_hours is not None and entry_time is not None:
+        entry_utc = (
+            entry_time.astimezone(timezone.utc)
+            if entry_time.tzinfo is not None
+            else entry_time.replace(tzinfo=timezone.utc)
+        )
+        hours_held = (datetime.now(timezone.utc) - entry_utc).total_seconds() / 3600
+        if hours_held >= max_hold_hours:
+            return f"max_hold_hours triggered after {hours_held:.1f}h"
 
     return None
 
@@ -659,7 +677,11 @@ def _position_recommendation(
     if exit_config is None:
         return ("add_exit_config", "linked strategy does not have scanner.exit enabled")
 
-    trigger_reason = _exit_trigger_reason(position, exit_config, today=date.today())
+    trigger_reason = _exit_trigger_reason(
+        position,
+        exit_config,
+        today=datetime.now(ZoneInfo("America/New_York")).date(),
+    )
     if trigger_reason is not None:
         return ("exit_rule_triggered", trigger_reason)
 
@@ -716,6 +738,19 @@ def _underlying_from_position(position: PositionSnapshot) -> str:
     if match is not None:
         return symbol[: match.start()].strip().upper()
     return symbol.strip().upper()
+
+
+def _entry_fill_time(db: Session, ownership: PositionOwnership) -> datetime | None:
+    if ownership.order_intent_id is None:
+        return None
+    statement = (
+        select(func.min(Fill.filled_at))
+        .select_from(Fill)
+        .join(BrokerOrder, Fill.broker_order_id == BrokerOrder.id)
+        .where(BrokerOrder.order_intent_id == ownership.order_intent_id)
+        .where(func.lower(Fill.side) == "buy")
+    )
+    return db.scalar(statement)
 
 
 def _latest_quote_for_position(
