@@ -17,6 +17,7 @@ from app.schemas.jobs import (
     NewsScanRead,
     PositionExitEvaluationRead,
     SignalScanRead,
+    TradeCasePopulationRead,
     TradingDataResetRead,
 )
 from app.services.broker_reconciliation import reconcile_broker_state
@@ -30,6 +31,7 @@ from app.services.news_scanner import NewsFetchError, scan_market_news
 from app.services.position_exits import evaluate_position_exits
 from app.services.position_exits import preview_unmanaged_position_exits
 from app.services.signal_scanner import scan_signals
+from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
 from app.services.trading_reset import (
     TradingDataResetConfirmationError,
     run_trading_data_reset,
@@ -553,4 +555,24 @@ def reset_trading_data_route(
         deleted=result.deleted,
         kept_tables=result.kept_tables,
         confirmation_phrase=result.confirmation_phrase,
+    )
+
+
+@router.post(
+    "/populate-trade-cases",
+    response_model=TradeCasePopulationRead,
+    status_code=status.HTTP_200_OK,
+)
+def populate_trade_cases_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+) -> TradeCasePopulationRead:
+    result = populate_trade_cases_from_closed_round_trips(db, limit=limit)
+    return TradeCasePopulationRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        round_trips_seen=result.round_trips_seen,
+        inserted=result.inserted,
+        updated=result.updated,
+        skipped=result.skipped,
+        errors=result.errors,
     )

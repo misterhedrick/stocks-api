@@ -99,3 +99,12 @@ class TradingDataResetRead(BaseModel):
     deleted: dict[str, int]
     kept_tables: list[str]
     confirmation_phrase: str
+
+
+class TradeCasePopulationRead(BaseModel):
+    job_run: JobRunRead
+    round_trips_seen: int
+    inserted: int
+    updated: int
+    skipped: int
+    errors: list[str]

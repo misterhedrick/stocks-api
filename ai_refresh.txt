@@ -223,6 +223,11 @@ Current repo structure and purpose:
     Post-market: deep reconcile (500 orders/fills), stale cleanup, paper performance summary, readiness check.
   - POST /api/v1/jobs/reset-trading-data, bearer-protected.
     Resets paper trading data for a clean paper day; strategies are preserved.
+  - POST /api/v1/jobs/populate-trade-cases, bearer-protected.
+    Reads all fills up to limit (default 500), FIFO-matches buy+sell pairs, and idempotently
+    upserts closed round trips into the trade_cases table keyed on (entry_fill_id, exit_fill_id).
+    Rows with unchanged context are skipped; rows with updated context (P/L, notional, signals)
+    are updated. Creates a job_run record and audit log for every run.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
   - Preview schema requires exactly one of option_symbol or contract_selection.
@@ -315,6 +320,10 @@ Current repo structure and purpose:
   - Supports manual preview_unmanaged_position_exits for unmanaged long positions.
   - Supports get_position_management_statuses for read-only position dashboard data.
   - Creates previewed sell order_intents with quote context and audit logs.
+- app/services/trade_cases.py
+  - populate_trade_cases_from_closed_round_trips(db, *, limit=500): idempotent FIFO upsert of closed round trips into trade_cases table.
+  - Deduplicates by (entry_fill_id, exit_fill_id); updates context if changed, skips if unchanged.
+  - Wraps work in JobRun and writes audit log on success/failure.
 - app/services/performance_review.py
   - Read-only paper performance review using fills, broker_orders, order_intents, and strategies.
   - Matches buy/sell option fills FIFO by symbol and strategy.
@@ -366,6 +375,8 @@ Current repo structure and purpose:
   - unittest coverage for pre-market and post-market maintenance task behavior and phase auto-selection.
 - tests/test_trade_lifecycle.py
   - unittest coverage for trade lifecycle and trade case service behavior.
+- tests/test_trade_cases.py
+  - unittest coverage for trade case population: underlying symbol extraction, context building, idempotent upsert (insert/update/skip), per-row error isolation, and job_run lifecycle.
 - tests/test_trading_reset.py
   - unittest coverage for trading reset: correct tables cleared, strategies preserved.
 - tests/test_routes.py
@@ -380,8 +391,8 @@ Current database tables implemented:
 - position_snapshots
 - job_runs
 - audit_logs
-- trade_cases      (schema + ORM model ready; auto-population service not yet implemented)
-- ai_trade_reviews (schema + ORM model ready; service not yet implemented)
+- trade_cases      (schema + ORM model + auto-population service fully implemented)
+- ai_trade_reviews (schema + ORM model ready; AI review service not yet implemented)
 - strategy_change_suggestions (schema + ORM model ready; service not yet implemented)
 
 Current automation endpoints and their Render cron topology:
@@ -424,6 +435,8 @@ Audit log events written:
 - market_maintenance.pre_market.failed
 - market_maintenance.post_market.succeeded
 - market_maintenance.post_market.failed
+- trade_cases.population_succeeded
+- trade_cases.population_failed
 
 Automation safety gate env vars:
 - TRADING_AUTOMATION_ENABLED=false      (global kill switch)
@@ -448,22 +461,29 @@ Current important limitations/gaps:
 - Statuses (order intent, broker order, signal) are plain strings, not a formal enum/state machine.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- trade_cases, ai_trade_reviews, and strategy_change_suggestions tables and ORM models exist (migration 0003), but the service that automatically populates them from closed trades is not yet implemented. The /automation/trade-cases endpoint provides the data shape but does not write to the trade_cases table.
+- ai_trade_reviews and strategy_change_suggestions tables and ORM models exist (migration 0003), but the AI review service that populates them is not yet implemented.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
 - Render cron schedules should be reviewed periodically to confirm they match the entry/exit/maintenance split described above.
 
-AI review layer (schema ready, auto-population service TBD):
+AI review layer:
 - trade_cases, ai_trade_reviews, strategy_change_suggestions tables exist from migration 0003.
 - ORM models exist in app/db/models.py.
-- GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view derived from fills/orders at query time. It does NOT yet write to the trade_cases table.
-- After trades close, a service will store enough context in trade_cases for offline AI review.
+- app/services/trade_cases.py: populate_trade_cases_from_closed_round_trips(db, limit=500)
+  - Calls _fill_records + _match_round_trips from performance_review for FIFO matching.
+  - Idempotency key: (entry_fill_id, exit_fill_id). Inserts new rows, updates context-changed rows, skips unchanged rows.
+  - Stores context JSONB: {entry: {...}, exit: {...}, holding_seconds, entry_notional, exit_notional}.
+  - Stores underlying_symbol by stripping the OCC option prefix (e.g. "SPY271219C00500000" → "SPY").
+  - Route: POST /api/v1/jobs/populate-trade-cases?limit=500
+  - Intended to be called from post-market maintenance or via its own Render cron once volume warrants it.
+- GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view derived from fills/orders at query time; it reads the trade_cases table but does not populate it.
+- ai_trade_reviews and strategy_change_suggestions: schema ready; AI review service not yet implemented.
 - AI can review completed trades and suggest changes via ai_trade_reviews and strategy_change_suggestions.
 - AI must not auto-change live trading logic.
 - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation steps:
-1. Implement trade_cases population service: after a round trip closes (matched FIFO buy+sell fill), write a durable trade_cases row with full context so closed trades are persisted for AI review.
+1. Wire populate-trade-cases into post-market maintenance or add a dedicated Render cron so trade_cases rows are populated automatically after market close.
 2. Build AI review service: send trade_cases context to Claude, store structured suggestions in ai_trade_reviews and strategy_change_suggestions.
 3. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
 4. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
