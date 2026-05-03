@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -7,6 +8,8 @@ from typing import Any
 import re
 import urllib.parse
 import xml.etree.ElementTree as ET
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from sqlalchemy import and_, func, select
@@ -173,6 +176,7 @@ def scan_market_news(
                     for item in news_client.fetch(feed_url, limit=market_limit)
                 )
             except NewsFetchError as exc:
+                logger.warning("Market news feed fetch failed (%s): %s", feed_url, exc)
                 errors.append(str(exc))
 
         owned_symbols = _owned_symbols(db)
@@ -188,6 +192,7 @@ def scan_market_news(
                     )
                 ]
             except NewsFetchError as exc:
+                logger.warning("Ticker news feed fetch failed (%s): %s", symbol, exc)
                 errors.append(f"{symbol}: {exc}")
                 ticker_items[symbol] = []
 

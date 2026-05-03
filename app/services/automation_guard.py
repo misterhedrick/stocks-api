@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
@@ -7,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -157,6 +160,10 @@ def _submitted_orders_for_cycle(db: Session, *, cycle_id: str | None) -> int:
         .where(BrokerOrder.submitted_at.is_not(None))
         .where(BrokerOrder.submitted_at >= job_run.started_at)
     )
+    # Only apply an upper bound when the job has finished. While still running,
+    # any order submitted after the cycle started belongs to this cycle.
+    if job_run.finished_at is not None:
+        statement = statement.where(BrokerOrder.submitted_at <= job_run.finished_at)
     return _int_scalar(db, statement)
 
 
@@ -184,9 +191,12 @@ def _open_positions_count(
     )
     if underlying_symbol is not None:
         normalized = underlying_symbol.strip().upper()
-        # Match exact stock symbol OR option symbols where the underlying
-        # prefix is immediately followed by a digit (e.g. SPY240315C...).
-        # The digit anchor prevents "SPY" from matching "SPYG", "SPYD", etc.
+        if not normalized:
+            return 0
+        # Match the exact stock symbol OR option contracts whose symbol starts
+        # with the underlying immediately followed by a 6-digit expiration date
+        # (e.g. "SPY240315C00500000"). The [0-9] anchor prevents "SPY" from
+        # matching unrelated tickers like "SPYG" or "SPYD".
         open_positions = open_positions.where(
             or_(
                 func.upper(PositionSnapshot.symbol) == normalized,

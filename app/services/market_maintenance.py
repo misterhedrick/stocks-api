@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -89,6 +92,7 @@ def run_pre_market_maintenance(
     stale_after_hours: int = 12,
     news_enabled: bool = True,
 ) -> MarketMaintenanceResult:
+    logger.info("Running pre-market maintenance (order_limit=%d, stale_after_hours=%d)", order_limit, stale_after_hours)
     started_at = datetime.now(timezone.utc)
     job_run = _start_job_run(db, "pre_market_maintenance", started_at=started_at)
 
@@ -140,6 +144,7 @@ def run_post_market_maintenance(
     fill_page_size: int = 500,
     stale_after_hours: int = 0,
 ) -> MarketMaintenanceResult:
+    logger.info("Running post-market maintenance (order_limit=%d, stale_after_hours=%d)", order_limit, stale_after_hours)
     started_at = datetime.now(timezone.utc)
     job_run = _start_job_run(db, "post_market_maintenance", started_at=started_at)
 

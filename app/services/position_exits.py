@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -7,6 +8,8 @@ from typing import Any
 import re
 import uuid
 from zoneinfo import ZoneInfo
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -172,6 +175,12 @@ def evaluate_position_exits(
         except Exception as exc:
             exits_skipped += 1
             errors.append(f"{position.symbol}: {exc.__class__.__name__}: {exc}")
+            logger.warning(
+                "Exit order creation failed for %s: %s: %s",
+                position.symbol,
+                exc.__class__.__name__,
+                exc,
+            )
             continue
 
         exits_created += 1
@@ -465,6 +474,8 @@ def _exit_trigger_reason(
     expiration_date = _option_expiration_date(position.symbol)
     if max_days_to_expiration is not None and expiration_date is not None:
         days_to_expiration = (expiration_date - today).days
+        # <= is intentional: exit when N or fewer calendar days remain,
+        # including the expiration day itself (days_to_expiration == 0).
         if days_to_expiration <= max_days_to_expiration:
             return f"max_days_to_expiration triggered with {days_to_expiration} days left"
 

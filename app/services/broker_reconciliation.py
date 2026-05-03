@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -85,6 +88,12 @@ def reconcile_broker_state(
         job_run.details = details
         job_run.error = None
 
+        logger.info(
+            "Broker reconciliation succeeded: %d orders, %d fills, %d positions",
+            len(order_rows),
+            len(fill_rows),
+            len(position_rows),
+        )
         db.add(job_run)
         record_audit_log(
             db,
@@ -108,6 +117,7 @@ def reconcile_broker_state(
             position_snapshots_created=len(position_rows),
         )
     except Exception as exc:
+        logger.error("Broker reconciliation failed: %s: %s", exc.__class__.__name__, exc)
         db.rollback()
         job_run.status = "failed"
         job_run.finished_at = datetime.now(timezone.utc)
