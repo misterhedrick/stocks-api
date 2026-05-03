@@ -1,4 +1,4 @@
-You are helping me build a single-user Python stock/options trading API.
+You are helping me build a single-user Python stock/options paper trading API.
 
 Project name:
 stocks-api
@@ -13,13 +13,12 @@ Current local workspace:
 c:\Users\Miste\OneDrive\Documents\dev\stocks-api
 
 Last repo/app scope review:
-2026-05-02
+2026-05-03
 
 High-level project goal:
 - Build a FastAPI backend for one user.
 - Use Alpaca for broker access and options market data.
-- Start with paper trading first.
-- Keep the design live-trading-ready, but do not optimize for live trading yet.
+- Paper trading first; keep it live-trading-ready but do not optimize for live yet.
 - Use Postgres as durable state.
 - Keep the architecture simple, practical, and production-minded.
 
@@ -29,23 +28,17 @@ Core architecture decisions:
 - ORM/migrations: SQLAlchemy 2.x and Alembic.
 - Broker/data source: Alpaca.
 - Hosting: Render.
-- Auth: single admin bearer token/API token from environment variables.
-- Deployment style: free-first now, but paid-ready later.
-- Execution model: trades should flow through previewed order_intents before execution.
+- Auth: single admin bearer token from environment variables.
+- Deployment style: free-first now, paid-ready later.
+- Execution model: trades flow through previewed order_intents before execution.
 - Source of truth for orders, fills, and positions: Alpaca.
-- Longer term, execution and reconciliation should move to cron/worker-style jobs.
+- Execution and reconciliation run via Render cron workers.
 
 Current deployed state:
 - Render public app is live at https://stocks-api-z11i.onrender.com/.
-- Confirmed public endpoints on 2026-04-24:
-  - GET / returns {"message":"stocks-api is running"}.
-  - GET /health returns {"status":"ok"}.
-  - GET /api/v1/health returns {"status":"ok"}.
-  - GET /api/v1/order-intents returns 401 without bearer auth, as expected.
-  - GET /openapi.json is exposed and shows current FastAPI routes.
-- The private Render dashboard requires a logged-in browser/session, so Codex cannot inspect private service settings directly.
+- The private Render dashboard requires a logged-in browser session; Codex cannot inspect it directly.
 - render.yaml is the best local source of deployment intent.
-- Render service config in render.yaml:
+- Render web service config:
   - service type: web
   - name: stocks-api
   - env: python
@@ -57,10 +50,14 @@ Current deployed state:
   - APP_ENV=production
   - AUTO_MIGRATE_ON_STARTUP=true
   - ALPACA_PAPER=true
+- Three active Render cron services (all Virginia/starter, Mon-Fri):
+  1. stocks-api-market-cycle    - */2 13-20 UTC - entry cycle only (scan/reconcile/preview/submit)
+  2. stocks-api-market-exits    - */1 13-20 UTC - exit cycle only  (reconcile/exit-evaluation/exit-submit)
+  3. stocks-api-market-maintenance - 30 12,21 UTC - pre/post-market daily maintenance
 
 Important local/network note:
 - On Windows, curl/PowerShell may fail against Render with certificate revocation errors.
-- Working deployed checks used:
+- Working deployed checks use:
   curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/health
 - Do not treat the initial revocation-check failure as an app outage.
 
@@ -70,7 +67,7 @@ Current repo structure and purpose:
 - ai_refresh.txt
   - This handoff file. Keep it updated when project scope changes.
 - strategy_refresh.txt
-  - Strategy-improvement-focused handoff. Use this when the task is strategy tuning rather than app development.
+  - Strategy-improvement-focused handoff. Use when the task is strategy tuning rather than app development.
 - env.example
   - Environment variable template.
 - requirements.txt
@@ -78,10 +75,9 @@ Current repo structure and purpose:
 - runtime.txt
   - Python runtime for hosting.
 - render.yaml
-  - Render service blueprint.
-  - Includes web service and disabled-by-default market-cycle cron service.
+  - Render service blueprint with one web service and three cron services.
 - start.sh
-  - Render/Linux startup script. Checks database connectivity, then starts uvicorn.
+  - Render/Linux startup script. Checks database connectivity then starts uvicorn.
 - run-local.ps1
   - Windows PowerShell local startup script. Activates .venv, checks DB, applies migrations, starts uvicorn.
 - run-local.sh
@@ -91,7 +87,7 @@ Current repo structure and purpose:
 - alembic/
   - Alembic migration setup.
   - 0001_initial_trading_tables.py: strategies, signals, order_intents, broker_orders, fills, position_snapshots, job_runs, audit_logs.
-  - 0002_add_performance_indexes.py: 13 query-performance indexes on signals, order_intents, broker_orders, fills, position_snapshots, job_runs.
+  - 0002_add_performance_indexes.py: 13 query-performance indexes.
   - 0003_add_ai_review_tables.py: trade_cases, ai_trade_reviews, strategy_change_suggestions tables with FKs and indexes.
 - app/main.py
   - FastAPI app entrypoint.
@@ -102,20 +98,19 @@ Current repo structure and purpose:
   - Pydantic settings loaded from env/.env.
   - Normalizes Render postgres:// URLs to postgresql+psycopg://.
   - Picks Alpaca paper/live base URL from ALPACA_PAPER.
-  - Provides Alpaca market data base URL for option quote previews.
-  - Determines startup auto-migration behavior.
   - Provides market-cycle feature switches for scan/reconcile/preview/exit/news/submit.
   - Provides configurable RSS settings for market and owned-ticker news checks.
+  - Provides automation safety guard limits: MAX_AUTO_ORDERS_PER_CYCLE, MAX_AUTO_ORDERS_PER_DAY, MAX_OPEN_POSITIONS, MAX_OPEN_POSITIONS_PER_SYMBOL, MAX_CONTRACTS_PER_ORDER, MAX_ESTIMATED_PREMIUM_PER_ORDER.
 - app/core/security.py
   - Single admin bearer token dependency.
+- app/core/utils.py
+  - current_trading_day_start_utc: returns the start of the current ET trading day in UTC.
 - app/db/base.py
   - SQLAlchemy DeclarativeBase.
 - app/db/models.py
-  - SQLAlchemy models for all trading persistence tables.
-  - Includes TradeCase, AiTradeReview, and StrategyChangeSuggestion models added in 0003.
+  - SQLAlchemy models for all persistence tables including TradeCase, AiTradeReview, and StrategyChangeSuggestion.
 - app/db/session.py
-  - SQLAlchemy engine/session setup.
-  - DB connection check and schema readiness check.
+  - SQLAlchemy engine/session setup. DB connection check and schema readiness check.
 - app/db/migrations.py
   - Programmatic Alembic upgrade helper used by FastAPI startup.
 - app/db/check_database.py
@@ -123,34 +118,31 @@ Current repo structure and purpose:
 - scripts/run_render_job.py
   - Render cron helper that POSTs a protected API job endpoint.
   - Exits without calling the API unless SCHEDULED_JOBS_ENABLED is truthy.
-  - Retries retryable HTTP responses 429/500/502/503/504 using JOB_RETRY_DELAYS_SECONDS, default 10,30.
+  - Retries retryable HTTP responses using JOB_RETRY_DELAYS_SECONDS.
+  - Respects JOB_SKIP_HTTP_STATUS_CODES (e.g. 429) to skip without retrying.
 - scripts/seed_paper_strategies.py
   - Seeds preview-first paper strategies into the configured database.
   - Builds SPY/QQQ strategy configs from latest IEX quote midpoints.
-  - Enables scanner-driven previews and keeps scanner.submit.enabled=false.
   - Supports --dry-run, --sample-prices, and --deactivate-others.
 - scripts/tune_paper_strategies.py
   - Lists active strategy scanner/preview/submit state.
-  - Creates or updates one preview-first moving-average paper strategy.
-  - Creates or updates one preview-first confirmed-trend paper strategy.
-  - Deep-merges JSON scanner config patches by strategy name and supports direct scanner patch flags such as --lookback-minutes and --timeframe.
+  - Creates or updates moving-average and confirmed-trend paper strategies.
+  - Deep-merges JSON scanner config patches and supports direct scanner patch flags.
   - Enables or disables scanner.submit with conservative paper limits via set-submit.
-  - Supports dry-run output for moving-average/confirmed-trend seeding, scanner patch previews, and submit-control previews.
 - scripts/seed_paper_trade_universe.py
   - Seeds a broader liquid paper-trading universe.
   - Default symbols: SPY, QQQ, NVDA, TSLA, IWM, AMZN, MSFT, GOOGL, META, AAPL.
-  - Creates/updates moving-average call/put and confirmed-trend call/put strategies for each symbol.
-  - Enables scanner.submit with one contract per order, configurable notional/spread caps, no per-symbol cap, and paper-trade-day windows.
+  - Creates/updates moving-average call/put and confirmed-trend call/put strategies per symbol.
   - Supports --dry-run, repeated --symbol, and repeated --sample-price SYMBOL=PRICE.
 - scripts/analyze_paper_learning.py
   - Calls GET /api/v1/automation/learning-report and prints a structured summary.
-  - Shows totals, performance, signals by strategy, intents by strategy, non-trade reasons, and job failures.
 - scripts/market_day_dashboard.py
   - Prints a multi-section market-day status dashboard from automation status, positions, trade lifecycle, performance, and learning report endpoints.
 - scripts/replay_paper_decisions.py
   - Replays historical paper decision context from job_runs, signals, and order intents to audit scanner behavior.
 - scripts/run_exit_cycle_smoke.py
   - Runs an isolated exit-evaluation market-cycle pass to smoke-test exit logic.
+  - Use: .\.venv\Scripts\python.exe .\scripts\run_exit_cycle_smoke.py --phase-timeout-seconds 45
 - scripts/run_market_cycle_stress.py
   - Runs multiple market-cycle passes in sequence to stress-test cycle stability.
 - scripts/run_paper_trade_day_cycle.ps1
@@ -158,7 +150,7 @@ Current repo structure and purpose:
 - scripts/smoke_preflight.py
   - Checks sanitized settings, database connectivity/schema, Alpaca market-data reads, Alpaca trading reads, and broker reconciliation.
 - scripts/run_market_cycle_smoke.py
-  - Runs one market-cycle pass against the configured database and Alpaca clients.
+  - Runs one entry market-cycle pass against the configured database and Alpaca clients.
 - scripts/run_paper_submit_smoke.py
   - Runs a one-contract Alpaca paper submit smoke test.
   - Creates a smoke strategy/signal/order intent, submits to Alpaca paper, requests cancel by default, and reconciles.
@@ -168,17 +160,19 @@ Current repo structure and purpose:
   - Supports --skip-paper-submit, --skip-seed, and --skip-market-cycle.
 - app/api/routes/automation.py
   - GET /api/v1/automation/status, bearer-protected.
-  - Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
+    Summarizes automation switches, active strategy scanner/submit config, and latest job runs.
+    Includes paper_trading_readiness with blockers, warnings, submit-ready strategies, and preview-only strategies.
+    Includes global safety fields and paper mode.
   - GET /api/v1/automation/positions, bearer-protected.
-  - Read-only position management status with ownership, exit config state, active exit order, P/L fields, and recommended action.
+    Read-only position management status with ownership, exit config state, active exit order, P/L fields, and recommended action.
   - GET /api/v1/automation/performance, bearer-protected.
-  - Read-only paper performance review with FIFO matched option round trips, realized P/L, strategy summaries, symbol summaries, recent round trips, and open lots.
+    Read-only paper performance review with FIFO matched option round trips, realized P/L, strategy summaries, recent round trips, and open lots.
   - GET /api/v1/automation/trade-lifecycle, bearer-protected.
-  - Read-only open-position lifecycle view with ownership, linked entry intent, broker orders, entry fills, fill summary, active exit order, and exit recommendation.
+    Read-only open-position lifecycle view with ownership, linked entry intent, broker orders, entry fills, fill summary, active exit order, and exit recommendation.
   - GET /api/v1/automation/trade-cases, bearer-protected.
-  - Read-only FIFO trade-case view for closed round trips and open lots, intended as the stable input shape for later AI review.
+    Read-only FIFO trade-case view for closed round trips and open lots. Intended as stable input shape for AI review.
   - GET /api/v1/automation/learning-report, bearer-protected.
-  - Aggregated diagnostic report: cycle totals, performance summary, signals by strategy, intents by strategy, non-trade reasons, and job failures. Best first endpoint for assessing system health.
+    Aggregated diagnostic report: cycle totals, performance summary, signals by strategy, intents by strategy, non-trade reasons, and job failures. Best first endpoint for assessing system health.
 - app/api/routes/health.py
   - GET /api/v1/health, public.
   - GET /api/v1/ready, bearer-protected; checks DB connection and required tables.
@@ -187,178 +181,179 @@ Current repo structure and purpose:
   - POST /api/v1/order-intents, bearer-protected.
   - GET /api/v1/order-intents, bearer-protected.
   - POST /api/v1/order-intents/{id}/submit, bearer-protected.
-  - Preview endpoint turns a signal plus an explicit option_symbol or contract_selection constraints into a durable previewed order_intent using Alpaca latest option quote data.
+  - POST /api/v1/order-intents/{id}/cancel, bearer-protected.
 - app/api/routes/options.py
   - POST /api/v1/options/select-contract, bearer-protected.
-  - Selects an Alpaca option contract from simple constraints and returns quote context.
 - app/api/routes/strategies.py
   - POST /api/v1/strategies, bearer-protected.
   - GET /api/v1/strategies, bearer-protected.
   - GET /api/v1/strategies/{id}, bearer-protected.
   - PATCH /api/v1/strategies/{id}, bearer-protected.
-  - Keeps strategy config as JSONB and supports toggling is_active.
 - app/api/routes/signals.py
   - POST /api/v1/signals, bearer-protected.
   - GET /api/v1/signals, bearer-protected.
   - GET /api/v1/signals/{id}, bearer-protected.
   - PATCH /api/v1/signals/{id}, bearer-protected.
-  - Captures strategy-generated or manual trade signals before order intents.
 - app/api/routes/jobs.py
   - POST /api/v1/jobs/reconcile-broker, bearer-protected.
-  - Manually reconciles Alpaca broker state into local durable tables.
+    Manually reconciles Alpaca broker state into local durable tables.
   - POST /api/v1/jobs/scan-signals, bearer-protected.
-  - Manually scans active strategy configs and creates signals only.
+    Manually scans active strategy configs and creates signals only.
   - POST /api/v1/jobs/evaluate-exits, bearer-protected.
-  - Evaluates latest reconciled positions against strategy scanner.exit rules and creates previewed sell order intents.
+    Evaluates latest reconciled positions against strategy scanner.exit rules; creates previewed sell order intents.
   - POST /api/v1/jobs/preview-unmanaged-exits, bearer-protected.
-  - Creates previewed sell order intents for unmanaged long positions without submitting orders.
+    Creates previewed sell order intents for unmanaged long positions without submitting.
   - POST /api/v1/jobs/check-news, bearer-protected.
-  - Checks configured market RSS feeds plus owned-ticker RSS searches and records results in job_runs.
+    Checks configured market RSS feeds plus owned-ticker RSS searches; records results in job_runs.
   - POST /api/v1/jobs/market-cycle, bearer-protected.
-  - Runs enabled market-cycle steps behind env switches.
+    Entry-focused cycle: scan, reconcile, news check, preview, and optional auto-submit.
+    IMPORTANT: exit evaluation is permanently disabled here (exit_enabled_override=False).
+    Exits are handled exclusively by /market-cycle-exits.
   - POST /api/v1/jobs/market-cycle-exits, bearer-protected.
-  - Runs an isolated exit-only market-cycle pass (reconcile + exit evaluation + exit submit).
+    Exit-only cycle: reconcile (to get fresh positions) + exit evaluation + optional exit auto-submit.
+    All scan/preview/news phases are disabled. This is the dedicated high-frequency exit protection route.
+    Render cron runs this every minute during market hours.
   - POST /api/v1/jobs/market-cycle-stress, bearer-protected.
-  - Runs multiple market-cycle passes in sequence for stress testing; does not submit orders.
+    Runs multiple market-cycle passes in sequence for stress testing; does not submit orders.
   - POST /api/v1/jobs/market-maintenance, bearer-protected.
-  - Runs full daily maintenance: pre-market tasks, snapshot, post-market cleanup, audit.
+    Auto-selects pre or post-market phase based on current UTC hour.
   - POST /api/v1/jobs/pre-market-maintenance, bearer-protected.
-  - Runs pre-market maintenance tasks only.
+    Pre-market: reconcile, fetch news, stale cleanup, readiness check, settings snapshot.
   - POST /api/v1/jobs/post-market-maintenance, bearer-protected.
-  - Runs post-market maintenance tasks only.
+    Post-market: deep reconcile (500 orders/fills), stale cleanup, paper performance summary, readiness check.
   - POST /api/v1/jobs/reset-trading-data, bearer-protected.
-  - Resets paper trading data for a clean paper day; does not delete strategies.
+    Resets paper trading data for a clean paper day; strategies are preserved.
 - app/schemas/order_intents.py
   - Pydantic request/response schemas for order intents and broker order submission.
-  - Includes schema for generated order intent previews from signals.
   - Preview schema requires exactly one of option_symbol or contract_selection.
-  - Enforces limit_price rules and currently only supports time_in_force="day".
+  - Enforces limit_price rules; currently only supports time_in_force="day".
 - app/schemas/strategies.py
   - Pydantic request/response schemas for strategy create, update, and read.
 - app/schemas/signals.py
   - Pydantic request/response schemas for signal create, update, and read.
-  - Validates confidence between 0 and 1 when supplied.
+  - Validates confidence between 0 and 1.
 - app/schemas/jobs.py
   - Pydantic response schemas for job runs, broker reconciliation, signal scans, and market cycles.
 - app/schemas/options.py
   - Pydantic request/response schemas for option contract selection.
 - app/schemas/automation.py
   - Pydantic response schemas for automation status, position management, performance, trade lifecycle, trade cases, and learning report.
-  - LearningReportRead: generated_at, totals, performance, signals_by_strategy, intents_by_strategy, non_trade_reasons, job_failures.
+- app/services/automation_guard.py
+  - Guard service: can_auto_submit_order_intent(db, order_intent, cycle_id=None).
+  - Checks TRADING_AUTOMATION_ENABLED, MARKET_CYCLE_SUBMIT_ENABLED, AUTO_SUBMIT_REQUIRES_PAPER, order intent status, existing broker orders, quantity, estimated premium, daily order cap, cycle order cap, open position cap, and per-symbol position cap.
+  - Daily order count uses America/New_York midnight boundaries (not UTC) to correctly handle orders placed after 8pm ET.
+  - Cycle order count is bounded by job_run.finished_at when available.
+  - Open position count uses regexp_match with a digit anchor to avoid matching unrelated ETFs (e.g. SPYG/SPYD when searching for SPY).
+  - Returns AutomationDecision with allowed, reasons, and limits_snapshot.
 - app/services/automation_status.py
-  - Service logic for reading active strategy automation config and latest job_run summaries.
-  - Includes paper_trading_readiness in operational_summary so tomorrow's auto-paper switches can be checked before enabling submit.
+  - Reads active strategy automation config and latest job_run summaries.
+  - Includes paper_trading_readiness in operational_summary.
 - app/services/trade_lifecycle.py
   - Derived accounting views for open trade lifecycle and paper trade cases.
-  - Joins latest position snapshots to position ownership, linked entry order intent, broker orders, fills, active exit order, and exit recommendation.
+  - Joins latest position snapshots to ownership, linked entry order intent, broker orders, fills, active exit order, and exit recommendation.
   - Reuses FIFO paper performance review for closed round trips and open lots.
 - app/services/learning_report.py
   - Aggregates system health from recent job_runs, signals, order_intents, and fills.
-  - Returns LearningReportResult with totals, performance, signals_by_strategy, intents_by_strategy, non_trade_reasons, and job_failures.
   - Best first diagnostic for understanding whether the system is scanning, previewing, and exiting correctly.
 - app/services/market_maintenance.py
-  - Pre-market and post-market daily maintenance tasks.
-  - Pre-market: checks strategy configs, confirms active strategies exist, optionally seeds missing strategies.
-  - Post-market: cleans stale previewed/unsubmitted order intents, records maintenance job_runs.
+  - Pre-market (8:30am ET): conservative limits (100 orders), stale cleanup for 12h+ old state, news scan, readiness check.
+  - Post-market (5pm ET): aggressive limits (500 orders/fills), full end-of-day reconcile, stale cleanup, paper performance summary.
+  - Phase selection is automatic based on UTC hour; can be overridden with phase="pre_market" or "post_market".
 - app/services/trading_reset.py
   - Resets paper trading state for a new paper day.
   - Deletes open previewed order intents, clears open signals, clears position snapshots.
-  - Does not delete strategies, fills, or broker_orders (historical record preserved).
-  - Records reset job_runs and audit_logs.
+  - Preserves strategies, fills, and broker_orders as historical record.
 - app/services/order_intents.py
-  - Domain/service logic to submit a previewed order intent through Alpaca.
-  - Domain/service logic to generate a previewed order intent from a signal and latest option quote.
+  - Generates previewed order intents from signals using latest Alpaca option quotes.
   - Can select an option contract before previewing when contract_selection is supplied.
-  - Creates broker_orders and updates order_intents.
-  - Marks order_intents rejected when Alpaca rejects.
+  - Submits previewed order intents to Alpaca; creates broker_orders and updates status.
+  - Marks order_intents rejected when Alpaca rejects with reason.
+  - Handles cancel requests; reconciliation is responsible for final broker status.
 - app/services/strategy_templates.py
   - Builds JSON-safe preview-first paper strategy payloads.
-  - Current templates include SPY upside call preview, QQQ downside put preview, SPY momentum call preview, SPY moving-average call preview, and SPY confirmed-trend call preview.
+  - Templates: moving-average (bullish_cross default), confirmed-trend call/put.
   - Templates cap estimated option notional/spread and leave auto-submit disabled.
-  - Moving-average template default trigger is now bullish_cross (fires only at crossover event, not sustained trend).
 - app/services/option_contracts.py
-  - Domain/service logic to select an active tradable Alpaca option contract.
-  - First-pass selection chooses earliest expiration and strike closest to target_strike or underlying_price.
-  - Fetches latest option quote context for the selected contract.
+  - Selects an active tradable Alpaca option contract from constraints.
+  - First-pass selection: earliest expiration, strike closest to target_strike or underlying_price.
+  - Fetches latest quote context for the selected contract.
+  - Skips contracts below optional open_interest floor.
+  - Skips quoted contracts exceeding optional max_estimated_notional or max_spread.
 - app/services/broker_reconciliation.py
-  - Domain/service logic to fetch recent Alpaca orders, fill activities, and current positions.
-  - Upserts broker_orders, inserts new fills, snapshots positions, and records job_runs.
+  - Fetches recent Alpaca orders, fill activities, and current positions.
+  - Upserts broker_orders, inserts new fills, snapshots positions, records job_runs.
+  - Mirrors linked broker order status back to order_intents where identifiable.
 - app/services/signal_scanner.py
-  - Domain/service logic for manual signal scans.
-  - Reads active strategies with config.scan_signals entries.
-  - Supports config.scanner.type="price_threshold" using latest Alpaca stock quote midpoint.
-  - Supports config.scanner.type="percent_change" using recent Alpaca stock bars.
-  - Supports config.scanner.type="moving_average" using recent Alpaca stock bars, short/long windows, and bullish/bearish cross or trend triggers.
-  - Supports config.scanner.type="trend_confirmation" using moving-average alignment plus a minimum lookback percent change to reduce choppy false positives.
+  - Reads active strategies with config.scanner entries.
+  - Scanner types: price_threshold, percent_change, moving_average, trend_confirmation.
+  - moving_average: uses short/long window averages with bullish/bearish cross or trend triggers.
+    Window shift of 1 bar is intentional to detect crossovers (documented in code).
+    Requires long_window+1 bars to ensure enough data for the crossover comparison.
+  - trend_confirmation: moving-average alignment plus minimum lookback percent change.
   - Supports scanner dedupe_minutes to suppress repeated equivalent signals.
-  - Creates signals; market_cycle can optionally preview/submit scanner-created signals behind separate switches.
+  - Supports market regime check to block bullish signals in weak-market conditions.
   - Records job_runs and audit_logs for success/failure.
+  - _average() is guarded against empty list to avoid ZeroDivisionError.
 - app/services/market_cycle.py
-  - Orchestrates enabled market-cycle steps.
-  - Currently supports scan_signals and broker reconciliation.
-  - Supports optional auto-preview for scanner-created signals when MARKET_CYCLE_PREVIEW_ENABLED=true and strategy config has scanner.preview.enabled=true.
-  - Supports optional exit evaluation when MARKET_CYCLE_EXIT_ENABLED=true and strategy config has scanner.exit.enabled=true.
-  - Supports controlled paper auto-submit for same-cycle previewed entry order_intents when MARKET_CYCLE_SUBMIT_ENABLED=true and strategy config has scanner.submit.enabled=true.
-  - Supports controlled paper auto-submit for same-cycle exit order_intents when MARKET_CYCLE_SUBMIT_ENABLED=true and strategy config has scanner.exit.submit.enabled=true.
-  - Enforces submit config max_orders_per_cycle, max_contracts_per_order, optional max_contracts_per_cycle, optional max_notional_per_order, optional max_open_contracts_per_symbol, optional max_open_contracts_per_strategy, optional max_orders_per_trading_day, optional trade_windows, and allowed_sides.
-  - Existing open-contract checks use broker_orders joined to the strategy order_intents.
-  - Pending signal pickup filters to current trading day only (Signal.created_at >= today ET start) to prevent stale signals from prior days being previewed at Monday open.
-  - Records job_runs and audit_logs for success/failure.
+  - Orchestrates enabled market-cycle steps behind env switches and per-call overrides.
+  - Supports: scan_signals, broker reconciliation, news check, entry preview, exit evaluation, auto-submit.
+  - Entry cycle (/market-cycle): exit evaluation is forced off via exit_enabled_override=False.
+  - Exit cycle (/market-cycle-exits): only reconcile + exit evaluation + exit submit; scan/preview/news forced off.
+  - News risk gate: high market-level news risk blocks new entry previews for that cycle and writes an audit log entry.
+  - Auto-submit enforces strategy-level sizing, exposure controls, daily caps, and optional trading windows.
+  - Pending signal pickup is capped to the current trading day (ET start); stale signals from prior days are never previewed.
+  - All service modules now use Python structured logging (logging.getLogger) for Render log visibility.
 - app/services/audit_logs.py
   - Small helper for writing audit_logs records consistently.
 - app/services/position_exits.py
   - Evaluates latest position_snapshots for exit rules.
-  - Links positions back to the latest entry order_intent/strategy for the held symbol when possible.
-  - Reports position_ownership with managed/unmanaged status and reasons such as no linked entry, inactive strategy, or missing exit config.
-  - Supports manual preview_unmanaged_position_exits for creating sell previews on unmanaged long positions.
-  - Supports get_position_management_statuses for read-only position dashboard data and recommendations.
-  - Supports scanner.exit profit_target_percent, stop_loss_percent, max_days_to_expiration, and max_hold_hours.
-  - max_hold_hours triggers exit after N hours since entry fill regardless of P/L; uses UTC-normalized fill time.
-  - Timezone bug fixed: DTE calculations now use America/New_York date (not UTC date), so calculations remain correct after midnight UTC on Eastern trading days.
+  - Links positions to latest entry order_intent/strategy for the held symbol.
+  - Exit rules: profit_target_percent, stop_loss_percent, max_days_to_expiration, max_hold_hours.
+  - max_days_to_expiration uses <= comparison: exits when N or fewer calendar days remain, including expiration day.
+  - max_hold_hours: exits after N hours since entry fill; uses UTC-normalized fill time.
+  - DTE calculations use America/New_York date (not UTC).
+  - Supports manual preview_unmanaged_position_exits for unmanaged long positions.
+  - Supports get_position_management_statuses for read-only position dashboard data.
   - Creates previewed sell order_intents with quote context and audit logs.
 - app/services/performance_review.py
-  - Read-only paper performance review using existing fills, broker_orders, order_intents, and strategies.
+  - Read-only paper performance review using fills, broker_orders, order_intents, and strategies.
   - Matches buy/sell option fills FIFO by symbol and strategy.
   - Reports realized P/L, win/loss counts, win rate, per-strategy summaries, recent round trips, and open lots.
 - app/services/news_scanner.py
   - Fetches RSS news for broad market context and currently owned tickers.
-  - Default broad scan covers US indexes, Fed/rates/inflation/economic data, US economy/yields/dollar/recession/GDP, world markets/geopolitical risk/oil/war/tariffs, and earnings/volatility/credit/banking headlines.
-  - Reduces option contract symbols to their underlying ticker for owned-ticker searches.
-  - Tags headlines with simple impact keywords such as Fed, rates, inflation, earnings, downgrade, lawsuit, merger, oil, yields, and volatility.
-  - Produces news_risk_v2 risk_assessment with market_risk_level, should_block_new_entries, blocking_reasons, manual_review_symbols, per-ticker risk, review_items, and ignored_items.
-  - Down-ranks stale headlines, low-quality sources, and noisy options-chain/trading-content ticker results before they can block entries.
+  - Tags headlines with impact keywords (Fed, rates, inflation, earnings, downgrade, etc.).
+  - Produces news_risk_v2 risk_assessment with market_risk_level, should_block_new_entries, blocking_reasons, per-ticker risk, review_items.
+  - Down-ranks stale headlines, low-quality sources, and noisy options-chain/trading-content ticker results.
   - Records news_scan job_runs and audit logs.
+  - Feed fetch failures are logged at WARNING level with feed URL context.
 - app/integrations/alpaca.py
   - Thin httpx-based Alpaca Trading API integration.
-  - Currently supports POST /v2/orders for order intent submission.
-  - Supports GET /v2/orders, GET /v2/account/activities/FILL, and GET /v2/positions for reconciliation.
-  - Supports GET /v2/options/contracts for option contract selection.
-  - Supports GET https://data.alpaca.markets/v2/stocks/quotes/latest for stock quote scanner rules.
-  - Supports GET https://data.alpaca.markets/v2/stocks/bars for percent-change scanner rules.
-  - Supports GET https://data.alpaca.markets/v1beta1/options/quotes/latest for latest option quote previews.
+  - Supports: POST /v2/orders, GET /v2/orders, GET /v2/account/activities/FILL, GET /v2/positions.
+  - Supports: GET /v2/options/contracts for contract selection.
+  - Supports: GET stock quotes/bars and GET option quotes/latest.
   - Converts Alpaca responses into Pydantic models.
 - tests/test_order_intent_submission.py
   - unittest coverage for order submission service behavior and schema validation.
 - tests/test_broker_reconciliation.py
-  - unittest coverage for broker reconciliation success/failure behavior using fake Alpaca clients.
+  - unittest coverage for broker reconciliation success/failure using fake Alpaca clients.
 - tests/test_option_contract_selection.py
-  - unittest coverage for option contract selection and route error mapping using fake Alpaca clients.
+  - unittest coverage for option contract selection and route error mapping.
 - tests/test_signal_scanner.py
-  - unittest coverage for manual scanner success, inactive strategy filtering, price-threshold and percent-change rules, malformed specs, duplicate suppression, and failure recording.
+  - unittest coverage for scanner success, inactive filtering, all scanner rule types, malformed specs, duplicate suppression, market regime blocking, and failure recording.
 - tests/test_render_job_runner.py
-  - unittest coverage for the Render cron kill switch, job URL construction, retryable HTTP errors, and non-retryable HTTP errors.
+  - unittest coverage for kill switch, URL construction, retryable/non-retryable errors, retry-after header, read timeouts, and URL errors.
 - tests/test_market_cycle.py
-  - unittest coverage for market-cycle orchestration, env switches, and failure recording.
+  - unittest coverage for market-cycle orchestration, env switches, news risk blocking, exit attention audit log, and failure recording.
 - tests/test_automation_status.py
-  - unittest coverage for automation status summary shape.
+  - unittest coverage for automation status summary shape and news risk blocking field.
 - tests/test_automation_guard.py
-  - unittest coverage for automation guard decisions: global kill switch, paper mode requirement, daily cap, open position cap.
+  - unittest coverage for guard decisions: kill switch, paper mode requirement, daily cap, open position cap.
 - tests/test_performance_review.py
-  - unittest coverage for FIFO P/L matching, win/loss accounting, and open lot reporting.
+  - unittest coverage for FIFO P/L matching, win/loss accounting, open lot reporting, and learning context.
 - tests/test_position_exits.py
-  - unittest coverage for position exit rule evaluation, max_hold_hours trigger, and timezone-correct DTE calculation.
+  - unittest coverage for exit rule evaluation, stale position filtering before latest reconcile, and max_days_to_expiration behavior.
 - tests/test_news_scanner.py
-  - unittest coverage for RSS headline parsing, freshness filtering, and risk assessment logic.
+  - unittest coverage for RSS parsing, freshness filtering, and risk assessment logic.
 - tests/test_signals.py
   - unittest coverage for signal create/update routes, audit log writes, and strategy validation.
 - tests/test_strategies.py
@@ -368,13 +363,13 @@ Current repo structure and purpose:
 - tests/test_strategy_tuning_script.py
   - unittest coverage for tune_paper_strategies.py CLI command behavior.
 - tests/test_market_maintenance.py
-  - unittest coverage for pre-market and post-market maintenance task behavior.
+  - unittest coverage for pre-market and post-market maintenance task behavior and phase auto-selection.
 - tests/test_trade_lifecycle.py
   - unittest coverage for trade lifecycle and trade case service behavior.
 - tests/test_trading_reset.py
-  - unittest coverage for trading reset service: correct tables cleared, strategies preserved.
+  - unittest coverage for trading reset: correct tables cleared, strategies preserved.
 - tests/test_routes.py
-  - unittest/FastAPI TestClient coverage for public/protected routes, readiness, create happy paths, reconciliation route mapping, option contract selection route mapping, signal scan route mapping, and market-cycle route mapping.
+  - unittest/FastAPI TestClient coverage for all routes including market-cycle, market-cycle-exits, market-cycle-stress, pre/post-market maintenance, reset, trade lifecycle, trade cases, automation status, and all CRUD routes.
 
 Current database tables implemented:
 - strategies
@@ -385,172 +380,100 @@ Current database tables implemented:
 - position_snapshots
 - job_runs
 - audit_logs
-- trade_cases (schema ready; service implementation TBD)
-- ai_trade_reviews (schema ready; service implementation TBD)
-- strategy_change_suggestions (schema ready; service implementation TBD)
+- trade_cases      (schema + ORM model ready; auto-population service not yet implemented)
+- ai_trade_reviews (schema + ORM model ready; service not yet implemented)
+- strategy_change_suggestions (schema + ORM model ready; service not yet implemented)
 
-Current behavior implemented:
-- Root endpoint.
-- Public health endpoints.
-- Protected automation status endpoint for market-cycle switches, active strategy automation config, and latest job runs.
-- Auth-protected readiness endpoint that checks DB connectivity and required tables.
-- Single admin bearer-token auth.
-- Environment-driven settings.
-- Render-compatible Postgres URL handling.
-- Auto migrations at startup for production/staging or AUTO_MIGRATE_ON_STARTUP=true.
-- Initial trading database schema.
-- Create previewed order intent.
-- List order intents, optionally filtered by status.
-- Create/list/read/update strategies.
-- List strategies can filter by is_active.
-- Strategy create/update writes audit_logs.
-- Create/list/read/update signals.
-- List signals can filter by strategy_id, status, and symbol.
-- Signal create/update validates provided strategy_id exists.
-- Signal create/update writes audit_logs.
-- Generate previewed order intents from signals using Alpaca latest option quotes.
-- Generated previews can either use an explicit option_symbol or select a contract from contract_selection constraints.
-- Generated previews derive a limit price from midpoint when no limit_price is supplied.
-- Generated previews store bid/ask/midpoint/spread/estimated notional context and selection context in order_intents.preview.
-- Generated previews default to the global MAX_ESTIMATED_PREMIUM_PER_ORDER notional guard, with optional max_estimated_notional and max_spread overrides/constraints.
-- Select an option contract by underlying, call/put, expiration filters, and optional target strike/underlying price.
-- Option contract selection can skip quoted contracts that exceed optional max_estimated_notional or max_spread constraints.
-- Option contract selection returns selected contract details and latest quote context without creating an order.
-- Manual order_intent creation validates provided strategy_id and signal_id exist.
-- Manual order_intent creation rejects strategy_id/signal_id combinations that do not match.
-- Submit previewed order intent to Alpaca paper/live base URL depending on ALPACA_PAPER.
-- Store returned Alpaca order as broker_orders.
-- Update order_intent status/submitted_at after submission.
-- Mark order_intent rejected and save rejection reason if Alpaca rejects.
-- Request broker order cancellation through POST /api/v1/order-intents/{id}/cancel.
-- Cancel requests mark the local order_intent and broker_order as cancel_requested; reconciliation remains responsible for final broker status.
-- Manually reconcile broker state from Alpaca through POST /api/v1/jobs/reconcile-broker.
-- Render cron blueprint exists for market-cycle every 30 minutes, disabled by default via SCHEDULED_JOBS_ENABLED=false.
-- Actual Render cron service has been manually created/enabled and has returned successful market-cycle 200 responses.
-- Manually scan active strategy configs through POST /api/v1/jobs/scan-signals.
-- Signal scanning creates signal records; market-cycle handles optional preview/submit automation.
-- Signal scanning supports seeded config.scan_signals entries and live config.scanner price_threshold/percent_change rules.
-- Signal scanning suppresses duplicate recent scanner signals by default using dedupe_minutes.
-- Market-cycle endpoint can run scan and reconciliation in one protected call.
-- Market-cycle endpoint can auto-create previewed order intents for scanner-created signals when preview switches/config are enabled.
-- Market-cycle endpoint can evaluate current positions for exit previews when MARKET_CYCLE_EXIT_ENABLED=true.
-- Market-cycle endpoint can check market and owned-ticker news when MARKET_CYCLE_NEWS_ENABLED=true.
-- High market-level news risk blocks new entry previews for that market-cycle run and flags affected owned tickers for manual review; it does not auto-sell from headlines.
-- Market-cycle endpoint can auto-submit only same-cycle previewed order intents when submit switches/config are enabled.
-- Auto-submit enforces strategy-level sizing and existing-exposure controls before broker submission.
-- Auto-submit enforces optional daily order caps and configured trading windows before broker submission.
-- Reconciliation upserts recent orders into broker_orders.
-- Reconciliation mirrors linked broker order status/submitted_at back to order_intents when it can identify the intent.
-- Reconciliation inserts new fill activities into fills.
-- Reconciliation snapshots current positions into position_snapshots.
-- Reconciliation records success/failure metadata in job_runs.
-- Pending signal pickup in market_cycle is capped to the current trading day (ET); stale signals from prior days are not previewed.
-- Daily maintenance jobs: pre-market checks, post-market cleanup of stale order intents, job_run recording.
-- Trading reset job: clears open signals, open previewed intents, and position snapshots for a clean paper day.
-- Exit evaluation supports max_hold_hours: exits a position after N hours since entry fill, regardless of P/L.
-- Exit evaluation uses America/New_York date for DTE calculations (not UTC), preventing off-by-one-day errors after midnight UTC.
-- Learning report aggregates diagnostic data across recent job_runs, signals, intents, and fills into one endpoint response.
-- Audit logs are written for:
-  - order_intent.created
-  - order_intent.submitted
-  - order_intent.rejected
-  - order_intent.cancel_requested
-  - order_intent.exit_previewed
-  - news_scan.succeeded
-  - news_scan.failed
-  - strategy.created
-  - strategy.updated
-  - signal.created
-  - signal.updated
-  - order_intent.previewed
-  - broker_reconciliation.succeeded
-  - broker_reconciliation.failed
-  - signal_scan.succeeded
-  - signal_scan.failed
-  - market_cycle.succeeded
-  - market_cycle.failed
-  - trading_reset.succeeded
-  - trading_reset.failed
-  - market_maintenance.succeeded
-  - market_maintenance.failed
-- Automation Safety Gates were added for market-cycle auto-submit.
-  - New env/settings: TRADING_AUTOMATION_ENABLED=false, AUTO_SUBMIT_REQUIRES_PAPER=true, MAX_AUTO_ORDERS_PER_CYCLE=1, MAX_AUTO_ORDERS_PER_DAY=3, MAX_OPEN_POSITIONS=3, MAX_OPEN_POSITIONS_PER_SYMBOL=1, MAX_CONTRACTS_PER_ORDER=1, MAX_ESTIMATED_PREMIUM_PER_ORDER=250.
-  - New env/settings: MARKET_CYCLE_EXIT_ENABLED=false controls market-cycle position exit evaluation.
-  - New env/settings: MARKET_CYCLE_NEWS_ENABLED=false controls market-cycle news checks.
-  - Guard service: app/services/automation_guard.py with can_auto_submit_order_intent(db, order_intent, cycle_id=None).
-  - Market-cycle auto-submit now checks the guard before calling submit_order_intent; blocked intents are skipped, included in submit errors, and audited as order_intent.auto_submit_skipped.
-- GET /api/v1/automation/status now includes the global safety fields and paper mode.
-  - operational_summary now includes paper_trading_readiness with blockers, warnings, submit-ready strategies, and preview-only strategies.
-  - GET /api/v1/automation/performance reports paper P/L from matched fills for strategy tuning.
-  - Postman automation status and market-cycle coverage includes safety-field and skip-visibility assertions.
-  - Tests added/updated for guard decisions, market-cycle guard skips, and automation status response shape.
-- Scanner no-op observability was added.
-  - scan_signals responses and job_runs.details now include no_signal_reasons.
-  - Market-cycle scan details carry through no_signal_reasons.
-  - Reasons explain successful scans with no signals, such as no recent bars, no usable quotes, or thresholds not crossed.
-  - This is observability only; scanner strategy thresholds and signal-generation behavior were not changed.
-- Basic tests for order submission success/rejection and order intent schema rules.
-- Basic tests for reconciliation success/failure service behavior.
-- Basic tests for option contract selection and selector-backed preview generation.
-- Basic tests for manual signal scanning.
-- Tests verify audit log writes for order intent, strategy, signal, and reconciliation workflows.
-- Route-level tests verify public health routes, readiness success/failure, protected route auth, automation status route mapping, reference-validation responses, happy-path creates, broker reconciliation route error mapping, option contract selection route mapping, and signal scan route mapping.
-- Postman collection for smoke testing deployed/local API.
-  - Includes health/ready, automation status, reconcile, market-cycle, scan-signals, strategy/signal/order-intent flows, and option contract selection.
+Current automation endpoints and their Render cron topology:
+- Entry cycle (*/2 min, 9am-4pm ET): POST /api/v1/jobs/market-cycle
+  - scan signals -> news check -> reconcile -> entry preview -> entry auto-submit
+  - exit evaluation is permanently disabled on this route
+- Exit cycle (*/1 min, 9am-4pm ET): POST /api/v1/jobs/market-cycle-exits
+  - reconcile -> exit evaluation -> exit auto-submit
+  - scan/preview/news are disabled; runs more frequently for faster exit protection
+- Daily maintenance (8:30am + 5pm ET): POST /api/v1/jobs/market-maintenance
+  - pre-market: reconcile, news, stale cleanup, readiness
+  - post-market: deep reconcile, cleanup, performance summary
+
+Audit log events written:
+- order_intent.created
+- order_intent.previewed
+- order_intent.submitted
+- order_intent.rejected
+- order_intent.cancel_requested
+- order_intent.exit_previewed
+- order_intent.auto_submit_skipped
+- order_intent.submit_failed
+- news_scan.succeeded
+- news_scan.failed
+- strategy.created
+- strategy.updated
+- signal.created
+- signal.updated
+- broker_reconciliation.succeeded
+- broker_reconciliation.failed
+- signal_scan.succeeded
+- signal_scan.failed
+- market_cycle.succeeded
+- market_cycle.failed
+- market_cycle.exit_attention_required
+- market_cycle.preview_blocked_by_news_risk
+- trading_reset.succeeded
+- trading_reset.failed
+- market_maintenance.pre_market.succeeded
+- market_maintenance.pre_market.failed
+- market_maintenance.post_market.succeeded
+- market_maintenance.post_market.failed
+
+Automation safety gate env vars:
+- TRADING_AUTOMATION_ENABLED=false      (global kill switch)
+- AUTO_SUBMIT_REQUIRES_PAPER=true       (block live trading accidents)
+- MARKET_CYCLE_SUBMIT_ENABLED=false     (entry auto-submit switch)
+- MARKET_CYCLE_EXIT_ENABLED=false       (exit evaluation switch; also controlled per strategy)
+- MARKET_CYCLE_NEWS_ENABLED=false       (news risk gate switch)
+- MARKET_CYCLE_PREVIEW_ENABLED=false    (entry preview switch)
+- MARKET_CYCLE_RECONCILE_ENABLED=true   (reconciliation switch)
+- MARKET_CYCLE_SCAN_ENABLED=true        (signal scan switch)
+- MAX_AUTO_ORDERS_PER_CYCLE=1
+- MAX_AUTO_ORDERS_PER_DAY=3
+- MAX_OPEN_POSITIONS=3
+- MAX_OPEN_POSITIONS_PER_SYMBOL=1
+- MAX_CONTRACTS_PER_ORDER=1
+- MAX_ESTIMATED_PREMIUM_PER_ORDER=250
 
 Current important limitations/gaps:
-- Scanner/signal-generation logic supports quote-threshold, percent-change, moving-average, and confirmed-trend rules, but no broader indicator scoring/backtesting yet.
-- Option contract selection is first-pass only; no delta/Greeks/moneyness scoring yet.
-- Exit evaluation supports simple P/L, expiration, and max_hold_hours rules; no trailing stops or AI-assisted exits yet.
-- News scanning is RSS/headline risk gating with lightweight freshness/source-quality filters; no persistent article table, source ranking model, sentiment model, article-body reading, or auto-sell decisioning yet.
-- Manual order_intent creation still accepts client-provided preview data.
-- No formal status enum/state machine yet; statuses are plain strings.
+- Option contract selection is first-pass only; no delta/Greeks/moneyness/liquidity scoring yet.
+- Exit evaluation supports P/L, expiration, and max_hold_hours rules; no trailing stops or AI-assisted exits yet.
+- News scanning is lightweight RSS/headline gating; no persistent article table, sentiment model, article-body reading, or auto-sell decisioning yet.
+- Statuses (order intent, broker order, signal) are plain strings, not a formal enum/state machine.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
-- Broker reconciliation runs as part of the market-cycle endpoint when MARKET_CYCLE_RECONCILE_ENABLED=true.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- Scheduled market-cycle is scaffolded in render.yaml as disabled by default, but the actual Render cron has been manually enabled for testing.
-- Audit logging exists for core manual broker-touching workflows, but not for every future object type yet.
-- trade_cases, ai_trade_reviews, and strategy_change_suggestions tables exist in the schema (migration 0003) and ORM models, but the service that populates them from closed trades is not yet implemented.
+- trade_cases, ai_trade_reviews, and strategy_change_suggestions tables and ORM models exist (migration 0003), but the service that automatically populates them from closed trades is not yet implemented. The /automation/trade-cases endpoint provides the data shape but does not write to the trade_cases table.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
+- Render cron schedules should be reviewed periodically to confirm they match the entry/exit/maintenance split described above.
 
-Planned scheduled jobs:
-1. Market-hours job every 5 minutes:
-   - scan for signals
-   - follow up on orders
-   - reconcile broker state
-
-2. Daily maintenance job:
-   - pre-market tasks
-   - end-of-day tasks
-   - snapshot positions
-   - eventually prepare closed trade cases for AI review
-
-AI review layer (schema ready, service TBD):
+AI review layer (schema ready, auto-population service TBD):
 - trade_cases, ai_trade_reviews, strategy_change_suggestions tables exist from migration 0003.
 - ORM models exist in app/db/models.py.
-- After trades close, a service will store enough context for offline AI review so AI can suggest strategy improvements.
-- AI rules:
-  - AI can review completed trades and suggest changes.
-  - AI must not auto-change live trading logic.
-  - Eventually capture rejected trades/signals for comparison analysis.
+- GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view derived from fills/orders at query time. It does NOT yet write to the trade_cases table.
+- After trades close, a service will store enough context in trade_cases for offline AI review.
+- AI can review completed trades and suggest changes via ai_trade_reviews and strategy_change_suggestions.
+- AI must not auto-change live trading logic.
+- Eventually capture rejected trades/signals for comparison analysis.
 
-Recommended next concrete implementation step:
-- Use the automation status endpoint against Render to confirm production has an active strategy config.
-- Then add or update one active paper strategy if status shows active_strategies=[].
-- After that, enable MARKET_CYCLE_PREVIEW_ENABLED=true while keeping MARKET_CYCLE_SUBMIT_ENABLED=false.
-
-Likely next steps after deployed preview verification:
-1. Implement the trade_cases population service so closed round trips flow into the AI review schema.
-2. Build AI review service that sends trade_cases context to Claude and stores ai_trade_reviews.
-3. Improve broker-order/position linkage for more exact open position accounting.
+Recommended next concrete implementation steps:
+1. Implement trade_cases population service: after a round trip closes (matched FIFO buy+sell fill), write a durable trade_cases row with full context so closed trades are persisted for AI review.
+2. Build AI review service: send trade_cases context to Claude, store structured suggestions in ai_trade_reviews and strategy_change_suggestions.
+3. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
+4. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
 
 Important product rules:
 - Single user only.
 - Keep security simple but real.
 - Do not overengineer auth or multi-tenant logic.
 - Paper trading is the current target.
-- Live trading comes later, so structure code with that future in mind.
+- Live trading comes later; structure code with that future in mind.
 - Prefer clear modules, explicit schemas, and durable database records over clever shortcuts.
 - Source of truth for broker order/fill/position state should remain Alpaca.
 - Local DB should be durable state/cache/history, not an invented broker truth.
@@ -615,6 +538,7 @@ Useful local commands:
 - Run smoke tests:
   .\.venv\Scripts\python.exe .\scripts\smoke_preflight.py
   .\.venv\Scripts\python.exe .\scripts\run_market_cycle_smoke.py
+  .\.venv\Scripts\python.exe .\scripts\run_exit_cycle_smoke.py --phase-timeout-seconds 45
   .\.venv\Scripts\python.exe .\scripts\run_paper_submit_smoke.py
   .\.venv\Scripts\python.exe .\scripts\run_full_smoke_suite.py
 
