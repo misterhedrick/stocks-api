@@ -17,7 +17,7 @@ Product context:
 Infrastructure:
 - Python FastAPI application.
 - SQLAlchemy ORM with PostgreSQL/JSONB models.
-- Alembic migration currently defines the trading schema.
+- Alembic migrations define the trading schema (0001 initial tables, 0002 performance indexes, 0003 AI review tables).
 - Alpaca integration is used for market data, option contract selection, paper trading orders, fills, and positions.
 - Render deployment is configured in render.yaml.
 - Main configuration is environment-variable driven through app/core/config.py and .env.
@@ -48,8 +48,15 @@ Where to inspect the database schema and usable strategy data:
     - position_snapshots: latest reconciled broker positions, cost basis, market value, unrealized P/L, raw_position JSONB.
     - job_runs: scan/reconcile/market-cycle job details, errors, no-signal reasons, created IDs.
     - audit_logs: workflow audit trail and strategy update history.
+    - trade_cases: schema ready (migration 0003); intended for closed round-trip records for AI review. Service not yet implemented.
+    - ai_trade_reviews: schema ready (migration 0003); will store AI review results per trade case.
+    - strategy_change_suggestions: schema ready (migration 0003); will store AI-suggested strategy config changes.
 - alembic/versions/0001_initial_trading_tables.py
-  - Migration-level schema definition. Use this to confirm database columns and JSONB defaults.
+  - Migration-level schema definition for core trading tables.
+- alembic/versions/0002_add_performance_indexes.py
+  - 13 query-performance indexes added on signals, order_intents, broker_orders, fills, position_snapshots, job_runs.
+- alembic/versions/0003_add_ai_review_tables.py
+  - trade_cases, ai_trade_reviews, strategy_change_suggestions tables with FKs and indexes.
 - app/db/session.py
   - SessionLocal and database connection setup.
 - app/db/migrations.py
@@ -60,6 +67,8 @@ Where to inspect current strategy behavior:
   - Factory for preview-first paper strategies.
   - Defines current moving-average and confirmed-trend default configs.
   - Shows scanner.preview, scanner.exit, and scanner.submit config shapes.
+  - Moving-average template default trigger is bullish_cross (fires only at the crossover event, not on sustained trend).
+  - bullish_cross is more selective than bullish_trend; it fires once at the MA crossover moment rather than on every bar the short MA stays above the long MA.
 - app/services/signal_scanner.py
   - Implements supported scanner types:
     - price_threshold
@@ -73,24 +82,36 @@ Where to inspect current strategy behavior:
   - Converts signals/previews into durable order intents.
   - Inspect preview validation, option quote checks, max spread, and estimated notional logic before changing strategy preview constraints.
 - app/services/position_exits.py
-  - Implements position ownership, exit rule evaluation, unmanaged exit previews, profit target, stop loss, expiration risk, active exit order checks, and exit submit guardrails.
+  - Implements position ownership, exit rule evaluation, unmanaged exit previews, profit target, stop loss, expiration risk, max_hold_hours, active exit order checks, and exit submit guardrails.
+  - max_hold_hours: exits a position after N hours since entry fill, regardless of P/L. Uses UTC-normalized fill time.
+  - DTE calculation uses America/New_York date (not UTC), so it is correct after midnight UTC on Eastern trading days.
 - app/services/market_cycle.py
   - Orchestrates scan, news gate, preview, exits, submit, and reconcile behavior.
+  - Pending signal pickup is capped to the current trading day (ET midnight) to prevent stale signals from prior days being previewed at Monday open.
 - app/services/news_scanner.py
   - RSS/headline risk gating. This can be used to avoid new entries during broad market/news risk but is not a sentiment model.
 - app/services/broker_reconciliation.py
   - Pulls broker orders/fills/positions into local durable tables.
+- app/services/learning_report.py
+  - Aggregates system health across recent job_runs, signals, order_intents, and fills.
+  - Returns totals, performance summary, signals_by_strategy, intents_by_strategy, non_trade_reasons, and job_failures.
+  - Best first diagnostic call when starting a strategy review session.
 
 Where to inspect performance evidence:
+- GET /api/v1/automation/learning-report
+  - Best starting point. Aggregates all key diagnostic data in one call.
+  - Shows signal counts, preview counts, job failures, non-trade reasons, and performance summary.
+  - Call this first before digging into individual tables.
 - app/services/performance_review.py
   - FIFO-matches option buy and sell fills by symbol and strategy.
   - Produces realized P/L, return percent, win/loss counts, win rate, average win/loss, strategy summaries, symbol summaries, recent round trips, and open lots.
-  - This is the best first source for deciding whether a strategy improved.
+  - This is the best source for deciding whether a strategy improved.
 - app/services/trade_lifecycle.py
   - Provides open-position lifecycle views and trade cases.
   - Trade cases expose the same matched round trips/open lots in a stable shape for later AI review.
 - app/api/routes/automation.py
   - Endpoints for strategy refinement review:
+    - GET /api/v1/automation/learning-report (start here)
     - GET /api/v1/automation/status
     - GET /api/v1/automation/performance?limit=500
     - GET /api/v1/automation/trade-lifecycle?limit=100
@@ -115,10 +136,19 @@ Useful local scripts:
   - Enable/disable strategy-level submit with conservative paper limits.
 - scripts/seed_paper_strategies.py
   - Seeds preview-first paper strategy payloads from current underlying prices.
-- scripts/prepare_paper_trade_day.py
-  - Prepares the paper trading day.
+- scripts/seed_paper_trade_universe.py
+  - Seeds a broader liquid paper-trading universe (SPY, QQQ, NVDA, TSLA, IWM, AMZN, MSFT, GOOGL, META, AAPL by default).
+- scripts/analyze_paper_learning.py
+  - Calls GET /api/v1/automation/learning-report and prints a structured diagnostic summary.
+  - Good first script to run at the start of a strategy review session.
+- scripts/market_day_dashboard.py
+  - Prints a multi-section market-day status dashboard across all automation endpoints.
+- scripts/replay_paper_decisions.py
+  - Replays historical paper decision context from job_runs, signals, and order intents to audit scanner behavior.
 - scripts/run_market_cycle_smoke.py
   - Runs one market-cycle pass against configured database and Alpaca clients.
+- scripts/run_exit_cycle_smoke.py
+  - Runs an isolated exit-evaluation pass to smoke-test exit logic.
 - scripts/run_paper_submit_smoke.py
   - Runs a one-contract Alpaca paper submit smoke test.
 - scripts/run_full_smoke_suite.py
@@ -150,6 +180,9 @@ Current strategy configuration shape:
   - lookback_minutes
   - timeframe
   - trigger: bullish_cross, bearish_cross, bullish_trend, bearish_trend
+  - bullish_cross / bearish_cross: fires only at the crossover moment (higher quality, fewer false positives)
+  - bullish_trend / bearish_trend: fires on every bar the short MA is above/below the long MA (noisier)
+  - Default template trigger is now bullish_cross.
 - trend_confirmation keys:
   - short_window
   - long_window
@@ -159,32 +192,40 @@ Current strategy configuration shape:
   - direction: bullish or bearish
 - config.scanner.preview controls option preview/order-intent generation.
 - config.scanner.exit controls managed exit behavior.
+  - profit_target_percent: close when realized P/L exceeds this % of entry cost.
+  - stop_loss_percent: close when realized loss exceeds this % of entry cost.
+  - max_days_to_expiration: close when DTE drops to this level (uses ET date).
+  - max_hold_hours: close after N hours since entry fill, regardless of P/L. New. Useful for capping overnight/weekend risk.
 - config.scanner.submit controls strategy-level auto-submit guardrails.
 
 Strategy improvement workflow:
-1. Inspect active strategy configs first.
+1. Start with the learning report.
+   - GET /api/v1/automation/learning-report or run scripts/analyze_paper_learning.py.
+   - Check totals (signal count, preview count, submitted count), performance summary, non_trade_reasons, and job_failures.
+   - This one call answers: Is the scanner firing? Are previews being created? Are there systematic failures?
+2. Inspect active strategy configs.
    - Use scripts/tune_paper_strategies.py list --active-only.
    - Or query the strategies table directly through SQLAlchemy.
    - Confirm each strategy's scanner type, symbols, preview, exit, and submit config.
-2. Inspect recent automation health.
+3. Inspect recent automation health.
    - GET /api/v1/automation/status.
    - Inspect job_runs for failed jobs, no_signal_reasons, low signal counts, duplicate suppression, preview rejection, and reconciliation errors.
-3. Inspect realized performance.
+4. Inspect realized performance.
    - GET /api/v1/automation/performance?limit=500.
    - Focus on matched round trips, realized P/L, return percent, win rate, average win/loss, by_strategy, by_symbol, and open_positions.
-4. Inspect trade cases and lifecycle.
+5. Inspect trade cases and lifecycle.
    - GET /api/v1/automation/trade-cases?limit=500.
    - GET /api/v1/automation/trade-lifecycle?limit=100.
    - Look for holding time, entry/exit fill prices, open lots, unmanaged positions, and active exit orders.
-5. Inspect signal evidence.
+6. Inspect signal evidence.
    - Query signals.market_context for bars/quotes and trigger calculations.
    - Compare created signals to actual filled outcomes through order_intents, broker_orders, and fills.
-6. Make one small strategy change at a time.
-   - Examples: adjust MA windows, increase/decrease min_change_percent, widen/narrow dedupe_minutes, adjust max_spread, tighten max_estimated_notional, revise exit profit/stop thresholds, add bearish counterpart only if evidence supports it.
-7. Prefer preview-first validation.
+7. Make one small strategy change at a time.
+   - Examples: adjust MA windows, increase/decrease min_change_percent, widen/narrow dedupe_minutes, adjust max_spread, tighten max_estimated_notional, revise exit profit/stop thresholds, add max_hold_hours for overnight/weekend risk cap, add bearish counterpart only if evidence supports it.
+8. Prefer preview-first validation.
    - Keep MARKET_CYCLE_SUBMIT_ENABLED=false and strategy submit disabled unless explicitly asked to test paper submit.
    - Let the market cycle create previews and collect evidence before risking automatic orders.
-8. Verify after changes.
+9. Verify after changes.
    - Run focused tests if code changed.
    - Run dry-run script output before committing strategy config changes when possible.
    - Use market-cycle smoke only when credentials/database are configured and the user expects live paper environment interaction.
@@ -195,10 +236,10 @@ How to think about improvements:
   - Scanner quality: Did the signal correctly identify a useful underlying move?
   - Option selection quality: Was strike/expiration/spread/notional reasonable?
   - Execution quality: Did limit price, spread, or timing cause missed/poor fills?
-  - Exit quality: Did profit target, stop loss, expiration rule, or active order handling improve realized P/L?
+  - Exit quality: Did profit target, stop loss, expiration rule, max_hold_hours, or active order handling improve realized P/L?
 - Watch for strategies that generate no signals. The issue may be thresholds too strict, data feed gaps, timeframe/lookback mismatch, or dedupe suppression.
 - Watch for strategies that generate too many previews. The issue may be thresholds too loose, duplicate controls too short, or lack of trend/news filters.
-- Watch for losing strategies with good entries but poor exits. Consider exit rules before changing entry logic.
+- Watch for losing strategies with good entries but poor exits. Consider exit rules (including max_hold_hours) before changing entry logic.
 - Watch for good scanner signals but rejected previews. Consider max_spread, max_estimated_notional, option_type, target_strike, contract selection constraints, or data feed.
 - Keep paper risk small: one contract, limited daily orders, bounded notional, symbol/strategy open position caps.
 
@@ -212,7 +253,8 @@ Boundaries and safety:
 - Prefer auditable changes through existing strategy update scripts, API endpoints, or small code changes that preserve existing architecture.
 
 Good next AI behavior:
-- Start by inspecting app/db/models.py, app/services/strategy_templates.py, app/services/signal_scanner.py, app/services/performance_review.py, and scripts/tune_paper_strategies.py.
+- Start by calling GET /api/v1/automation/learning-report or running scripts/analyze_paper_learning.py.
+- Then inspect app/db/models.py, app/services/strategy_templates.py, app/services/signal_scanner.py, app/services/performance_review.py, and scripts/tune_paper_strategies.py.
 - Then inspect current strategy data and performance using the configured database or automation endpoints.
 - Summarize what is known, what is missing, and the exact evidence behind any recommended strategy change.
 - If implementing changes, keep them minimal, testable, and easy to revert.

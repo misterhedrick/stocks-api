@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -8,6 +9,8 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.db.models import JobRun, Signal, Strategy
 from app.integrations.alpaca import (
@@ -79,9 +82,16 @@ def scan_signals(
             except ValueError as exc:
                 signals_skipped += 1
                 errors.append(f"{strategy.name}.scanner: {exc}")
+                logger.warning("Signal scanner config error for strategy %r: %s", strategy.name, exc)
             except Exception as exc:
                 signals_skipped += 1
                 errors.append(f"{strategy.name}.scanner: {exc.__class__.__name__}: {exc}")
+                logger.error(
+                    "Signal scanner unexpected error for strategy %r: %s: %s",
+                    strategy.name,
+                    exc.__class__.__name__,
+                    exc,
+                )
 
             if not signal_specs:
                 if "scanner" not in strategy.config and "scan_signals" not in strategy.config:
@@ -503,6 +513,9 @@ def _moving_average_signal_specs(
             continue
 
         closes = [bar.close for bar in stock_bars.bars]
+        # Compute averages for the current bar and the bar immediately before it
+        # (windows shifted by 1). The one-bar shift is intentional: comparing
+        # current vs previous detects crossovers (e.g. short crosses above long).
         previous_short = _average(closes[-short_window - 1 : -1])
         previous_long = _average(closes[-long_window - 1 : -1])
         current_short = _average(closes[-short_window:])
@@ -678,9 +691,9 @@ def _trend_confirmation_signal_specs(
                 f"{strategy_name}.{symbol}: no stock bars returned for trend confirmation window"
             )
             continue
-        if len(stock_bars.bars) < long_window:
+        if len(stock_bars.bars) < long_window + 1:
             no_signal_reasons.append(
-                f"{strategy_name}.{symbol}: fewer than {long_window} stock bars returned for trend confirmation window"
+                f"{strategy_name}.{symbol}: fewer than {long_window + 1} stock bars returned for trend confirmation window"
             )
             continue
 
@@ -938,6 +951,8 @@ def _scanner_string(
 
 
 def _average(values: list[Decimal]) -> Decimal:
+    if not values:
+        return Decimal("0")
     return sum(values, Decimal("0")) / Decimal(len(values))
 
 

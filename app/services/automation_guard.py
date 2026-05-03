@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+logger = logging.getLogger(__name__)
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -127,9 +132,10 @@ def _has_broker_order(db: Session, order_intent: OrderIntent) -> bool:
 
 
 def _submitted_orders_today(db: Session) -> int:
-    now = datetime.now(timezone.utc)
-    day_start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
-    day_end = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
+    trading_tz = ZoneInfo("America/New_York")
+    local_now = datetime.now(timezone.utc).astimezone(trading_tz)
+    day_start = datetime.combine(local_now.date(), time.min, tzinfo=trading_tz).astimezone(timezone.utc)
+    day_end = datetime.combine(local_now.date(), time.max, tzinfo=trading_tz).astimezone(timezone.utc)
     statement = (
         select(func.count(BrokerOrder.id))
         .where(BrokerOrder.submitted_at.is_not(None))
@@ -154,6 +160,10 @@ def _submitted_orders_for_cycle(db: Session, *, cycle_id: str | None) -> int:
         .where(BrokerOrder.submitted_at.is_not(None))
         .where(BrokerOrder.submitted_at >= job_run.started_at)
     )
+    # Only apply an upper bound when the job has finished. While still running,
+    # any order submitted after the cycle started belongs to this cycle.
+    if job_run.finished_at is not None:
+        statement = statement.where(BrokerOrder.submitted_at <= job_run.finished_at)
     return _int_scalar(db, statement)
 
 
@@ -180,10 +190,20 @@ def _open_positions_count(
         .where(PositionSnapshot.quantity > 0)
     )
     if underlying_symbol is not None:
-        normalized = underlying_symbol.upper()
+        normalized = underlying_symbol.strip().upper()
+        if not normalized:
+            return 0
+        # Match the exact stock symbol OR option contracts whose symbol starts
+        # with the underlying immediately followed by a 6-digit expiration date
+        # (e.g. "SPY240315C00500000"). The [0-9] anchor prevents "SPY" from
+        # matching unrelated tickers like "SPYG" or "SPYD".
         open_positions = open_positions.where(
-            (func.upper(PositionSnapshot.symbol) == normalized)
-            | (func.upper(PositionSnapshot.symbol).like(f"{normalized}%"))
+            or_(
+                func.upper(PositionSnapshot.symbol) == normalized,
+                PositionSnapshot.symbol.regexp_match(
+                    f"^{re.escape(normalized)}[0-9]", flags="i"
+                ),
+            )
         )
 
     statement = select(func.count()).select_from(open_positions.subquery())

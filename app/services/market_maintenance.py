@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +17,7 @@ from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.news_scanner import scan_market_news
 from app.services.performance_review import get_paper_performance_review
+from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
 
 
 AUTO_POST_MARKET_START_HOUR_UTC = 17
@@ -29,6 +33,7 @@ class MarketMaintenanceResult:
     performance: dict[str, Any] | None
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
+    trade_cases: dict[str, Any] | None = None
 
 
 def run_market_maintenance(
@@ -89,6 +94,7 @@ def run_pre_market_maintenance(
     stale_after_hours: int = 12,
     news_enabled: bool = True,
 ) -> MarketMaintenanceResult:
+    logger.info("Running pre-market maintenance (order_limit=%d, stale_after_hours=%d)", order_limit, stale_after_hours)
     started_at = datetime.now(timezone.utc)
     job_run = _start_job_run(db, "pre_market_maintenance", started_at=started_at)
 
@@ -140,6 +146,7 @@ def run_post_market_maintenance(
     fill_page_size: int = 500,
     stale_after_hours: int = 0,
 ) -> MarketMaintenanceResult:
+    logger.info("Running post-market maintenance (order_limit=%d, stale_after_hours=%d)", order_limit, stale_after_hours)
     started_at = datetime.now(timezone.utc)
     job_run = _start_job_run(db, "post_market_maintenance", started_at=started_at)
 
@@ -169,19 +176,26 @@ def run_post_market_maintenance(
             "settings_snapshot": settings_snapshot,
         }
         _finish_job_run(db, job_run, details=details, event_type="market_maintenance.post_market.succeeded")
-        return MarketMaintenanceResult(
-            job_run=job_run,
-            phase="post_market",
-            cleanup=cleanup,
-            reconcile=reconcile,
-            news=None,
-            performance=performance,
-            readiness=readiness,
-            settings_snapshot=settings_snapshot,
-        )
     except Exception as exc:
         _fail_job_run(db, job_run, exc, event_type="market_maintenance.post_market.failed")
         raise
+
+    # Populate trade cases after the maintenance job_run is safely committed.
+    # Runs in its own transaction so a failure here never rolls back the maintenance record.
+    trade_cases = _populate_trade_cases_safely(db, limit=5000)
+    _write_trade_cases_audit_log(db, maintenance_job_run=job_run, trade_cases=trade_cases)
+
+    return MarketMaintenanceResult(
+        job_run=job_run,
+        phase="post_market",
+        cleanup=cleanup,
+        reconcile=reconcile,
+        news=None,
+        performance=performance,
+        readiness=readiness,
+        settings_snapshot=settings_snapshot,
+        trade_cases=trade_cases,
+    )
 
 
 def cleanup_stale_trading_state(
@@ -229,6 +243,64 @@ def cleanup_stale_trading_state(
         "signal_ids": [str(signal.id) for signal in stale_signals],
         "order_intent_ids": [str(order_intent.id) for order_intent in stale_order_intents],
     }
+
+
+def _populate_trade_cases_safely(db: Session, *, limit: int) -> dict[str, Any]:
+    try:
+        result = populate_trade_cases_from_closed_round_trips(db, limit=limit)
+        return {
+            "job_run_id": str(result.job_run.id),
+            "round_trips_seen": result.round_trips_seen,
+            "inserted": result.inserted,
+            "updated": result.updated,
+            "skipped": result.skipped,
+            "errors": result.errors,
+        }
+    except Exception as exc:
+        logger.error(
+            "Trade case population failed during post-market maintenance: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+        return {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
+
+
+def _write_trade_cases_audit_log(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    trade_cases: dict[str, Any],
+) -> None:
+    failed = "error" in trade_cases
+    event_type = (
+        "market_maintenance.post_market.trade_cases.failed"
+        if failed
+        else "market_maintenance.post_market.trade_cases.succeeded"
+    )
+    payload: dict[str, Any] = {"maintenance_job_run_id": str(maintenance_job_run.id)}
+    if "job_run_id" in trade_cases:
+        payload["trade_case_population_job_run_id"] = trade_cases["job_run_id"]
+    payload.update({k: v for k, v in trade_cases.items() if k != "job_run_id"})
+    try:
+        record_audit_log(
+            db,
+            event_type=event_type,
+            entity_type="job_run",
+            entity_id=maintenance_job_run.id,
+            message=(
+                "Post-market trade case population succeeded"
+                if not failed
+                else "Post-market trade case population failed"
+            ),
+            payload=payload,
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error(
+            "Failed to write trade-cases audit log: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
 
 
 def _start_job_run(db: Session, job_name: str, *, started_at: datetime) -> JobRun:

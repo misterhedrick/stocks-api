@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
 from decimal import Decimal, InvalidOperation
@@ -8,10 +9,13 @@ from typing import Any
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+logger = logging.getLogger(__name__)
+
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.utils import current_trading_day_start_utc
 from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
@@ -169,6 +173,22 @@ def run_market_cycle(
                 limit=scan_limit,
             )
             if news_blocks_entries:
+                news_risk = news.get("risk_assessment") if isinstance(news, dict) else None
+                logger.warning(
+                    "News risk gate blocked %d entry preview(s) this cycle",
+                    len(signal_ids_for_preview),
+                )
+                record_audit_log(
+                    db,
+                    event_type="market_cycle.preview_blocked_by_news_risk",
+                    entity_type="job_run",
+                    entity_id=job_run.id,
+                    message="News risk gate blocked new entry previews this cycle",
+                    payload={
+                        "signals_blocked": len(signal_ids_for_preview),
+                        "news_risk": news_risk,
+                    },
+                )
                 preview = {
                     "status": "blocked",
                     "signals_seen": len(signal_ids_for_preview),
@@ -176,9 +196,7 @@ def run_market_cycle(
                     "previews_skipped": len(signal_ids_for_preview),
                     "errors": ["News risk gate blocked new entry previews"],
                     "order_intent_ids": [],
-                    "news_risk": news.get("risk_assessment")
-                    if isinstance(news, dict)
-                    else None,
+                    "news_risk": news_risk,
                 }
             else:
                 preview = _preview_created_signals(db, signal_ids_for_preview)
@@ -585,6 +603,7 @@ def _signal_ids_for_preview(
         select(Signal.id)
         .where(Signal.status == "new")
         .where(~has_order_intent)
+        .where(Signal.created_at >= current_trading_day_start_utc())
         .order_by(Signal.created_at.asc())
         .limit(pending_limit)
     )
@@ -673,6 +692,26 @@ def _submit_previewed_order_intents(
         except Exception as exc:
             rejected += 1
             errors.append(f"Order intent '{order_intent_id}': {exc.__class__.__name__}: {exc}")
+            logger.error(
+                "Order intent submission failed: %s %s: %s",
+                order_intent_id,
+                exc.__class__.__name__,
+                exc,
+            )
+            record_audit_log(
+                db,
+                event_type="order_intent.submit_failed",
+                entity_type="order_intent",
+                entity_id=order_intent.id,
+                message="Order intent submission failed during market cycle",
+                payload={
+                    "order_intent_id": str(order_intent.id),
+                    "strategy_id": str(strategy.id),
+                    "cycle_id": cycle_id,
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc),
+                },
+            )
             continue
 
         submitted += 1

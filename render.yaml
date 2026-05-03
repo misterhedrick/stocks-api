@@ -1,3 +1,13 @@
+# Render blueprint — paper trading, Mon-Fri market hours, fully automated.
+# Paper-only safeguards: ALPACA_PAPER=true, AUTO_SUBMIT_REQUIRES_PAPER=true.
+# Automation is intentionally enabled: TRADING_AUTOMATION_ENABLED=true,
+# SCHEDULED_JOBS_ENABLED=true, MARKET_CYCLE_SUBMIT_ENABLED=true.
+# Emergency stops: set TRADING_AUTOMATION_ENABLED=false to halt all auto-submit,
+# MARKET_CYCLE_SUBMIT_ENABLED=false to halt entry submits while keeping scan/reconcile,
+# or SCHEDULED_JOBS_ENABLED=false to stop cron execution entirely.
+# Cron schedules are UTC. They approximate Eastern market hours but are NOT
+# DST-safe: during EST (Nov-Mar) the 13-20 UTC window maps to 8am-3pm EST,
+# missing the 3pm-4pm close. Review and shift schedules around DST transitions.
 services:
   - type: web
     name: stocks-api
@@ -45,7 +55,7 @@ services:
       - key: MARKET_CYCLE_EXIT_ENABLED
         value: true
       - key: MARKET_CYCLE_NEWS_ENABLED
-        value: false
+        value: true
       - key: MARKET_CYCLE_SUBMIT_ENABLED
         value: true
       - key: NEWS_REQUEST_TIMEOUT_SECONDS
@@ -58,18 +68,19 @@ services:
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
         value: true
+      # Moderate daily limits — enough trades to collect data; avoids runaway correlated positions.
       - key: MAX_AUTO_ORDERS_PER_CYCLE
-        value: 100
+        value: 3
       - key: MAX_AUTO_ORDERS_PER_DAY
-        value: 500
+        value: 15
       - key: MAX_OPEN_POSITIONS
-        value: 500
+        value: 15
       - key: MAX_OPEN_POSITIONS_PER_SYMBOL
-        value: 100
+        value: 2
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
-        value: 2500
+        value: 500
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
         value: 70
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
@@ -86,6 +97,8 @@ services:
         value: 15
       - key: SCHEDULED_JOBS_ENABLED
         value: true
+  # Entry market-cycle cron: scan/reconcile/news/preview/submit every 2 min.
+  # 13-20 UTC ≈ 9am-4pm EDT (DST) or 8am-3pm EST (standard time). See top note.
   - type: cron
     name: stocks-api-market-cycle
     env: python
@@ -111,6 +124,8 @@ services:
         value: 429
       - key: ADMIN_API_TOKEN
         sync: false
+  # Exit-only cron: reconcile+exit-eval every 1 min for fast position protection.
+  # Same UTC window and DST caveat as the entry cron above.
   - type: cron
     name: stocks-api-market-exits
     env: python
@@ -136,6 +151,9 @@ services:
         value: 429
       - key: ADMIN_API_TOKEN
         sync: false
+  # Maintenance cron: pre/post-market at 12:30 and 21:30 UTC.
+  # 12:30 UTC = 8:30am EDT / 7:30am EST. 21:30 UTC = 5:30pm EDT / 4:30pm EST.
+  # Post-market run also auto-populates trade_cases (limit=5000).
   - type: cron
     name: stocks-api-market-maintenance
     env: python

@@ -84,6 +84,16 @@ class TradeLifecycleRead(BaseModel):
     positions: list[dict[str, Any]]
 
 
+class LearningReportRead(BaseModel):
+    generated_at: datetime
+    totals: dict[str, Any]
+    performance: dict[str, Any]
+    signals_by_strategy: list[dict[str, Any]]
+    intents_by_strategy: list[dict[str, Any]]
+    non_trade_reasons: list[dict[str, Any]]
+    job_failures: list[dict[str, Any]]
+
+
 class TradeCasesRead(BaseModel):
     generated_at: datetime
     fills_seen: int
