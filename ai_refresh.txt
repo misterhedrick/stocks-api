@@ -50,10 +50,18 @@ Current deployed state:
   - APP_ENV=production
   - AUTO_MIGRATE_ON_STARTUP=true
   - ALPACA_PAPER=true
+- render.yaml is intentionally configured for Monday paper-auto testing.
+  Paper-only safeguards are required: ALPACA_PAPER=true, AUTO_SUBMIT_REQUIRES_PAPER=true.
+  Automation is intentionally enabled: TRADING_AUTOMATION_ENABLED=true,
+  SCHEDULED_JOBS_ENABLED=true, MARKET_CYCLE_SUBMIT_ENABLED=true.
 - Three active Render cron services (all Virginia/starter, Mon-Fri):
-  1. stocks-api-market-cycle    - */2 13-20 UTC - entry cycle only (scan/reconcile/preview/submit)
-  2. stocks-api-market-exits    - */1 13-20 UTC - exit cycle only  (reconcile/exit-evaluation/exit-submit)
+  1. stocks-api-market-cycle    - */2 13-20 UTC - entry cycle (scan/news/reconcile/preview/submit)
+  2. stocks-api-market-exits    - */1 13-20 UTC - exit cycle only (reconcile/exit-eval/exit-submit)
   3. stocks-api-market-maintenance - 30 12,21 UTC - pre/post-market daily maintenance
+     Post-market run also auto-populates trade_cases (limit=5000, isolated transaction).
+- Cron schedule DST caveat: schedules are UTC and are not DST-aware.
+  13-20 UTC = 9am-4pm EDT (DST) or 8am-3pm EST (standard). During EST the 3pm-4pm
+  market close is not covered. Review schedules around daylight saving transitions.
 
 Important local/network note:
 - On Windows, curl/PowerShell may fail against Render with certificate revocation errors.
@@ -448,21 +456,28 @@ Audit log events written:
 - trade_cases.population_succeeded
 - trade_cases.population_failed
 
-Automation safety gate env vars:
-- TRADING_AUTOMATION_ENABLED=false      (global kill switch)
-- AUTO_SUBMIT_REQUIRES_PAPER=true       (block live trading accidents)
-- MARKET_CYCLE_SUBMIT_ENABLED=false     (entry auto-submit switch)
-- MARKET_CYCLE_EXIT_ENABLED=false       (exit evaluation switch; also controlled per strategy)
-- MARKET_CYCLE_NEWS_ENABLED=false       (news risk gate switch)
-- MARKET_CYCLE_PREVIEW_ENABLED=false    (entry preview switch)
-- MARKET_CYCLE_RECONCILE_ENABLED=true   (reconciliation switch)
-- MARKET_CYCLE_SCAN_ENABLED=true        (signal scan switch)
-- MAX_AUTO_ORDERS_PER_CYCLE=1
-- MAX_AUTO_ORDERS_PER_DAY=3
-- MAX_OPEN_POSITIONS=3
-- MAX_OPEN_POSITIONS_PER_SYMBOL=1
+Automation safety gate env vars (values shown are the Monday paper-auto test config in render.yaml):
+- TRADING_AUTOMATION_ENABLED=true       (global kill switch; set false to halt all auto-submit)
+- AUTO_SUBMIT_REQUIRES_PAPER=true       (block live trading accidents; always keep true)
+- ALPACA_PAPER=true                     (paper sandbox; always keep true)
+- MARKET_CYCLE_SUBMIT_ENABLED=true      (entry auto-submit; set false to stop entries while keeping scan/reconcile)
+- MARKET_CYCLE_EXIT_ENABLED=true        (exit evaluation; also controlled per strategy)
+- MARKET_CYCLE_NEWS_ENABLED=true        (news risk gate)
+- MARKET_CYCLE_PREVIEW_ENABLED=true     (entry preview)
+- MARKET_CYCLE_RECONCILE_ENABLED=true   (reconciliation)
+- MARKET_CYCLE_SCAN_ENABLED=true        (signal scan)
+- SCHEDULED_JOBS_ENABLED=true           (cron runner; set false to stop cron execution entirely)
+- MAX_AUTO_ORDERS_PER_CYCLE=3
+- MAX_AUTO_ORDERS_PER_DAY=15
+- MAX_OPEN_POSITIONS=15
+- MAX_OPEN_POSITIONS_PER_SYMBOL=2
 - MAX_CONTRACTS_PER_ORDER=1
-- MAX_ESTIMATED_PREMIUM_PER_ORDER=250
+- MAX_ESTIMATED_PREMIUM_PER_ORDER=500
+Emergency stops (any one is sufficient):
+- TRADING_AUTOMATION_ENABLED=false  — halt all auto-submit globally
+- MARKET_CYCLE_SUBMIT_ENABLED=false — halt entry submits only
+- SCHEDULED_JOBS_ENABLED=false      — stop cron execution entirely
+- MARKET_CYCLE_EXIT_ENABLED=false   — pause exit automation only
 
 Current important limitations/gaps:
 - Option contract selection is first-pass only; no delta/Greeks/moneyness/liquidity scoring yet.
@@ -495,7 +510,10 @@ AI review layer:
 - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation steps:
-1. Build AI review service: send trade_cases context to Claude, store structured suggestions in ai_trade_reviews and strategy_change_suggestions.
+1. After Monday paper-auto testing: review logs, order_intents, fills, exits, performance review,
+   and trade_cases from the session to assess scanner quality and exit behavior.
+2. Build AI review service: send trade_cases context to Claude, store structured suggestions
+   in ai_trade_reviews and strategy_change_suggestions.
 3. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
 4. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
 

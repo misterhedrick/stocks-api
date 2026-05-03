@@ -562,62 +562,92 @@ When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
 Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, optional `max_orders_per_trading_day`, optional `trading_day_timezone`, optional `trade_windows`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
 
-Global automation safety gates apply in addition to strategy-level `scanner.submit` config:
+Global automation safety gates apply in addition to strategy-level `scanner.submit` config. Values shown are the current Monday paper-auto test configuration in `render.yaml`:
 
 ```text
-TRADING_AUTOMATION_ENABLED=false
-AUTO_SUBMIT_REQUIRES_PAPER=true
-MAX_AUTO_ORDERS_PER_CYCLE=1
-MAX_AUTO_ORDERS_PER_DAY=3
-MAX_OPEN_POSITIONS=3
-MAX_OPEN_POSITIONS_PER_SYMBOL=1
+ALPACA_PAPER=true                    # paper trading only — required
+AUTO_SUBMIT_REQUIRES_PAPER=true      # prevents accidental live execution
+TRADING_AUTOMATION_ENABLED=true      # intentionally enabled for Monday test
+MAX_AUTO_ORDERS_PER_CYCLE=3
+MAX_AUTO_ORDERS_PER_DAY=15
+MAX_OPEN_POSITIONS=15
+MAX_OPEN_POSITIONS_PER_SYMBOL=2
 MAX_CONTRACTS_PER_ORDER=1
-MAX_ESTIMATED_PREMIUM_PER_ORDER=1000
+MAX_ESTIMATED_PREMIUM_PER_ORDER=500
 ```
 
-Automated submit is intended for paper trading right now. To intentionally enable fully automated paper trading, set `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=true`, `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, keep `AUTO_SUBMIT_REQUIRES_PAPER=true`, and enable both `scanner.preview.enabled` and `scanner.submit.enabled` on the strategy. Manual order intent submit is unchanged.
+Automated submit requires `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=true`, `MARKET_CYCLE_SUBMIT_ENABLED=true`, `TRADING_AUTOMATION_ENABLED=true`, and both `scanner.preview.enabled` and `scanner.submit.enabled` set on the strategy. Manual order intent submit is unchanged by any of these switches.
 
 ## Scheduled jobs
 
-`render.yaml` includes a Render cron service named `stocks-api-market-cycle` that runs every 2 minutes from 9:00am to 5:00pm Eastern on weekdays and calls:
+`render.yaml` is **intentionally configured for Monday paper-auto testing**. All three cron services and automation switches are enabled. This is paper trading only — `ALPACA_PAPER=true` and `AUTO_SUBMIT_REQUIRES_PAPER=true` are required and set.
+
+### Three cron services
+
+| Service | Purpose | Endpoint | Schedule (UTC) |
+|---|---|---|---|
+| `stocks-api-market-cycle` | Entry-focused cycle: scan → news → reconcile → preview → submit | `POST /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100` | `*/2 13-20 * * 1-5` |
+| `stocks-api-market-exits` | Exit-only protection: reconcile → exit-eval → exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
+| `stocks-api-market-maintenance` | Pre/post-market: reconcile, cleanup, news, performance, trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true` | `30 12,21 * * 1-5` |
+
+**Schedule caveat — Render cron schedules are UTC and are not DST-aware:**
+- `13-20 UTC` ≈ 9am–4pm EDT (daylight saving, UTC−4) or 8am–3pm EST (standard time, UTC−5). During EST the 3pm–4pm market close window is not covered. Review schedules when clocks change.
+- `12:30 UTC` ≈ 8:30am EDT / 7:30am EST. `21:30 UTC` ≈ 5:30pm EDT / 4:30pm EST.
+
+### Monday paper-auto test limits
+
+These moderate limits collect enough data to test scanner, exit, performance, and trade-case behaviour without creating runaway correlated positions:
 
 ```text
-POST /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100
+MAX_AUTO_ORDERS_PER_CYCLE=3       # at most 3 new entries per 2-min cycle
+MAX_AUTO_ORDERS_PER_DAY=15        # daily cap across all cycles
+MAX_OPEN_POSITIONS=15             # global open-position ceiling
+MAX_OPEN_POSITIONS_PER_SYMBOL=2   # no more than 2 contracts on the same underlying
+MAX_CONTRACTS_PER_ORDER=1         # single contract per order intent
+MAX_ESTIMATED_PREMIUM_PER_ORDER=500  # keeps each paper position small
 ```
 
-It is disabled by default with:
+### Automation switches (all enabled for Monday test)
 
 ```text
-SCHEDULED_JOBS_ENABLED=false
-```
-
-The cron runner retries temporary HTTP failures by default:
-
-```text
-JOB_RETRY_DELAYS_SECONDS=10,30
-```
-
-Retryable responses are `429`, `500`, `502`, `503`, and `504`, giving the job up to three total attempts.
-
-For high-frequency market-cycle crons, set `JOB_SKIP_HTTP_STATUS_CODES=429` so a platform throttle is treated as a skipped cycle instead of a failed cron run that keeps retrying into the next scheduled run.
-
-The `stocks-api-market-maintenance` cron runs at 8:30am and 5:30pm Eastern on weekdays.
-
-To activate it in Render, set `SCHEDULED_JOBS_ENABLED=true` on the cron service. You can turn the cron service off in Render as a second safety switch.
-
-Market-cycle behavior is controlled by these web-service env vars:
-
-```text
+TRADING_AUTOMATION_ENABLED=true
+SCHEDULED_JOBS_ENABLED=true
 MARKET_CYCLE_SCAN_ENABLED=true
 MARKET_CYCLE_RECONCILE_ENABLED=true
-MARKET_CYCLE_PREVIEW_ENABLED=false
-MARKET_CYCLE_EXIT_ENABLED=false
-MARKET_CYCLE_NEWS_ENABLED=false
-MARKET_CYCLE_SUBMIT_ENABLED=false
-NEWS_REQUEST_TIMEOUT_SECONDS=10
-NEWS_MARKET_RSS_FEEDS=https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=Federal%20Reserve%20OR%20interest%20rates%20OR%20inflation%20OR%20CPI%20OR%20PPI%20OR%20jobs%20report&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=US%20economy%20OR%20Treasury%20yields%20OR%20dollar%20OR%20recession%20OR%20GDP&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=world%20markets%20OR%20global%20stocks%20OR%20geopolitical%20risk%20OR%20oil%20prices%20OR%20war%20OR%20tariffs&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=earnings%20guidance%20OR%20market%20volatility%20OR%20VIX%20OR%20credit%20markets%20OR%20banking%20sector&hl=en-US&gl=US&ceid=US:en
-NEWS_TICKER_RSS_TEMPLATE=https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en
+MARKET_CYCLE_PREVIEW_ENABLED=true
+MARKET_CYCLE_EXIT_ENABLED=true
+MARKET_CYCLE_NEWS_ENABLED=true
+MARKET_CYCLE_SUBMIT_ENABLED=true
 ```
+
+### Emergency stops
+
+| Action | Switch |
+|---|---|
+| Stop all auto-submit immediately | `TRADING_AUTOMATION_ENABLED=false` |
+| Stop entry submits, keep scan/reconcile/preview running | `MARKET_CYCLE_SUBMIT_ENABLED=false` |
+| Stop cron execution entirely | `SCHEDULED_JOBS_ENABLED=false` |
+| Pause exit automation only | `MARKET_CYCLE_EXIT_ENABLED=false` |
+
+Any of these can be set in the Render dashboard without a redeploy. Disabling the cron service in Render is a second independent stop switch.
+
+### Cron runner retry behaviour
+
+Retryable responses (`500`, `502`, `503`, `504`) are retried with delays of `60s, 180s` (entry/exit crons) or `60s, 180s, 300s, 600s, 900s` (maintenance). `JOB_SKIP_HTTP_STATUS_CODES=429` treats platform throttles as skipped cycles rather than retried failures.
+
+### Post-market maintenance and trade-case persistence
+
+The `stocks-api-market-maintenance` cron runs pre-market at ~12:30 UTC and post-market at ~21:30 UTC. The post-market run:
+1. Deep-reconciles broker state (500 orders/fills).
+2. Cleans stale signals and order intents.
+3. Generates a paper performance summary.
+4. Automatically calls `populate_trade_cases_from_closed_round_trips` (limit=5000) in an isolated transaction to persist closed FIFO round trips into the `trade_cases` table for later AI review.
+
+The standalone endpoint `POST /api/v1/jobs/populate-trade-cases` is also available for manual runs.
+
+### AI review status
+
+`trade_cases` persistence is fully wired in. `ai_trade_reviews` and `strategy_change_suggestions` table schemas exist, but AI review generation is not implemented yet. No AI provider is called by this Monday paper-auto test setup.
 
 Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, evaluate current positions for exit previews, check market/owned-ticker news, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.
@@ -653,27 +683,12 @@ python -m unittest discover -s tests
 
 ## Render
 
-Render startup now relies on the FastAPI startup hook to auto-run migrations when `AUTO_MIGRATE_ON_STARTUP=true` or the app environment is `production`/`staging`.
+Render startup relies on the FastAPI startup hook to auto-run migrations when `AUTO_MIGRATE_ON_STARTUP=true` or the app environment is `production`/`staging`.
 
-Set these environment variables in Render:
+Required secrets (set via Render dashboard, not in `render.yaml`):
 - `DATABASE_URL`
 - `ADMIN_API_TOKEN`
 - `ALPACA_API_KEY`
 - `ALPACA_API_SECRET`
-- `AUTO_MIGRATE_ON_STARTUP=true`
-- `MARKET_CYCLE_SCAN_ENABLED=true`
-- `MARKET_CYCLE_RECONCILE_ENABLED=true`
-- `MARKET_CYCLE_PREVIEW_ENABLED=false`
-- `MARKET_CYCLE_EXIT_ENABLED=false`
-- `MARKET_CYCLE_NEWS_ENABLED=false`
-- `MARKET_CYCLE_SUBMIT_ENABLED=false`
-- `TRADING_AUTOMATION_ENABLED=false` until you are intentionally ready for automated paper submit
-- `AUTO_SUBMIT_REQUIRES_PAPER=true`
-- `MAX_AUTO_ORDERS_PER_CYCLE=1`
-- `MAX_AUTO_ORDERS_PER_DAY=3`
-- `MAX_OPEN_POSITIONS=3`
-- `MAX_OPEN_POSITIONS_PER_SYMBOL=1`
-- `MAX_CONTRACTS_PER_ORDER=1`
-- `MAX_ESTIMATED_PREMIUM_PER_ORDER=1000`
-- `SCHEDULED_JOBS_ENABLED=false` until you are ready for cron runs
-- `JOB_RETRY_DELAYS_SECONDS=10,30` on the cron service unless you want different retry timing
+
+All other env vars are declared in `render.yaml`. The current blueprint is intentionally configured for Monday paper-auto testing — see the **Scheduled jobs** section above for the full topology, limits, and emergency stop switches.
