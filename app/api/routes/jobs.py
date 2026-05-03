@@ -226,6 +226,7 @@ def market_cycle_route(
             scan_limit=scan_limit,
             order_limit=order_limit,
             fill_page_size=fill_page_size,
+            exit_enabled_override=False,
             **cycle_kwargs,
         )
     except AlpacaTradingConfigurationError as exc:

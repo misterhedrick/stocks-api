@@ -460,6 +460,7 @@ class RouteBehaviorTests(unittest.TestCase):
             scan_limit=25,
             order_limit=50,
             fill_page_size=75,
+            exit_enabled_override=False,
         )
 
     def test_market_cycle_stress_route_forces_no_submit_overrides(self) -> None:
