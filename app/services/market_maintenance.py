@@ -183,6 +183,7 @@ def run_post_market_maintenance(
     # Populate trade cases after the maintenance job_run is safely committed.
     # Runs in its own transaction so a failure here never rolls back the maintenance record.
     trade_cases = _populate_trade_cases_safely(db, limit=5000)
+    _write_trade_cases_audit_log(db, maintenance_job_run=job_run, trade_cases=trade_cases)
 
     return MarketMaintenanceResult(
         job_run=job_run,
@@ -262,6 +263,44 @@ def _populate_trade_cases_safely(db: Session, *, limit: int) -> dict[str, Any]:
             exc,
         )
         return {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
+
+
+def _write_trade_cases_audit_log(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    trade_cases: dict[str, Any],
+) -> None:
+    failed = "error" in trade_cases
+    event_type = (
+        "market_maintenance.post_market.trade_cases.failed"
+        if failed
+        else "market_maintenance.post_market.trade_cases.succeeded"
+    )
+    payload: dict[str, Any] = {"maintenance_job_run_id": str(maintenance_job_run.id)}
+    if "job_run_id" in trade_cases:
+        payload["trade_case_population_job_run_id"] = trade_cases["job_run_id"]
+    payload.update({k: v for k, v in trade_cases.items() if k != "job_run_id"})
+    try:
+        record_audit_log(
+            db,
+            event_type=event_type,
+            entity_type="job_run",
+            entity_id=maintenance_job_run.id,
+            message=(
+                "Post-market trade case population succeeded"
+                if not failed
+                else "Post-market trade case population failed"
+            ),
+            payload=payload,
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error(
+            "Failed to write trade-cases audit log: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
 
 
 def _start_job_run(db: Session, job_name: str, *, started_at: datetime) -> JobRun:

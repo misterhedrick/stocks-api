@@ -349,8 +349,22 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.trade_cases["inserted"], 1)
         self.assertEqual(result.trade_cases["skipped"], 1)
         self.assertEqual(result.trade_cases["errors"], [])
-        # Uses the same fill limit as the performance review
         populate.assert_called_once_with(db, limit=5000)
+        # Two commits: _finish_job_run + _write_trade_cases_audit_log
+        self.assertEqual(db.commit_count, 2)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        tc_audit = next(
+            (a for a in audit_logs if "trade_cases" in a.event_type), None
+        )
+        self.assertIsNotNone(tc_audit)
+        self.assertEqual(
+            tc_audit.event_type,
+            "market_maintenance.post_market.trade_cases.succeeded",
+        )
+        self.assertIn("maintenance_job_run_id", tc_audit.payload)
+        self.assertIn("trade_case_population_job_run_id", tc_audit.payload)
+        self.assertEqual(tc_audit.payload["round_trips_seen"], 2)
+        self.assertEqual(tc_audit.payload["inserted"], 1)
 
     def test_post_market_maintenance_trade_case_failure_does_not_fail_maintenance(self) -> None:
         signal = build_signal()
@@ -378,6 +392,19 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertIn("error", result.trade_cases)
         self.assertIn("fill table exploded", result.trade_cases["error"])
         self.assertEqual(result.trade_cases["status"], "failed")
+        # Failure audit event is written and committed
+        self.assertEqual(db.commit_count, 2)
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        tc_audit = next(
+            (a for a in audit_logs if "trade_cases" in a.event_type), None
+        )
+        self.assertIsNotNone(tc_audit)
+        self.assertEqual(
+            tc_audit.event_type,
+            "market_maintenance.post_market.trade_cases.failed",
+        )
+        self.assertIn("maintenance_job_run_id", tc_audit.payload)
+        self.assertIn("fill table exploded", tc_audit.payload.get("error", ""))
 
     def test_pre_market_maintenance_has_no_trade_cases(self) -> None:
         signal = build_signal()

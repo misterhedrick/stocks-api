@@ -443,6 +443,8 @@ Audit log events written:
 - market_maintenance.pre_market.failed
 - market_maintenance.post_market.succeeded
 - market_maintenance.post_market.failed
+- market_maintenance.post_market.trade_cases.succeeded
+- market_maintenance.post_market.trade_cases.failed
 - trade_cases.population_succeeded
 - trade_cases.population_failed
 
