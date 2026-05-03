@@ -562,12 +562,12 @@ When `MARKET_CYCLE_PREVIEW_ENABLED=true`, scanner-created signals with `scanner.
 When `MARKET_CYCLE_SUBMIT_ENABLED=true`, only order intents created by that same market-cycle run are eligible for auto-submit, and the strategy must also set `scanner.submit.enabled=true`.
 Submit config supports `max_orders_per_cycle`, `max_contracts_per_order`, optional `max_contracts_per_cycle`, optional `max_notional_per_order`, optional `max_open_contracts_per_symbol`, optional `max_open_contracts_per_strategy`, optional `max_orders_per_trading_day`, optional `trading_day_timezone`, optional `trade_windows`, and `allowed_sides`. Option notional is treated as `contract_price * quantity * 100`. Existing open-contract checks use broker orders linked back to the strategy's order intents.
 
-Global automation safety gates apply in addition to strategy-level `scanner.submit` config. Values shown are the current Monday paper-auto test configuration in `render.yaml`:
+Global automation safety gates apply in addition to strategy-level `scanner.submit` config. Values shown are the current paper trading configuration in `render.yaml`:
 
 ```text
 ALPACA_PAPER=true                    # paper trading only — required
 AUTO_SUBMIT_REQUIRES_PAPER=true      # prevents accidental live execution
-TRADING_AUTOMATION_ENABLED=true      # intentionally enabled for Monday test
+TRADING_AUTOMATION_ENABLED=true      # automation enabled
 MAX_AUTO_ORDERS_PER_CYCLE=3
 MAX_AUTO_ORDERS_PER_DAY=15
 MAX_OPEN_POSITIONS=15
@@ -580,7 +580,7 @@ Automated submit requires `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=tru
 
 ## Scheduled jobs
 
-`render.yaml` is **intentionally configured for Monday paper-auto testing**. All three cron services and automation switches are enabled. This is paper trading only — `ALPACA_PAPER=true` and `AUTO_SUBMIT_REQUIRES_PAPER=true` are required and set.
+`render.yaml` is configured for **daily paper trading, Mon-Fri market hours**. All three cron services and automation switches are enabled. This is paper trading only — `ALPACA_PAPER=true` and `AUTO_SUBMIT_REQUIRES_PAPER=true` are required and set.
 
 ### Three cron services
 
@@ -594,9 +594,9 @@ Automated submit requires `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=tru
 - `13-20 UTC` ≈ 9am–4pm EDT (daylight saving, UTC−4) or 8am–3pm EST (standard time, UTC−5). During EST the 3pm–4pm market close window is not covered. Review schedules when clocks change.
 - `12:30 UTC` ≈ 8:30am EDT / 7:30am EST. `21:30 UTC` ≈ 5:30pm EDT / 4:30pm EST.
 
-### Monday paper-auto test limits
+### Automation limits
 
-These moderate limits collect enough data to test scanner, exit, performance, and trade-case behaviour without creating runaway correlated positions:
+These moderate limits collect enough data per day without creating runaway correlated positions:
 
 ```text
 MAX_AUTO_ORDERS_PER_CYCLE=3       # at most 3 new entries per 2-min cycle
@@ -607,7 +607,7 @@ MAX_CONTRACTS_PER_ORDER=1         # single contract per order intent
 MAX_ESTIMATED_PREMIUM_PER_ORDER=500  # keeps each paper position small
 ```
 
-### Automation switches (all enabled for Monday test)
+### Automation switches
 
 ```text
 TRADING_AUTOMATION_ENABLED=true
@@ -647,7 +647,7 @@ The standalone endpoint `POST /api/v1/jobs/populate-trade-cases` is also availab
 
 ### AI review status
 
-`trade_cases` persistence is fully wired in. `ai_trade_reviews` and `strategy_change_suggestions` table schemas exist, but AI review generation is not implemented yet. No AI provider is called by this Monday paper-auto test setup.
+`trade_cases` persistence is fully wired in. `ai_trade_reviews` and `strategy_change_suggestions` table schemas exist, but AI review generation is not yet implemented.
 
 Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, evaluate current positions for exit previews, check market/owned-ticker news, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.

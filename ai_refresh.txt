@@ -50,9 +50,9 @@ Current deployed state:
   - APP_ENV=production
   - AUTO_MIGRATE_ON_STARTUP=true
   - ALPACA_PAPER=true
-- render.yaml is intentionally configured for Monday paper-auto testing.
+- render.yaml is configured for daily paper trading, Mon-Fri market hours.
   Paper-only safeguards are required: ALPACA_PAPER=true, AUTO_SUBMIT_REQUIRES_PAPER=true.
-  Automation is intentionally enabled: TRADING_AUTOMATION_ENABLED=true,
+  Automation is fully enabled: TRADING_AUTOMATION_ENABLED=true,
   SCHEDULED_JOBS_ENABLED=true, MARKET_CYCLE_SUBMIT_ENABLED=true.
 - Three active Render cron services (all Virginia/starter, Mon-Fri):
   1. stocks-api-market-cycle    - */2 13-20 UTC - entry cycle (scan/news/reconcile/preview/submit)
@@ -456,7 +456,7 @@ Audit log events written:
 - trade_cases.population_succeeded
 - trade_cases.population_failed
 
-Automation safety gate env vars (values shown are the Monday paper-auto test config in render.yaml):
+Automation safety gate env vars (values shown are the current paper trading config in render.yaml):
 - TRADING_AUTOMATION_ENABLED=true       (global kill switch; set false to halt all auto-submit)
 - AUTO_SUBMIT_REQUIRES_PAPER=true       (block live trading accidents; always keep true)
 - ALPACA_PAPER=true                     (paper sandbox; always keep true)
@@ -510,7 +510,7 @@ AI review layer:
 - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation steps:
-1. After Monday paper-auto testing: review logs, order_intents, fills, exits, performance review,
+1. After each trading day: review logs, order_intents, fills, exits, performance review,
    and trade_cases from the session to assess scanner quality and exit behavior.
 2. Build AI review service: send trade_cases context to Claude, store structured suggestions
    in ai_trade_reviews and strategy_change_suggestions.

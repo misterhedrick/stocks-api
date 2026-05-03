@@ -1,4 +1,4 @@
-# Render blueprint — intentionally configured for Monday paper-auto testing.
+# Render blueprint — paper trading, Mon-Fri market hours, fully automated.
 # Paper-only safeguards: ALPACA_PAPER=true, AUTO_SUBMIT_REQUIRES_PAPER=true.
 # Automation is intentionally enabled: TRADING_AUTOMATION_ENABLED=true,
 # SCHEDULED_JOBS_ENABLED=true, MARKET_CYCLE_SUBMIT_ENABLED=true.
@@ -68,8 +68,7 @@ services:
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
         value: true
-      # Moderate limits for Monday paper-auto testing.
-      # Enough trades to collect useful data; avoids runaway correlated positions.
+      # Moderate daily limits — enough trades to collect data; avoids runaway correlated positions.
       - key: MAX_AUTO_ORDERS_PER_CYCLE
         value: 3
       - key: MAX_AUTO_ORDERS_PER_DAY
