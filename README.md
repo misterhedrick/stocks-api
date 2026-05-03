@@ -299,6 +299,15 @@ curl -H "Authorization: Bearer change-me" \
 
 This read-only endpoint exposes the same FIFO-matched closed round trips and open lots in a trade-case shape so later AI review can consume stable entry/exit IDs, realized P/L, strategy summaries, and symbol summaries without changing the broker source of truth.
 
+Populate durable trade cases (normally runs automatically at end of post-market maintenance):
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/populate-trade-cases?limit=500" \
+  -H "Authorization: Bearer change-me"
+```
+
+This writes closed FIFO round trips into the `trade_cases` table using `(entry_fill_id, exit_fill_id)` as a stable dedupe key. Each post-market maintenance run calls this automatically with `limit=5000` in an isolated transaction — if it fails the maintenance job itself is unaffected. The response includes `trade_cases: { round_trips_seen, inserted, updated, skipped, errors }`.
+
 
 Evaluate current positions for exits:
 

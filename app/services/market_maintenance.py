@@ -17,6 +17,7 @@ from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.news_scanner import scan_market_news
 from app.services.performance_review import get_paper_performance_review
+from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
 
 
 AUTO_POST_MARKET_START_HOUR_UTC = 17
@@ -32,6 +33,7 @@ class MarketMaintenanceResult:
     performance: dict[str, Any] | None
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
+    trade_cases: dict[str, Any] | None = None
 
 
 def run_market_maintenance(
@@ -174,19 +176,25 @@ def run_post_market_maintenance(
             "settings_snapshot": settings_snapshot,
         }
         _finish_job_run(db, job_run, details=details, event_type="market_maintenance.post_market.succeeded")
-        return MarketMaintenanceResult(
-            job_run=job_run,
-            phase="post_market",
-            cleanup=cleanup,
-            reconcile=reconcile,
-            news=None,
-            performance=performance,
-            readiness=readiness,
-            settings_snapshot=settings_snapshot,
-        )
     except Exception as exc:
         _fail_job_run(db, job_run, exc, event_type="market_maintenance.post_market.failed")
         raise
+
+    # Populate trade cases after the maintenance job_run is safely committed.
+    # Runs in its own transaction so a failure here never rolls back the maintenance record.
+    trade_cases = _populate_trade_cases_safely(db, limit=5000)
+
+    return MarketMaintenanceResult(
+        job_run=job_run,
+        phase="post_market",
+        cleanup=cleanup,
+        reconcile=reconcile,
+        news=None,
+        performance=performance,
+        readiness=readiness,
+        settings_snapshot=settings_snapshot,
+        trade_cases=trade_cases,
+    )
 
 
 def cleanup_stale_trading_state(
@@ -234,6 +242,26 @@ def cleanup_stale_trading_state(
         "signal_ids": [str(signal.id) for signal in stale_signals],
         "order_intent_ids": [str(order_intent.id) for order_intent in stale_order_intents],
     }
+
+
+def _populate_trade_cases_safely(db: Session, *, limit: int) -> dict[str, Any]:
+    try:
+        result = populate_trade_cases_from_closed_round_trips(db, limit=limit)
+        return {
+            "job_run_id": str(result.job_run.id),
+            "round_trips_seen": result.round_trips_seen,
+            "inserted": result.inserted,
+            "updated": result.updated,
+            "skipped": result.skipped,
+            "errors": result.errors,
+        }
+    except Exception as exc:
+        logger.error(
+            "Trade case population failed during post-market maintenance: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+        return {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
 
 
 def _start_job_run(db: Session, job_name: str, *, started_at: datetime) -> JobRun:

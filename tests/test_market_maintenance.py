@@ -18,6 +18,7 @@ from app.services.market_maintenance import (
 )
 from app.services.news_scanner import NewsScanResult
 from app.services.performance_review import PerformanceReviewResult
+from app.services.trade_cases import TradeCasePopulationResult
 
 
 class FakeScalarResult:
@@ -166,6 +167,17 @@ def build_performance_result() -> PerformanceReviewResult:
     )
 
 
+def build_trade_case_population_result() -> TradeCasePopulationResult:
+    return TradeCasePopulationResult(
+        job_run=build_job_run("populate_trade_cases"),
+        round_trips_seen=2,
+        inserted=1,
+        updated=0,
+        skipped=1,
+        errors=[],
+    )
+
+
 def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
     return MarketMaintenanceResult(
         job_run=build_job_run(f"{phase}_maintenance"),
@@ -176,6 +188,9 @@ def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
         performance={"matched_round_trips": 0} if phase == "post_market" else None,
         readiness={"active_strategies": 1},
         settings_snapshot={"paper_mode": True},
+        trade_cases={"round_trips_seen": 2, "inserted": 1, "updated": 0, "skipped": 1, "errors": []}
+        if phase == "post_market"
+        else None,
     )
 
 
@@ -299,7 +314,10 @@ class MarketMaintenanceTests(unittest.TestCase):
         ), patch(
             "app.services.market_maintenance.get_paper_performance_review",
             return_value=build_performance_result(),
-        ) as performance:
+        ) as performance, patch(
+            "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
+            return_value=build_trade_case_population_result(),
+        ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
         self.assertEqual(result.phase, "post_market")
@@ -307,6 +325,76 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.performance["totals"]["realized_pnl"], "25")
         self.assertIsNone(result.news)
         performance.assert_called_once_with(db, limit=5000)
+
+    def test_post_market_maintenance_populates_trade_cases(self) -> None:
+        signal = build_signal()
+        order_intent = build_order_intent()
+        strategy = build_strategy()
+        db = FakeMaintenanceSession([[signal], [order_intent], [strategy]])
+
+        with patch(
+            "app.services.market_maintenance.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_maintenance.get_paper_performance_review",
+            return_value=build_performance_result(),
+        ), patch(
+            "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
+            return_value=build_trade_case_population_result(),
+        ) as populate:
+            result = run_post_market_maintenance(db, stale_after_hours=0)
+
+        self.assertIsNotNone(result.trade_cases)
+        self.assertEqual(result.trade_cases["round_trips_seen"], 2)
+        self.assertEqual(result.trade_cases["inserted"], 1)
+        self.assertEqual(result.trade_cases["skipped"], 1)
+        self.assertEqual(result.trade_cases["errors"], [])
+        # Uses the same fill limit as the performance review
+        populate.assert_called_once_with(db, limit=5000)
+
+    def test_post_market_maintenance_trade_case_failure_does_not_fail_maintenance(self) -> None:
+        signal = build_signal()
+        order_intent = build_order_intent()
+        strategy = build_strategy()
+        db = FakeMaintenanceSession([[signal], [order_intent], [strategy]])
+
+        with patch(
+            "app.services.market_maintenance.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_maintenance.get_paper_performance_review",
+            return_value=build_performance_result(),
+        ), patch(
+            "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
+            side_effect=RuntimeError("fill table exploded"),
+        ):
+            result = run_post_market_maintenance(db, stale_after_hours=0)
+
+        # Maintenance itself succeeded
+        self.assertEqual(result.job_run.status, "succeeded")
+        self.assertEqual(result.phase, "post_market")
+        # Trade cases reports the error but does not propagate
+        self.assertIsNotNone(result.trade_cases)
+        self.assertIn("error", result.trade_cases)
+        self.assertIn("fill table exploded", result.trade_cases["error"])
+        self.assertEqual(result.trade_cases["status"], "failed")
+
+    def test_pre_market_maintenance_has_no_trade_cases(self) -> None:
+        signal = build_signal()
+        order_intent = build_order_intent()
+        strategy = build_strategy()
+        db = FakeMaintenanceSession([[signal], [order_intent], [strategy]])
+
+        with patch(
+            "app.services.market_maintenance.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_maintenance.scan_market_news",
+            return_value=build_news_scan_result(),
+        ):
+            result = run_pre_market_maintenance(db, stale_after_hours=0)
+
+        self.assertIsNone(result.trade_cases)
 
 
 if __name__ == "__main__":

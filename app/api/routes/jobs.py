@@ -431,6 +431,7 @@ def market_maintenance_route(
         performance=result.performance,
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
+        trade_cases=result.trade_cases,
     )
 
 
@@ -479,6 +480,7 @@ def pre_market_maintenance_route(
         performance=result.performance,
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
+        trade_cases=result.trade_cases,
     )
 
 
@@ -520,6 +522,7 @@ def post_market_maintenance_route(
         performance=result.performance,
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
+        trade_cases=result.trade_cases,
     )
 
 

@@ -221,6 +221,9 @@ Current repo structure and purpose:
     Pre-market: reconcile, fetch news, stale cleanup, readiness check, settings snapshot.
   - POST /api/v1/jobs/post-market-maintenance, bearer-protected.
     Post-market: deep reconcile (500 orders/fills), stale cleanup, paper performance summary, readiness check.
+    After the maintenance job_run is committed, automatically calls populate_trade_cases_from_closed_round_trips
+    (limit=5000) in its own transaction. Failure there is logged and included in the response under `trade_cases`
+    but never fails the maintenance job itself.
   - POST /api/v1/jobs/reset-trading-data, bearer-protected.
     Resets paper trading data for a clean paper day; strategies are preserved.
   - POST /api/v1/jobs/populate-trade-cases, bearer-protected.
@@ -263,6 +266,9 @@ Current repo structure and purpose:
 - app/services/market_maintenance.py
   - Pre-market (8:30am ET): conservative limits (100 orders), stale cleanup for 12h+ old state, news scan, readiness check.
   - Post-market (5pm ET): aggressive limits (500 orders/fills), full end-of-day reconcile, stale cleanup, paper performance summary.
+    After the maintenance job_run commits, calls _populate_trade_cases_safely(limit=5000): wraps
+    populate_trade_cases_from_closed_round_trips in a try/except so a trade-case failure never rolls back or
+    fails the maintenance record. Result included in MarketMaintenanceResult.trade_cases.
   - Phase selection is automatic based on UTC hour; can be overridden with phase="pre_market" or "post_market".
 - app/services/trading_reset.py
   - Resets paper trading state for a new paper day.
@@ -324,6 +330,8 @@ Current repo structure and purpose:
   - populate_trade_cases_from_closed_round_trips(db, *, limit=500): idempotent FIFO upsert of closed round trips into trade_cases table.
   - Deduplicates by (entry_fill_id, exit_fill_id); updates context if changed, skips if unchanged.
   - Wraps work in JobRun and writes audit log on success/failure.
+  - Called automatically from post-market maintenance (limit=5000) via _populate_trade_cases_safely.
+  - Also available standalone via POST /api/v1/jobs/populate-trade-cases.
 - app/services/performance_review.py
   - Read-only paper performance review using fills, broker_orders, order_intents, and strategies.
   - Matches buy/sell option fills FIFO by symbol and strategy.
@@ -474,8 +482,10 @@ AI review layer:
   - Idempotency key: (entry_fill_id, exit_fill_id). Inserts new rows, updates context-changed rows, skips unchanged rows.
   - Stores context JSONB: {entry: {...}, exit: {...}, holding_seconds, entry_notional, exit_notional}.
   - Stores underlying_symbol by stripping the OCC option prefix (e.g. "SPY271219C00500000" → "SPY").
-  - Route: POST /api/v1/jobs/populate-trade-cases?limit=500
-  - Intended to be called from post-market maintenance or via its own Render cron once volume warrants it.
+  - Route: POST /api/v1/jobs/populate-trade-cases?limit=500 (standalone, still available).
+  - Automatically invoked at end of post-market maintenance (limit=5000, isolated transaction).
+    A failure during auto-population is caught by _populate_trade_cases_safely and reported in the
+    maintenance response under `trade_cases.error` without failing the maintenance job_run.
 - GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view derived from fills/orders at query time; it reads the trade_cases table but does not populate it.
 - ai_trade_reviews and strategy_change_suggestions: schema ready; AI review service not yet implemented.
 - AI can review completed trades and suggest changes via ai_trade_reviews and strategy_change_suggestions.
@@ -483,8 +493,7 @@ AI review layer:
 - Eventually capture rejected trades/signals for comparison analysis.
 
 Recommended next concrete implementation steps:
-1. Wire populate-trade-cases into post-market maintenance or add a dedicated Render cron so trade_cases rows are populated automatically after market close.
-2. Build AI review service: send trade_cases context to Claude, store structured suggestions in ai_trade_reviews and strategy_change_suggestions.
+1. Build AI review service: send trade_cases context to Claude, store structured suggestions in ai_trade_reviews and strategy_change_suggestions.
 3. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
 4. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
 
