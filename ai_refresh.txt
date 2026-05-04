@@ -12,6 +12,15 @@ https://stocks-api-z11i.onrender.com/
 Current local workspace:
 c:\Users\Miste\OneDrive\Documents\dev\stocks-api
 
+Branch strategy:
+- master:  Render deploys from this branch. Only merge here when develop is proven stable.
+- develop: All coding happens here. This is the active working branch.
+- backup:  Failsafe snapshot of the last known stable master. Update backup after master is verified stable.
+
+AI session startup rule:
+- Every time you read this file, switch to the develop branch and pull the latest before doing any work:
+    git checkout develop && git pull origin develop
+
 Last repo/app scope review:
 2026-05-03
 
