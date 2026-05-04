@@ -29,8 +29,8 @@ def build_preview_first_strategy_payloads(
         _price_threshold_payload(
             name="Paper SPY upside call preview",
             description=(
-                "Preview-first SPY call strategy that watches for a small "
-                "upside price break. Auto-submit stays disabled."
+                "SPY call strategy that watches for a small "
+                "upside price break and auto-submits orders."
             ),
             symbol="SPY",
             direction="bullish",
@@ -44,8 +44,8 @@ def build_preview_first_strategy_payloads(
         _price_threshold_payload(
             name="Paper QQQ downside put preview",
             description=(
-                "Preview-first QQQ put strategy that watches for a small "
-                "downside price break. Auto-submit stays disabled."
+                "QQQ put strategy that watches for a small "
+                "downside price break and auto-submits orders."
             ),
             symbol="QQQ",
             direction="bearish",
@@ -59,8 +59,8 @@ def build_preview_first_strategy_payloads(
         _percent_change_payload(
             name="Paper SPY momentum call preview",
             description=(
-                "Preview-first SPY call strategy that watches short-term "
-                "positive momentum. Auto-submit stays disabled."
+                "SPY call strategy that watches short-term "
+                "positive momentum and auto-submits orders."
             ),
             symbol="SPY",
             target_strike=_whole_dollar(prices["SPY"]),
@@ -102,8 +102,8 @@ def build_moving_average_strategy_payload(
     return {
         "name": name,
         "description": (
-            f"Preview-first {clean_symbol} {option_type} strategy that watches "
-            "a short/long moving-average setup. Auto-submit stays disabled."
+            f"{clean_symbol} {option_type} strategy that watches "
+            "a short/long moving-average setup and auto-submits orders."
         ),
         "is_active": True,
         "config": {
@@ -133,10 +133,10 @@ def build_moving_average_strategy_payload(
                     symbol=clean_symbol,
                     option_type=option_type,
                     target_strike=target_strike,
-                    rationale=f"{name}: preview only; does not submit.",
+                    rationale=f"{name}: auto-submit enabled.",
                 ),
                 "exit": _exit_config(),
-                "submit": _disabled_submit_config(),
+                "submit": _submit_config(),
             }
         },
     }
@@ -163,9 +163,9 @@ def build_trend_confirmation_strategy_payload(
     return {
         "name": name,
         "description": (
-            f"Preview-first {clean_symbol} {option_type} strategy that requires "
-            "moving-average alignment plus price momentum confirmation. "
-            "Auto-submit stays disabled."
+            f"{clean_symbol} {option_type} strategy that requires "
+            "moving-average alignment plus price momentum confirmation "
+            "and auto-submits orders."
         ),
         "is_active": True,
         "config": {
@@ -195,7 +195,7 @@ def build_trend_confirmation_strategy_payload(
                     symbol=clean_symbol,
                     option_type=option_type,
                     target_strike=target_strike,
-                    rationale=f"{name}: preview only; does not submit.",
+                    rationale=f"{name}: auto-submit enabled.",
                     max_estimated_notional="2500.00",
                     max_spread=None,
                 ),
@@ -204,7 +204,7 @@ def build_trend_confirmation_strategy_payload(
                     stop_loss_percent=None,
                     max_spread="0.25",
                 ),
-                "submit": _disabled_submit_config(max_notional_per_order="200.00"),
+                "submit": _submit_config(max_notional_per_order="200.00"),
             }
         },
     }
@@ -242,10 +242,10 @@ def _price_threshold_payload(
                     symbol=symbol,
                     option_type=option_type,
                     target_strike=target_strike,
-                    rationale=f"{name}: preview only; does not submit.",
+                    rationale=f"{name}: auto-submit enabled.",
                 ),
                 "exit": _exit_config(),
-                "submit": _disabled_submit_config(),
+                "submit": _submit_config(),
             }
         },
     }
@@ -279,10 +279,10 @@ def _percent_change_payload(
                     symbol=symbol,
                     option_type="call",
                     target_strike=target_strike,
-                    rationale=f"{name}: preview only; does not submit.",
+                    rationale=f"{name}: auto-submit enabled.",
                 ),
                 "exit": _exit_config(),
-                "submit": _disabled_submit_config(),
+                "submit": _submit_config(),
             }
         },
     }
@@ -325,9 +325,9 @@ def _preview_config(
     }
 
 
-def _disabled_submit_config(*, max_notional_per_order: str = "2500.00") -> dict[str, Any]:
+def _submit_config(*, max_notional_per_order: str = "2500.00") -> dict[str, Any]:
     return {
-        "enabled": False,
+        "enabled": True,
         "max_orders_per_cycle": 1,
         "max_contracts_per_order": 1,
         "max_contracts_per_cycle": 1,
