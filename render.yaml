@@ -56,7 +56,7 @@ services:
       - key: MARKET_CYCLE_EXIT_ENABLED
         value: true
       - key: MARKET_CYCLE_NEWS_ENABLED
-        value: true
+        value: false
       - key: MARKET_CYCLE_SUBMIT_ENABLED
         value: true
       - key: NEWS_REQUEST_TIMEOUT_SECONDS
@@ -98,7 +98,7 @@ services:
         value: 15
       - key: SCHEDULED_JOBS_ENABLED
         value: true
-  # Entry market-cycle cron: scan/reconcile/news/preview/submit every 2 min.
+  # Entry market-cycle cron: scan/reconcile/preview/submit every 2 min.
   # 14-21 UTC covers 10am-5pm EDT (UTC-4) and 9am-4pm EST (UTC-5).
   # strategy scanner.submit.trade_windows (10:00-16:00 ET) blocks submissions
   # outside the target window in both seasons, so the extra cron coverage is safe.
@@ -178,7 +178,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true
+        value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=false
       - key: JOB_TIMEOUT_SECONDS
         value: 600
       - key: JOB_RETRY_DELAYS_SECONDS
