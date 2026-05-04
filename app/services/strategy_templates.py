@@ -296,7 +296,7 @@ def _preview_config(
     max_estimated_notional: str | None = None,
     max_spread: str | None = None,
     max_spread_percent: str | None = None,
-    min_open_interest: int = 100,
+    min_open_interest: int | None = None,
     min_quote_size: int = 1,
     min_days_to_expiration: int = 2,
     max_days_to_expiration: int = 7,
@@ -318,7 +318,9 @@ def _preview_config(
         "max_spread": max_spread or _decimal_string(settings.paper_strategy_max_spread),
         "max_spread_percent": max_spread_percent
         or _decimal_string(settings.paper_strategy_max_spread_percent),
-        "min_open_interest": min_open_interest,
+        "min_open_interest": min_open_interest
+        if min_open_interest is not None
+        else settings.paper_strategy_min_open_interest,
         "min_quote_size": min_quote_size,
         "limit": 20,
         "rationale": rationale,

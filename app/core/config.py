@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     paper_strategy_min_change_percent: Decimal = Decimal("0.10")
     paper_strategy_trend_min_change_percent: Decimal = Decimal("0.35")
     paper_strategy_max_estimated_notional: Decimal = Decimal("3000")
+    paper_strategy_min_open_interest: int = 50
     paper_strategy_max_spread: Decimal = Decimal("0.20")
     paper_strategy_max_spread_percent: Decimal = Decimal("20")
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
