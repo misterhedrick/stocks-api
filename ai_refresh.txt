@@ -408,8 +408,8 @@ Current database tables implemented:
 - job_runs
 - audit_logs
 - trade_cases      (schema + ORM model + auto-population service fully implemented)
-- ai_trade_reviews (schema + ORM model ready; AI review service not yet implemented)
-- strategy_change_suggestions (schema + ORM model ready; service not yet implemented)
+- ai_trade_reviews (schema + ORM model exist; no automated service planned — review is manual)
+- strategy_change_suggestions (schema + ORM model exist; populated manually if needed)
 
 Current automation endpoints and their Render cron topology:
 - Entry cycle (*/2 min, 9am-4pm ET): POST /api/v1/jobs/market-cycle
@@ -486,12 +486,12 @@ Current important limitations/gaps:
 - Statuses (order intent, broker order, signal) are plain strings, not a formal enum/state machine.
 - No idempotency/retry protection beyond using order_intent id as Alpaca client_order_id.
 - Reconciliation fetch limits are simple query params; no pagination loop yet.
-- ai_trade_reviews and strategy_change_suggestions tables and ORM models exist (migration 0003), but the AI review service that populates them is not yet implemented.
+- ai_trade_reviews and strategy_change_suggestions tables and ORM models exist (migration 0003). No automated review service is planned; review is manual.
 - No local Docker Compose/Postgres helper yet.
 - No integration tests against a real database yet.
 - Render cron schedules should be reviewed periodically to confirm they match the entry/exit/maintenance split described above.
 
-AI review layer:
+Trade case persistence:
 - trade_cases, ai_trade_reviews, strategy_change_suggestions tables exist from migration 0003.
 - ORM models exist in app/db/models.py.
 - app/services/trade_cases.py: populate_trade_cases_from_closed_round_trips(db, limit=500)
@@ -501,21 +501,17 @@ AI review layer:
   - Stores underlying_symbol by stripping the OCC option prefix (e.g. "SPY271219C00500000" → "SPY").
   - Route: POST /api/v1/jobs/populate-trade-cases?limit=500 (standalone, still available).
   - Automatically invoked at end of post-market maintenance (limit=5000, isolated transaction).
-    A failure during auto-population is caught by _populate_trade_cases_safely and reported in the
-    maintenance response under `trade_cases.error` without failing the maintenance job_run.
-- GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view derived from fills/orders at query time; it reads the trade_cases table but does not populate it.
-- ai_trade_reviews and strategy_change_suggestions: schema ready; AI review service not yet implemented.
-- AI can review completed trades and suggest changes via ai_trade_reviews and strategy_change_suggestions.
-- AI must not auto-change live trading logic.
-- Eventually capture rejected trades/signals for comparison analysis.
+    Failure is caught by _populate_trade_cases_safely and reported under trade_cases.error without
+    failing the maintenance job_run.
+- GET /api/v1/automation/trade-cases provides a read-only FIFO trade-case view for manual review.
+- ai_trade_reviews and strategy_change_suggestions tables exist for recording manual review notes.
+  No automated review service is planned; no AI provider is called by the system.
 
 Recommended next concrete implementation steps:
 1. After each trading day: review logs, order_intents, fills, exits, performance review,
    and trade_cases from the session to assess scanner quality and exit behavior.
-2. Build AI review service: send trade_cases context to Claude, store structured suggestions
-   in ai_trade_reviews and strategy_change_suggestions.
-3. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
-4. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
+2. Improve option contract scoring with delta/Greeks or open-interest weighting for better liquidity selection.
+3. Add pagination loop to broker reconciliation so it does not miss orders/fills beyond the current fetch limit.
 
 Important product rules:
 - Single user only.

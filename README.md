@@ -297,7 +297,7 @@ curl -H "Authorization: Bearer change-me" \
   "http://127.0.0.1:8000/api/v1/automation/trade-cases?limit=500"
 ```
 
-This read-only endpoint exposes the same FIFO-matched closed round trips and open lots in a trade-case shape so later AI review can consume stable entry/exit IDs, realized P/L, strategy summaries, and symbol summaries without changing the broker source of truth.
+This read-only endpoint exposes FIFO-matched closed round trips and open lots in a stable trade-case shape with entry/exit IDs, realized P/L, strategy summaries, and symbol summaries.
 
 Populate durable trade cases (normally runs automatically at end of post-market maintenance):
 
@@ -641,13 +641,13 @@ The `stocks-api-market-maintenance` cron runs pre-market at ~12:30 UTC and post-
 1. Deep-reconciles broker state (500 orders/fills).
 2. Cleans stale signals and order intents.
 3. Generates a paper performance summary.
-4. Automatically calls `populate_trade_cases_from_closed_round_trips` (limit=5000) in an isolated transaction to persist closed FIFO round trips into the `trade_cases` table for later AI review.
+4. Automatically calls `populate_trade_cases_from_closed_round_trips` (limit=5000) in an isolated transaction to persist closed FIFO round trips into the `trade_cases` table.
 
 The standalone endpoint `POST /api/v1/jobs/populate-trade-cases` is also available for manual runs.
 
-### AI review status
+### Trade review
 
-`trade_cases` persistence is fully wired in. `ai_trade_reviews` and `strategy_change_suggestions` table schemas exist, but AI review generation is not yet implemented.
+`trade_cases` are persisted automatically after each post-market maintenance run and are available for manual review via `GET /api/v1/automation/trade-cases`. The `ai_trade_reviews` and `strategy_change_suggestions` tables exist in the database schema for recording manual or future review results, but no automated review service is planned.
 
 Current market-cycle automation can scan for signals, reconcile broker state, auto-preview scanner-created signals, evaluate current positions for exit previews, check market/owned-ticker news, and auto-submit same-cycle previewed paper orders when the matching environment and strategy-level switches are enabled.
 Before any automated submit, the market-cycle job checks the global automation guard. Blocked intents are skipped, recorded in the market-cycle submit errors, and written to `audit_logs` as `order_intent.auto_submit_skipped`.
