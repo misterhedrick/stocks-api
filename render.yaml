@@ -73,15 +73,15 @@ services:
       - key: MAX_AUTO_ORDERS_PER_CYCLE
         value: 3
       - key: MAX_AUTO_ORDERS_PER_DAY
-        value: 15
+        value: 50
       - key: MAX_OPEN_POSITIONS
-        value: 15
+        value: 25
       - key: MAX_OPEN_POSITIONS_PER_SYMBOL
-        value: 2
+        value: 3
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
-        value: 500
+        value: 1000
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
         value: 70
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
