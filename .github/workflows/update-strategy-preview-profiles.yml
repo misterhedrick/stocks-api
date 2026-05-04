@@ -1,0 +1,63 @@
+name: Update Strategy Preview Profiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run without writing changes
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      include_inactive:
+        description: Include inactive strategies
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      force:
+        description: Replace existing preview_profile values
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  update-strategy-preview-profiles:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PAPER_STRATEGY_PREVIEW_PROFILES_ENABLED: "true"
+    steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL repository secret is required."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run preview profile patch
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.include_inactive }}" = "true" ]; then ARGS="$ARGS --all"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+
+          python scripts/update_strategy_preview_profiles.py $ARGS

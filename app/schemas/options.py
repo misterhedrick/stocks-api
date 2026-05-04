@@ -23,6 +23,7 @@ class OptionContractSelectionCreate(BaseModel):
     max_spread_percent: Decimal | None = Field(default=None, ge=0)
     min_open_interest: Decimal | None = Field(default=None, ge=0)
     min_quote_size: Decimal | None = Field(default=None, ge=0)
+    preview_profile: str | None = Field(default=None, min_length=1, max_length=64)
     data_feed: Literal["indicative", "opra"] = "indicative"
     limit: int = Field(default=100, ge=1, le=500)
 

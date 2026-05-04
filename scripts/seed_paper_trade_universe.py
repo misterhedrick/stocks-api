@@ -22,13 +22,28 @@ from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import (
-    LIQUID_OPTIONS_UNIVERSE,
     build_moving_average_strategy_payload,
     build_trend_confirmation_strategy_payload,
 )
 
 
-DEFAULT_UNIVERSE = LIQUID_OPTIONS_UNIVERSE
+DEFAULT_UNIVERSE = (
+    "SPY",
+    "QQQ",
+    "IWM",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "TSLA",
+    "AMD",
+    "NFLX",
+    "AVGO",
+    "JPM",
+    "XOM",
+)
 
 
 def main() -> None:
@@ -96,6 +111,9 @@ def main() -> None:
                     "name": payload["name"],
                     "symbol": payload["config"]["scanner"]["symbols"][0],
                     "created": created,
+                    "preview_profile": payload["config"]["scanner"]["preview"].get(
+                        "preview_profile"
+                    ),
                     "submit_enabled": payload["config"]["scanner"]["submit"]["enabled"],
                     "max_notional_per_order": payload["config"]["scanner"]["submit"][
                         "max_notional_per_order"
@@ -176,6 +194,8 @@ def _strategy_payloads(
     )
     for payload in payloads:
         scanner = payload["config"]["scanner"]
+        scanner_type = scanner.get("type")
+        scanner["preview"]["preview_profile"] = _preview_profile_for_type(scanner_type)
         scanner["preview"]["max_estimated_notional"] = max_notional_per_order
         scanner["preview"]["max_spread"] = max_spread
         scanner["preview"]["max_spread_percent"] = max_spread_percent
@@ -312,6 +332,12 @@ def _money_string(value: str | int | Decimal) -> str:
 
 def _whole_dollar(value: Decimal) -> Decimal:
     return value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _preview_profile_for_type(scanner_type: object) -> str:
+    if isinstance(scanner_type, str) and scanner_type.strip():
+        return scanner_type.strip()
+    return "default"
 
 
 if __name__ == "__main__":
