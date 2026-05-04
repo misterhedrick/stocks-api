@@ -99,7 +99,11 @@ services:
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   # Entry market-cycle cron: scan/reconcile/preview/submit every 2 min.
-  # 13-20 UTC ≈ 9am-4pm EDT (DST) or 8am-3pm EST (standard time). See top note.
+  # 14-21 UTC covers 10am-5pm EDT (UTC-4) and 9am-4pm EST (UTC-5).
+  # strategy scanner.submit.trade_windows (10:00-16:00 ET) blocks submissions
+  # outside the target window in both seasons, so the extra cron coverage is safe.
+  # DST caveat: during EST, 9am ET is one hour early but trade_windows blocks entry.
+  # During EDT, the cron runs until 5pm ET; trade_windows stops entries at 4pm ET.
   - type: cron
     name: stocks-api-market-cycle
     env: python
@@ -108,7 +112,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/2 13-20 * * 1-5"
+    schedule: "*/2 14-21 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
