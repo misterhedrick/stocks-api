@@ -16,6 +16,7 @@ from app.schemas.options import (
     OptionContractSelectionCreate,
     OptionContractSelectionRead,
 )
+from app.services.preview_profiles import resolve_preview_profile_limits
 
 
 class OptionContractSelectionError(RuntimeError):
@@ -56,16 +57,26 @@ def select_option_contract(
             f"No active tradable {payload.option_type} contracts found for {payload.underlying_symbol}"
         )
 
+    limits = resolve_preview_profile_limits(
+        payload.preview_profile,
+        max_estimated_notional=payload.max_estimated_notional,
+        max_spread=payload.max_spread,
+        max_spread_percent=payload.max_spread_percent,
+        min_open_interest=payload.min_open_interest,
+    )
+
     market_data = market_data_client or AlpacaMarketDataClient.from_settings()
     selected, latest_quote = _select_quoted_contract(
         candidates,
         market_data_client=market_data,
         feed=payload.data_feed,
         side=payload.side,
-        max_estimated_notional=payload.max_estimated_notional,
-        max_spread=payload.max_spread,
-        max_spread_percent=payload.max_spread_percent,
-        min_open_interest=payload.min_open_interest,
+        max_estimated_notional=limits.max_estimated_notional,
+        max_spread=limits.max_spread,
+        max_spread_percent=limits.max_spread_percent,
+        min_open_interest=Decimal(limits.min_open_interest)
+        if limits.min_open_interest is not None
+        else None,
         min_quote_size=payload.min_quote_size,
     )
 
