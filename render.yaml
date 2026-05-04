@@ -61,10 +61,6 @@ services:
         value: true
       - key: NEWS_REQUEST_TIMEOUT_SECONDS
         value: 10
-      - key: NEWS_MARKET_RSS_FEEDS
-        value: 'https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=Federal%20Reserve%20OR%20interest%20rates%20OR%20inflation%20OR%20CPI%20OR%20PPI%20OR%20jobs%20report&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=US%20economy%20OR%20Treasury%20yields%20OR%20dollar%20OR%20recession%20OR%20GDP&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=world%20markets%20OR%20global%20stocks%20OR%20geopolitical%20risk%20OR%20oil%20prices%20OR%20war%20OR%20tariffs&hl=en-US&gl=US&ceid=US:en,https://news.google.com/rss/search?q=earnings%20guidance%20OR%20market%20volatility%20OR%20VIX%20OR%20credit%20markets%20OR%20banking%20sector&hl=en-US&gl=US&ceid=US:en'
-      - key: NEWS_TICKER_RSS_TEMPLATE
-        value: 'https://news.google.com/rss/search?q={symbol}%20stock%20OR%20{symbol}%20options&hl=en-US&gl=US&ceid=US:en'
       - key: TRADING_AUTOMATION_ENABLED
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
@@ -82,10 +78,36 @@ services:
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
         value: 3000
+      - key: PAPER_STRATEGY_PREVIEW_PROFILES_ENABLED
+        value: true
       - key: PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL
         value: 3000
       - key: PAPER_STRATEGY_MIN_OPEN_INTEREST
         value: 50
+      - key: PAPER_PREVIEW_PROFILE_PRICE_THRESHOLD_MIN_OPEN_INTEREST
+        value: 50
+      - key: PAPER_PREVIEW_PROFILE_PRICE_THRESHOLD_MAX_ESTIMATED_NOTIONAL
+        value: 3000
+      - key: PAPER_PREVIEW_PROFILE_PRICE_THRESHOLD_MAX_SPREAD_PERCENT
+        value: 20
+      - key: PAPER_PREVIEW_PROFILE_PERCENT_CHANGE_MIN_OPEN_INTEREST
+        value: 25
+      - key: PAPER_PREVIEW_PROFILE_PERCENT_CHANGE_MAX_ESTIMATED_NOTIONAL
+        value: 2500
+      - key: PAPER_PREVIEW_PROFILE_PERCENT_CHANGE_MAX_SPREAD_PERCENT
+        value: 30
+      - key: PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST
+        value: 50
+      - key: PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL
+        value: 3000
+      - key: PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT
+        value: 20
+      - key: PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MIN_OPEN_INTEREST
+        value: 50
+      - key: PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_ESTIMATED_NOTIONAL
+        value: 3500
+      - key: PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_SPREAD_PERCENT
+        value: 20
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
         value: 70
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
@@ -102,7 +124,7 @@ services:
         value: 15
       - key: SCHEDULED_JOBS_ENABLED
         value: true
-  # Entry market-cycle cron: scan/reconcile/preview/submit every 2 min.
+  # Entry market-cycle cron: scan/reconcile/preview/submit every 5 min.
   # 14-21 UTC covers 10am-5pm EDT (UTC-4) and 9am-4pm EST (UTC-5).
   # strategy scanner.submit.trade_windows (10:00-16:00 ET) blocks submissions
   # outside the target window in both seasons, so the extra cron coverage is safe.
@@ -116,7 +138,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/2 14-21 * * 1-5"
+    schedule: "*/5 14-21 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -125,7 +147,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 300
       - key: JOB_RETRY_DELAYS_SECONDS
