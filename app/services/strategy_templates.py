@@ -196,7 +196,6 @@ def build_trend_confirmation_strategy_payload(
                     option_type=option_type,
                     target_strike=target_strike,
                     rationale=f"{name}: auto-submit enabled.",
-                    max_estimated_notional="2500.00",
                     max_spread=None,
                 ),
                 "exit": _exit_config(
@@ -204,7 +203,7 @@ def build_trend_confirmation_strategy_payload(
                     stop_loss_percent=None,
                     max_spread="0.25",
                 ),
-                "submit": _submit_config(max_notional_per_order="200.00"),
+                "submit": _submit_config(),
             }
         },
     }
@@ -294,7 +293,7 @@ def _preview_config(
     option_type: str,
     target_strike: Decimal,
     rationale: str,
-    max_estimated_notional: str = "2500.00",
+    max_estimated_notional: str | None = None,
     max_spread: str | None = None,
     max_spread_percent: str | None = None,
     min_open_interest: int = 100,
@@ -314,7 +313,8 @@ def _preview_config(
         "order_type": "limit",
         "time_in_force": "day",
         "data_feed": "indicative",
-        "max_estimated_notional": max_estimated_notional,
+        "max_estimated_notional": max_estimated_notional
+        or _decimal_string(settings.paper_strategy_max_estimated_notional),
         "max_spread": max_spread or _decimal_string(settings.paper_strategy_max_spread),
         "max_spread_percent": max_spread_percent
         or _decimal_string(settings.paper_strategy_max_spread_percent),
@@ -325,13 +325,14 @@ def _preview_config(
     }
 
 
-def _submit_config(*, max_notional_per_order: str = "2500.00") -> dict[str, Any]:
+def _submit_config(*, max_notional_per_order: str | None = None) -> dict[str, Any]:
     return {
         "enabled": True,
         "max_orders_per_cycle": 1,
         "max_contracts_per_order": 1,
         "max_contracts_per_cycle": 1,
-        "max_notional_per_order": max_notional_per_order,
+        "max_notional_per_order": max_notional_per_order
+        or _decimal_string(settings.paper_strategy_max_estimated_notional),
         "max_open_contracts_per_symbol": 1,
         "max_open_contracts_per_strategy": 2,
         "max_orders_per_trading_day": 1,

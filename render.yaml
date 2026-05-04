@@ -81,7 +81,9 @@ services:
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
-        value: 1000
+        value: 3000
+      - key: PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL
+        value: 3000
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
         value: 70
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
