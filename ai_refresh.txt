@@ -1,5 +1,17 @@
 You are helping me build a single-user Python stock/options paper trading API.
 
+=== PENDING ACTIONS (must be done before next live trading session) ===
+
+1. Patch live Postgres strategy trade windows (10:00-16:00 ET)
+   - Code was updated but existing DB rows still have the old 09:45-15:45 window.
+   - Run against the Render/production database:
+       python scripts/update_strategy_trade_windows.py --dry-run
+       python scripts/update_strategy_trade_windows.py
+   - Or apply the SQL directly (see script header for the one-liner).
+   - Mark this done once confirmed applied.
+
+=== END PENDING ACTIONS ===
+
 Project name:
 stocks-api
 
