@@ -14,6 +14,7 @@ services:
     env: python
     region: virginia
     plan: free
+    branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: bash ./start.sh
     healthCheckPath: /health
@@ -104,6 +105,7 @@ services:
     env: python
     region: virginia
     plan: starter
+    branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
     schedule: "*/2 13-20 * * 1-5"
@@ -131,6 +133,7 @@ services:
     env: python
     region: virginia
     plan: starter
+    branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
     schedule: "*/1 13-20 * * 1-5"
@@ -159,6 +162,7 @@ services:
     env: python
     region: virginia
     plan: starter
+    branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
     schedule: "30 12,21 * * 1-5"
