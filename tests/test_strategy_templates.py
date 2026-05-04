@@ -42,7 +42,7 @@ class FakeSeedSession:
 
 
 class StrategyTemplateTests(unittest.TestCase):
-    def test_build_preview_first_strategy_payloads_are_preview_only(self) -> None:
+    def test_build_preview_first_strategy_payloads_auto_submit_entries(self) -> None:
         payloads = build_preview_first_strategy_payloads(
             prices={"SPY": Decimal("500.20"), "QQQ": Decimal("430.40")}
         )
@@ -52,7 +52,7 @@ class StrategyTemplateTests(unittest.TestCase):
             scanner = payload["config"]["scanner"]
             self.assertTrue(payload["is_active"])
             self.assertTrue(scanner["preview"]["enabled"])
-            self.assertFalse(scanner["submit"]["enabled"])
+            self.assertTrue(scanner["submit"]["enabled"])
             self.assertEqual(scanner["preview"]["quantity"], 1)
             self.assertEqual(scanner["preview"]["limit"], 20)
             self.assertEqual(scanner["preview"]["min_days_to_expiration"], 2)
@@ -70,7 +70,7 @@ class StrategyTemplateTests(unittest.TestCase):
             if scanner["type"] in {"moving_average", "trend_confirmation"}:
                 self.assertTrue(scanner["market_regime"]["enabled"])
 
-    def test_build_moving_average_strategy_payload_is_preview_only(self) -> None:
+    def test_build_moving_average_strategy_payload_auto_submits(self) -> None:
         payload = build_moving_average_strategy_payload(
             symbol="spy",
             target_strike=Decimal("500"),
@@ -87,7 +87,7 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["short_window"], 3)
         self.assertEqual(scanner["long_window"], 15)
         self.assertTrue(scanner["preview"]["enabled"])
-        self.assertFalse(scanner["submit"]["enabled"])
+        self.assertTrue(scanner["submit"]["enabled"])
 
     def test_build_trend_confirmation_strategy_payload_has_tighter_risk_controls(self) -> None:
         payload = build_trend_confirmation_strategy_payload(
@@ -108,7 +108,18 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["preview"]["max_spread"], "0.20")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
-        self.assertFalse(scanner["submit"]["enabled"])
+        self.assertTrue(scanner["submit"]["enabled"])
+
+    def test_submit_trade_windows_are_09_45_to_15_45_et(self) -> None:
+        payload = build_moving_average_strategy_payload(
+            symbol="SPY",
+            target_strike=Decimal("500"),
+        )
+        windows = payload["config"]["scanner"]["submit"]["trade_windows"]
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0]["timezone"], "America/New_York")
+        self.assertEqual(windows[0]["start"], "09:45")
+        self.assertEqual(windows[0]["end"], "15:45")
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(

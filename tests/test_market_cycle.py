@@ -897,6 +897,130 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
         submit.assert_not_called()
 
+    def test_run_market_cycle_blocks_entry_submit_before_10am_et(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["trade_windows"] = [
+            {"timezone": "America/New_York", "start": "10:00", "end": "16:00"}
+        ]
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy, order_intent=order_intent)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled", True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled", True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit, patch(
+            "app.services.market_cycle.datetime", wraps=datetime,
+        ) as mock_dt:
+            # 9:30 AM EDT (UTC-4) = 13:30 UTC — before the 10:00 ET window
+            mock_dt.now.return_value = datetime(2026, 4, 23, 13, 30, tzinfo=timezone.utc)
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
+        submit.assert_not_called()
+
+    def test_run_market_cycle_allows_entry_submit_during_10am_to_4pm_et(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["trade_windows"] = [
+            {"timezone": "America/New_York", "start": "10:00", "end": "16:00"}
+        ]
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        broker_order = build_broker_order(order_intent)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy, order_intent=order_intent)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled", True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled", True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+            return_value=(order_intent, broker_order),
+        ) as submit, patch(
+            "app.services.market_cycle.datetime", wraps=datetime,
+        ) as mock_dt:
+            # 11:00 AM EDT (UTC-4) = 15:00 UTC — inside the 10:00-16:00 ET window
+            mock_dt.now.return_value = datetime(2026, 4, 23, 15, 0, tzinfo=timezone.utc)
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 1)
+        self.assertEqual(result.submit["skipped"], 0)
+        submit.assert_called_once_with(db, order_intent.id)
+
+    def test_run_market_cycle_blocks_entry_submit_after_4pm_et(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["submit"]["trade_windows"] = [
+            {"timezone": "America/New_York", "start": "10:00", "end": "16:00"}
+        ]
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy, order_intent=order_intent)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled", True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled", True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=allowed_automation_decision(),
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit, patch(
+            "app.services.market_cycle.datetime", wraps=datetime,
+        ) as mock_dt:
+            # 4:30 PM EDT (UTC-4) = 20:30 UTC — after the 16:00 ET window
+            mock_dt.now.return_value = datetime(2026, 4, 23, 20, 30, tzinfo=timezone.utc)
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
+        submit.assert_not_called()
+
     def test_run_market_cycle_ignores_strategy_max_open_contracts_per_symbol(self) -> None:
         strategy = build_strategy()
         strategy.config["scanner"]["submit"].pop("max_open_contracts_per_strategy")
