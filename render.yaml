@@ -84,6 +84,8 @@ services:
         value: 3000
       - key: PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL
         value: 3000
+      - key: PAPER_STRATEGY_MIN_OPEN_INTEREST
+        value: 50
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
         value: 70
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
