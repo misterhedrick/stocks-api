@@ -479,8 +479,8 @@ It also supports live stock scanner rules. A quote threshold rule uses the lates
       "trade_windows": [
         {
           "timezone": "America/New_York",
-          "start": "09:45",
-          "end": "15:45"
+          "start": "10:00",
+          "end": "16:00"
         }
       ],
       "allowed_sides": ["buy"]
@@ -586,12 +586,12 @@ Automated submit requires `ALPACA_PAPER=true`, `MARKET_CYCLE_PREVIEW_ENABLED=tru
 
 | Service | Purpose | Endpoint | Schedule (UTC) |
 |---|---|---|---|
-| `stocks-api-market-cycle` | Entry-focused cycle: scan → news → reconcile → preview → submit | `POST /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100` | `*/2 13-20 * * 1-5` |
+| `stocks-api-market-cycle` | Entry-focused cycle: scan → news → reconcile → preview → submit | `POST /api/v1/jobs/market-cycle?scan_limit=50&order_limit=100&fill_page_size=100` | `*/2 14-21 * * 1-5` |
 | `stocks-api-market-exits` | Exit-only protection: reconcile → exit-eval → exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market: reconcile, cleanup, news, performance, trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&news_enabled=true` | `30 12,21 * * 1-5` |
 
 **Schedule caveat — Render cron schedules are UTC and are not DST-aware:**
-- `13-20 UTC` ≈ 9am–4pm EDT (daylight saving, UTC−4) or 8am–3pm EST (standard time, UTC−5). During EST the 3pm–4pm market close window is not covered. Review schedules when clocks change.
+- Entry cron `14-21 UTC` covers 10am–5pm EDT (UTC−4) and 9am–4pm EST (UTC−5). The strategy `scanner.submit.trade_windows` (10:00–16:00 ET) blocks entry submissions outside that window in both seasons, so the extra cron coverage on either end is safe. The trade window is the authoritative gate for automated entry submits; the cron schedule controls only when the job wakes up.
 - `12:30 UTC` ≈ 8:30am EDT / 7:30am EST. `21:30 UTC` ≈ 5:30pm EDT / 4:30pm EST.
 
 ### Automation limits
