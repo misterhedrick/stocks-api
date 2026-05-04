@@ -1,5 +1,5 @@
 """
-Idempotent script to update paper strategy entry notional limits to 1000.00.
+Idempotent script to update paper strategy entry notional limits.
 
 This patches existing database strategy rows. It is intended for cases where the
 code/templates have changed but already-seeded strategies still carry an older,
@@ -17,24 +17,24 @@ Usage:
 Options:
     --dry-run      Show what would change without writing to the database.
     --all          Include inactive strategies (default: active strategies only).
-    --new-value    Target notional value. Defaults to 1000.00.
+    --new-value    Target notional value. Defaults to PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL.
 
-Manual SQL equivalent (run directly against Postgres if the script cannot connect):
+Manual SQL equivalent for 3000.00 (run directly against Postgres if the script cannot connect):
 
     UPDATE strategies
     SET config = jsonb_set(
         jsonb_set(
             config,
             '{scanner,preview,max_estimated_notional}',
-            '"1000.00"'::jsonb
+            '"3000.00"'::jsonb
         ),
         '{scanner,submit,max_notional_per_order}',
-        '"1000.00"'::jsonb
+        '"3000.00"'::jsonb
     )
     WHERE is_active = true
       AND (
-          NULLIF(config #>> '{scanner,preview,max_estimated_notional}', '')::numeric < 1000
-          OR NULLIF(config #>> '{scanner,submit,max_notional_per_order}', '')::numeric < 1000
+          NULLIF(config #>> '{scanner,preview,max_estimated_notional}', '')::numeric < 3000
+          OR NULLIF(config #>> '{scanner,submit,max_notional_per_order}', '')::numeric < 3000
       );
 
 To run against Render Postgres:
@@ -58,10 +58,9 @@ if str(ROOT_DIR) not in sys.path:
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import settings
 from app.db.models import Strategy
 from app.db.session import SessionLocal
-
-DEFAULT_NEW_VALUE = Decimal("1000.00")
 
 
 def _money_string(value: Decimal) -> str:
@@ -115,7 +114,7 @@ def _patch_notional_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Update paper strategy entry notional limits to 1000.00."
+        description="Update paper strategy entry notional limits."
     )
     parser.add_argument(
         "--dry-run",
@@ -130,8 +129,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--new-value",
-        default=str(DEFAULT_NEW_VALUE),
-        help="Target notional value. Defaults to 1000.00.",
+        default=str(settings.paper_strategy_max_estimated_notional),
+        help="Target notional value. Defaults to PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL.",
     )
     args = parser.parse_args()
 
@@ -159,7 +158,10 @@ def main() -> None:
             )
             if not changed_paths:
                 skipped_no_match += 1
-                print(f"  skip  {strategy.name!r} — no notional limit below {_money_string(new_value)} found")
+                print(
+                    f"  skip  {strategy.name!r} — no notional limit below "
+                    f"{_money_string(new_value)} found"
+                )
                 continue
 
             paths = ", ".join(changed_paths)
