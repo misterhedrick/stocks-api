@@ -16,6 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from app.core.config import settings
 from app.db.models import Strategy
 from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
@@ -41,7 +42,10 @@ def main() -> None:
         help="Ticker to seed. May be passed more than once. Defaults to a liquid universe.",
     )
     parser.add_argument("--sample-price", action="append", default=[])
-    parser.add_argument("--max-notional-per-order", default="2500.00")
+    parser.add_argument(
+        "--max-notional-per-order",
+        default=_money_string(settings.paper_strategy_max_estimated_notional),
+    )
     parser.add_argument("--max-spread", default="0.20")
     parser.add_argument("--max-spread-percent", default="20")
     parser.add_argument("--min-open-interest", type=int, default=100)
