@@ -1,4 +1,5 @@
-from decimal import Decimal
+import os
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from pydantic import AliasChoices, Field, field_validator
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
     paper_strategy_max_spread_percent: Decimal = Decimal("20")
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
     paper_strategy_stop_loss_percent: Decimal = Decimal("15")
+    paper_strategy_preview_profiles_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -105,6 +107,52 @@ class Settings(BaseSettings):
     @property
     def alpaca_data_base_url(self) -> str:
         return "https://data.alpaca.markets"
+
+    def preview_profile_decimal(
+        self,
+        profile: str | None,
+        setting_name: str,
+        default: Decimal | None,
+    ) -> Decimal | None:
+        raw_value = self._preview_profile_env_value(profile, setting_name)
+        if raw_value is None or raw_value == "":
+            return default
+        try:
+            return Decimal(raw_value)
+        except InvalidOperation:
+            return default
+
+    def preview_profile_int(
+        self,
+        profile: str | None,
+        setting_name: str,
+        default: int | None,
+    ) -> int | None:
+        raw_value = self._preview_profile_env_value(profile, setting_name)
+        if raw_value is None or raw_value == "":
+            return default
+        try:
+            return int(raw_value)
+        except ValueError:
+            return default
+
+    def _preview_profile_env_value(
+        self,
+        profile: str | None,
+        setting_name: str,
+    ) -> str | None:
+        if not profile:
+            return None
+        clean_profile = _env_token(profile)
+        clean_setting = _env_token(setting_name)
+        return os.getenv(f"PAPER_PREVIEW_PROFILE_{clean_profile}_{clean_setting}")
+
+
+def _env_token(value: str) -> str:
+    chars = []
+    for char in value.strip().upper():
+        chars.append(char if char.isalnum() else "_")
+    return "_".join(part for part in "".join(chars).split("_") if part)
 
 
 settings = Settings()
