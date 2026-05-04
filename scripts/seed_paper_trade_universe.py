@@ -48,7 +48,11 @@ def main() -> None:
     )
     parser.add_argument("--max-spread", default="0.20")
     parser.add_argument("--max-spread-percent", default="20")
-    parser.add_argument("--min-open-interest", type=int, default=100)
+    parser.add_argument(
+        "--min-open-interest",
+        type=int,
+        default=settings.paper_strategy_min_open_interest,
+    )
     parser.add_argument("--min-quote-size", type=int, default=1)
     parser.add_argument("--max-orders-per-cycle", type=int, default=100)
     parser.add_argument("--max-orders-per-day", type=int, default=500)
