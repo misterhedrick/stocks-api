@@ -3,10 +3,12 @@ from __future__ import annotations
 from app.services.signals.evaluators.base import SignalEvaluator
 from app.services.signals.evaluators.momentum import MomentumRateOfChangeEvaluator
 from app.services.signals.evaluators.moving_average import MovingAverageTrendEvaluator
+from app.services.signals.evaluators.rsi import RsiReversalEvaluator
 
 _REGISTRY: dict[str, SignalEvaluator] = {
     MomentumRateOfChangeEvaluator.strategy_type: MomentumRateOfChangeEvaluator(),
     MovingAverageTrendEvaluator.strategy_type: MovingAverageTrendEvaluator(),
+    RsiReversalEvaluator.strategy_type: RsiReversalEvaluator(),
 }
 
 
