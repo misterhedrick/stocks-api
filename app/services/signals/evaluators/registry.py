@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.signals.evaluators.base import SignalEvaluator
+from app.services.signals.evaluators.breakout import BreakoutPriceThresholdEvaluator
 from app.services.signals.evaluators.macd import MacdCrossoverEvaluator
 from app.services.signals.evaluators.mean_reversion import MeanReversionEvaluator
 from app.services.signals.evaluators.momentum import MomentumRateOfChangeEvaluator
@@ -13,6 +14,7 @@ _REGISTRY: dict[str, SignalEvaluator] = {
     RsiReversalEvaluator.strategy_type: RsiReversalEvaluator(),
     MacdCrossoverEvaluator.strategy_type: MacdCrossoverEvaluator(),
     MeanReversionEvaluator.strategy_type: MeanReversionEvaluator(),
+    BreakoutPriceThresholdEvaluator.strategy_type: BreakoutPriceThresholdEvaluator(),
 }
 
 
