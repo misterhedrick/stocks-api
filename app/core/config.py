@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     breakout_price_threshold_evaluator_enabled: bool = True
     volume_confirmed_breakout_evaluator_enabled: bool = True
     volatility_squeeze_evaluator_enabled: bool = True
+    support_resistance_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
