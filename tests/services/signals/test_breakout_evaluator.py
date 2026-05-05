@@ -28,6 +28,25 @@ def _frame(closes: list[float], *, symbol: str = "SPY") -> CandleFrame:
     return CandleFrame(symbol=symbol, timeframe="5Min", candles=tuple(candles))
 
 
+def _custom_frame(candles: list[tuple[float, float, float, float]], *, symbol: str = "SPY") -> CandleFrame:
+    start = datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc)
+    return CandleFrame(
+        symbol=symbol,
+        timeframe="5Min",
+        candles=tuple(
+            Candle(
+                ts=start + timedelta(minutes=index),
+                open=Decimal(str(open_price)),
+                high=Decimal(str(high)),
+                low=Decimal(str(low)),
+                close=Decimal(str(close)),
+                volume=Decimal("1000"),
+            )
+            for index, (open_price, high, low, close) in enumerate(candles)
+        ),
+    )
+
+
 def _indicators(frame: CandleFrame) -> IndicatorFrame:
     return IndicatorFrame(
         close=frame.closes,
@@ -127,7 +146,14 @@ def test_respects_configured_direction() -> None:
 
 
 def test_rejects_without_price_confirmation() -> None:
-    frame = _frame([99.0, 99.4, 99.8, 100.1])
+    frame = _custom_frame(
+        [
+            (99.0, 99.2, 98.8, 99.0),
+            (99.0, 99.6, 98.9, 99.4),
+            (99.4, 100.0, 99.3, 99.8),
+            (100.4, 100.5, 100.0, 100.1),
+        ]
+    )
     signal = BreakoutPriceThresholdEvaluator().evaluate(
         symbol="SPY",
         config={
