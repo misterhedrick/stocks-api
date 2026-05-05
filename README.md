@@ -194,7 +194,7 @@ python scripts/update_strategy_preview_profiles.py
 SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AMD, NFLX, AVGO, JPM, XOM
 ```
 
-It seeds moving-average and confirmed-trend call/put variants and tags `scanner.preview.preview_profile` from the scanner type.
+It seeds moving-average, confirmed-trend, and momentum rate-of-change call/put variants and tags `scanner.preview.preview_profile` from the scanner type.
 
 ## Signal strategy planning docs
 
@@ -221,14 +221,15 @@ volatility_squeeze
 
 The docs describe purpose, inputs, formulas, bullish/bearish rules, rejection rules, confidence scoring, feature payloads, pseudocode, and tests.
 
-## New signal evaluator foundation on develop
+## Signal evaluator foundation
 
-The `develop` branch now contains the first implementation slice for a reusable signal evaluation foundation:
+The app contains a reusable signal evaluation foundation:
 
 ```text
 app/services/signals/candles.py
 app/services/signals/indicators.py
 app/services/signals/evaluators/base.py
+app/services/signals/evaluators/registry.py
 app/services/signals/evaluators/momentum.py
 ```
 
@@ -257,7 +258,7 @@ Implemented first evaluator:
 MomentumRateOfChangeEvaluator
 ```
 
-Important: this foundation is **not wired into the live scanner yet**. Next step is to add an evaluator registry and connect the momentum evaluator to the scanner behind a feature flag.
+The evaluator registry currently includes `momentum_rate_of_change`, and the live scanner routes `scanner.type == "momentum_rate_of_change"` through the evaluator-backed scan path. Momentum rate-of-change strategies are therefore live in the normal scan → signal → preview market-cycle flow when matching active strategy rows exist.
 
 ## AI review layer
 
@@ -277,19 +278,18 @@ Not implemented yet:
 
 Current high-priority next steps:
 
-1. Wire the new evaluator foundation into scan flow behind feature flags.
-2. Start with `momentum_rate_of_change` end-to-end before adding RSI/MACD/mean-reversion.
-3. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
-4. Add broker reconciliation pagination.
-5. Add real DB integration tests or a local Docker Compose/Postgres helper.
-6. Build AI trade review service using persisted `trade_cases`.
+1. Add more evaluator-backed signal strategies from `docs/signal-strategies/`, starting with moving average, RSI, MACD, and mean reversion.
+2. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
+3. Add broker reconciliation pagination.
+4. Add real DB integration tests or a local Docker Compose/Postgres helper.
+5. Build AI trade review service using persisted `trade_cases`.
 
 Known limitations:
 
 - Option contract selection is still first-pass and can reject many candidates due open interest, notional, spread, or quote quality.
 - News scanning is lightweight RSS/headline gating only.
 - Statuses are plain strings, not a formal enum/state machine.
-- Signal evaluator foundation exists but is not live-wired yet.
+- Only the momentum rate-of-change evaluator is currently implemented in the reusable evaluator registry.
 
 ## Useful manual job calls
 
