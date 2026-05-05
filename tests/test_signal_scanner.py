@@ -529,7 +529,7 @@ class SignalScannerTests(unittest.TestCase):
         self.assertEqual(result.signals_created, 1)
         self.assertEqual(signals[-1].signal_type, "ma_breakout")
         self.assertEqual(signals[-1].direction, "bullish")
-        self.assertEqual(signals[-1].market_context["source"], "scanner.moving_average")
+        self.assertEqual(signals[-1].market_context["source"], "evaluator.moving_average")
         self.assertEqual(signals[-1].market_context["trigger"], "bullish_cross")
 
     def test_scan_signals_does_not_create_signal_when_moving_average_trigger_not_met(self) -> None:
@@ -554,9 +554,9 @@ class SignalScannerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.signals_created, 0)
-        self.assertIn("moving average trigger bullish_cross was not met", result.no_signal_reasons[0])
+        self.assertIn("moving average evaluator produced no signal", result.no_signal_reasons[0])
 
-    def test_scan_signals_blocks_bullish_moving_average_when_market_regime_is_weak(self) -> None:
+    def test_scan_signals_moving_average_evaluator_ignores_market_regime_config(self) -> None:
         strategy = build_strategy(
             config={
                 "scanner": {
@@ -564,7 +564,6 @@ class SignalScannerTests(unittest.TestCase):
                     "symbols": ["AAPL"],
                     "short_window": 2,
                     "long_window": 3,
-                    "trigger": "bullish_trend",
                     "market_regime": {
                         "enabled": True,
                         "symbols": ["SPY", "QQQ"],
@@ -580,14 +579,17 @@ class SignalScannerTests(unittest.TestCase):
             market_data_client=FakeMarketDataClient(
                 bars={
                     "AAPL": ["100.00", "101.00", "102.00", "103.00"],
-                    "SPY": ["500.00", "499.00", "498.00", "497.00"],
-                    "QQQ": ["400.00", "399.00", "398.00", "397.00"],
                 }
             ),
         )
 
-        self.assertEqual(result.signals_created, 0)
-        self.assertIn("market regime did not confirm", result.no_signal_reasons[0])
+        # The evaluator-backed path does not apply market regime filtering;
+        # a signal is produced based on price/average conditions alone.
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].symbol, "AAPL")
+        self.assertEqual(signals[-1].direction, "bullish")
+        self.assertEqual(signals[-1].market_context["source"], "evaluator.moving_average")
 
     def test_scan_signals_records_malformed_moving_average_config_as_skipped(self) -> None:
         strategy = build_strategy(

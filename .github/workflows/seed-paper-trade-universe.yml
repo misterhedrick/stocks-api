@@ -1,0 +1,100 @@
+name: Seed Paper Trade Universe
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview changes without writing to the database
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      symbols:
+        description: "Comma-separated tickers to seed (leave blank for full default universe)"
+        required: false
+        default: ""
+      max_notional_per_order:
+        description: Max notional per order (e.g. 500.00)
+        required: false
+        default: ""
+      max_spread:
+        description: Max option spread width (e.g. 0.20)
+        required: false
+        default: "0.20"
+      max_spread_percent:
+        description: Max spread as percent of mid (e.g. 20)
+        required: false
+        default: "20"
+      trade_window_start:
+        description: Trade window open time ET (e.g. 09:45)
+        required: false
+        default: "09:45"
+      trade_window_end:
+        description: Trade window close time ET (e.g. 15:30)
+        required: false
+        default: "15:30"
+
+jobs:
+  seed-paper-trade-universe:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+    steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL repository secret is required."
+            exit 1
+          fi
+          if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
+            echo "ALPACA_API_KEY and ALPACA_SECRET_KEY are required to fetch live quotes."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build seed arguments
+        id: args
+        run: |
+          ARGS=""
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ -n "${{ inputs.symbols }}" ]; then
+            IFS=',' read -ra SYMS <<< "${{ inputs.symbols }}"
+            for sym in "${SYMS[@]}"; do
+              trimmed=$(echo "$sym" | xargs)
+              if [ -n "$trimmed" ]; then
+                ARGS="$ARGS --symbol $trimmed"
+              fi
+            done
+          fi
+
+          if [ -n "${{ inputs.max_notional_per_order }}" ]; then
+            ARGS="$ARGS --max-notional-per-order ${{ inputs.max_notional_per_order }}"
+          fi
+
+          ARGS="$ARGS --max-spread ${{ inputs.max_spread }}"
+          ARGS="$ARGS --max-spread-percent ${{ inputs.max_spread_percent }}"
+          ARGS="$ARGS --trade-window-start ${{ inputs.trade_window_start }}"
+          ARGS="$ARGS --trade-window-end ${{ inputs.trade_window_end }}"
+
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+
+      - name: Seed paper trade universe
+        run: python scripts/seed_paper_trade_universe.py ${{ steps.args.outputs.args }}
