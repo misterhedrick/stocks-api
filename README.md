@@ -231,6 +231,7 @@ app/services/signals/indicators.py
 app/services/signals/evaluators/base.py
 app/services/signals/evaluators/registry.py
 app/services/signals/evaluators/momentum.py
+app/services/signals/evaluators/moving_average.py
 ```
 
 Tests:
@@ -238,6 +239,8 @@ Tests:
 ```text
 tests/services/signals/test_indicators.py
 tests/services/signals/test_momentum_evaluator.py
+tests/services/signals/test_moving_average_evaluator.py
+tests/services/signals/test_signal_scanner_evaluator.py
 ```
 
 Implemented shared indicator helpers:
@@ -252,13 +255,16 @@ ATR
 percent_change
 ```
 
-Implemented first evaluator:
+Implemented evaluators:
 
 ```text
 MomentumRateOfChangeEvaluator
+MovingAverageTrendEvaluator
 ```
 
-The evaluator registry currently includes `momentum_rate_of_change`, and the live scanner routes `scanner.type == "momentum_rate_of_change"` through the evaluator-backed scan path. Momentum rate-of-change strategies are therefore live in the normal scan → signal → preview market-cycle flow when matching active strategy rows exist.
+The evaluator registry currently includes `momentum_rate_of_change` and `moving_average`. The live scanner routes `scanner.type == "momentum_rate_of_change"` through the evaluator-backed scan path, and the `feature/add-signal-strategies` branch also routes `scanner.type == "moving_average"` through the evaluator-backed path. Those strategies participate in the normal scan → signal → preview market-cycle flow when matching active strategy rows exist and evaluator feature flags are enabled.
+
+Review note: `app/services/signal_scanner.py` is a large file. Some GitHub connector reads may truncate it before the evaluator helper implementations. When reviewing or editing scanner routing, use a local checkout or otherwise verify the complete file before making full-file replacements.
 
 ## AI review layer
 
@@ -278,7 +284,7 @@ Not implemented yet:
 
 Current high-priority next steps:
 
-1. Add more evaluator-backed signal strategies from `docs/signal-strategies/`, starting with moving average, RSI, MACD, and mean reversion.
+1. Add more evaluator-backed signal strategies from `docs/signal-strategies/`, starting with RSI, MACD, and mean reversion.
 2. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
 3. Add broker reconciliation pagination.
 4. Add real DB integration tests or a local Docker Compose/Postgres helper.
@@ -289,7 +295,7 @@ Known limitations:
 - Option contract selection is still first-pass and can reject many candidates due open interest, notional, spread, or quote quality.
 - News scanning is lightweight RSS/headline gating only.
 - Statuses are plain strings, not a formal enum/state machine.
-- Only the momentum rate-of-change evaluator is currently implemented in the reusable evaluator registry.
+- Only momentum rate-of-change and moving average are currently implemented in the reusable evaluator registry.
 
 ## Useful manual job calls
 
