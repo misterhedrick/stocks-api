@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     paper_strategy_preview_profiles_enabled: bool = True
     signal_evaluators_enabled: bool = True
     momentum_evaluator_enabled: bool = True
+    moving_average_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

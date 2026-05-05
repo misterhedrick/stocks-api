@@ -119,7 +119,9 @@ def test_no_signal_when_price_confirmation_fails() -> None:
 
 
 def test_bullish_crossover_signal() -> None:
-    frame = _frame([100, 99.8, 99.6, 99.7, 99.9, 100.2, 100.8, 101.4])
+    # Prices decline steadily then jump on the last bar, causing SMA(2) to
+    # cross above SMA(4) exactly at the final candle.
+    frame = _frame([100, 99.5, 99, 98.5, 98, 97.5, 97, 100])
     signal = MovingAverageTrendEvaluator().evaluate(
         symbol="SPY",
         config={

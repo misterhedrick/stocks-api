@@ -10,6 +10,7 @@ from app.integrations.alpaca import AlpacaStockBar, AlpacaStockBars
 from app.services.signal_scanner import (
     _candle_frame_from_stock_bars,
     _momentum_rate_of_change_signal_specs,
+    _moving_average_evaluator_signal_specs,
     _signal_spec_from_candidate,
 )
 from app.services.signals.candles import Candle, CandleFrame
@@ -26,6 +27,12 @@ def test_registry_returns_momentum_evaluator() -> None:
     evaluator = get_evaluator("momentum_rate_of_change")
     assert evaluator is not None
     assert evaluator.strategy_type == "momentum_rate_of_change"
+
+
+def test_registry_returns_moving_average_evaluator() -> None:
+    evaluator = get_evaluator("moving_average")
+    assert evaluator is not None
+    assert evaluator.strategy_type == "moving_average"
 
 
 def test_registry_returns_none_for_unknown_type() -> None:
@@ -253,3 +260,107 @@ def test_evaluator_bullish_signal_returned() -> None:
     assert spec["direction"] == "bullish"
     assert spec["signal_type"] == "momentum_breakout"
     assert spec["market_context"]["source"] == "evaluator.momentum_rate_of_change"
+
+
+# ---------------------------------------------------------------------------
+# _moving_average_evaluator_signal_specs — feature flag guards
+# ---------------------------------------------------------------------------
+
+_MA_BASE_CONFIG = {
+    "type": "moving_average",
+    "short_window": 2,
+    "long_window": 3,
+}
+
+
+def test_moving_average_evaluators_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = False
+        mock_settings.moving_average_evaluator_enabled = True
+        result = _moving_average_evaluator_signal_specs(
+            "test-strategy",
+            _MA_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SIGNAL_EVALUATORS_ENABLED=false" in r for r in reasons)
+
+
+def test_moving_average_evaluator_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.moving_average_evaluator_enabled = False
+        result = _moving_average_evaluator_signal_specs(
+            "test-strategy",
+            _MA_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("MOVING_AVERAGE_EVALUATOR_ENABLED=false" in r for r in reasons)
+
+
+# ---------------------------------------------------------------------------
+# _moving_average_evaluator_signal_specs — data + evaluator paths
+# ---------------------------------------------------------------------------
+
+
+def test_moving_average_no_bars_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.moving_average_evaluator_enabled = True
+        result = _moving_average_evaluator_signal_specs(
+            "test-strategy",
+            _MA_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("no usable bars" in r for r in reasons)
+
+
+def test_moving_average_evaluator_no_signal_flat_prices() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 10)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.moving_average_evaluator_enabled = True
+        result = _moving_average_evaluator_signal_specs(
+            "test-strategy",
+            {**_MA_BASE_CONFIG, "trigger": "bullish_cross"},
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("produced no signal" in r for r in reasons)
+
+
+def test_moving_average_evaluator_bullish_signal_returned() -> None:
+    # Prices flat then jump: creates bullish crossover (short EMA rises above long EMA)
+    closes = [10.0, 10.0, 10.0, 10.0, 12.0]
+    stock_bars = _make_stock_bars("SPY", closes)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.moving_average_evaluator_enabled = True
+        result = _moving_average_evaluator_signal_specs(
+            "test-strategy",
+            {**_MA_BASE_CONFIG, "trigger": "bullish_cross"},
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert len(result) == 1
+    spec = result[0]
+    assert spec["symbol"] == "SPY"
+    assert spec["direction"] == "bullish"
+    assert spec["market_context"]["source"] == "evaluator.moving_average"
+    assert spec["market_context"]["trigger"] == "bullish_cross"
