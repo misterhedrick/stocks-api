@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -209,7 +211,7 @@ class AlpacaTradingClient:
                     "APCA-API-SECRET-KEY": self._api_secret,
                 },
             ) as client:
-                response = client.post("/v2/orders", json=payload)
+                response = _request_with_retry(lambda: client.post("/v2/orders", json=payload))
         except httpx.HTTPError as exc:
             raise AlpacaTradingError(
                 f"Unable to reach Alpaca Trading API: {exc}"
@@ -244,7 +246,9 @@ class AlpacaTradingClient:
                     "APCA-API-SECRET-KEY": self._api_secret,
                 },
             ) as client:
-                response = client.delete(f"/v2/orders/{alpaca_order_id}")
+                response = _request_with_retry(
+                    lambda: client.delete(f"/v2/orders/{alpaca_order_id}")
+                )
         except httpx.HTTPError as exc:
             raise AlpacaTradingError(
                 f"Unable to reach Alpaca Trading API: {exc}"
@@ -386,7 +390,7 @@ class AlpacaTradingClient:
                     "APCA-API-SECRET-KEY": self._api_secret,
                 },
             ) as client:
-                response = client.get(path, params=params)
+                response = _request_with_retry(lambda: client.get(path, params=params))
         except httpx.HTTPError as exc:
             raise AlpacaTradingError(
                 f"Unable to reach Alpaca Trading API: {exc}"
@@ -575,7 +579,7 @@ class AlpacaMarketDataClient:
                     "APCA-API-SECRET-KEY": self._api_secret,
                 },
             ) as client:
-                response = client.get(path, params=params)
+                response = _request_with_retry(lambda: client.get(path, params=params))
         except httpx.HTTPError as exc:
             raise AlpacaTradingError(
                 f"Unable to reach Alpaca Market Data API: {exc}"
@@ -590,6 +594,27 @@ class AlpacaMarketDataClient:
             )
 
         return payload
+
+
+def _request_with_retry(
+    make_request: Callable[[], httpx.Response],
+    *,
+    max_retries: int = 3,
+    base_delay_seconds: float = 1.0,
+) -> httpx.Response:
+    response = make_request()
+    for attempt in range(max_retries):
+        if response.status_code != 429:
+            break
+        retry_after = response.headers.get("Retry-After")
+        fallback = base_delay_seconds * (2**attempt)
+        try:
+            delay = max(fallback, float(retry_after)) if retry_after else fallback
+        except (ValueError, TypeError):
+            delay = fallback
+        time.sleep(delay)
+        response = make_request()
+    return response
 
 
 def coerce_alpaca_datetime(value: str | datetime | None) -> datetime | None:
