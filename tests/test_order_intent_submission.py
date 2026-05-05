@@ -207,6 +207,7 @@ class SuccessfulOptionContractTradingClient:
                         "style": "american",
                         "strike_price": "500",
                         "size": "100",
+                        "open_interest": "500",
                     }
                 )
             ],

@@ -22,6 +22,7 @@ from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import (
+    build_momentum_rate_of_change_strategy_payload,
     build_moving_average_strategy_payload,
     build_trend_confirmation_strategy_payload,
 )
@@ -175,6 +176,18 @@ def _strategy_payloads(
                     direction="bullish",
                 ),
                 build_trend_confirmation_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_momentum_rate_of_change_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_momentum_rate_of_change_strategy_payload(
                     symbol=symbol,
                     target_strike=target_strike,
                     option_type="put",

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from app.core.config import settings
 from app.db.models import JobRun, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestStockQuote,
@@ -19,6 +20,10 @@ from app.integrations.alpaca import (
     AlpacaStockBars,
 )
 from app.services.audit_logs import record_audit_log
+from app.services.signals.candles import Candle, CandleFrame
+from app.services.signals.evaluators.base import SignalCandidate
+from app.services.signals.evaluators.registry import get_evaluator
+from app.services.signals.indicators import IndicatorFrame
 
 DEFAULT_DEDUPE_MINUTES = 240
 DEDUPE_STATUSES = ("new", "previewed", "submitted")
@@ -258,7 +263,15 @@ def _signal_specs_from_scanner(
             market_data_client=market_data_client,
             no_signal_reasons=no_signal_reasons,
         )
-    raise ValueError("scanner.type must be price_threshold, percent_change, moving_average, or trend_confirmation")
+    if scanner_type == "momentum_rate_of_change":
+        return _momentum_rate_of_change_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    raise ValueError("scanner.type must be price_threshold, percent_change, moving_average, trend_confirmation, or momentum_rate_of_change")
 
 
 def _price_threshold_signal_specs(
@@ -818,6 +831,120 @@ def _trend_confirmation_signal_specs(
         )
 
     return signal_specs
+
+
+def _momentum_rate_of_change_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping momentum evaluator"
+        )
+        return []
+    if not settings.momentum_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: MOMENTUM_EVALUATOR_ENABLED=false, skipping momentum evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("momentum_rate_of_change")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for momentum evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: momentum evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _candle_frame_from_stock_bars(stock_bars: AlpacaStockBars, timeframe: str) -> CandleFrame:
+    candles = tuple(
+        Candle(
+            ts=bar.timestamp,
+            open=bar.open,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            volume=bar.volume,
+        )
+        for bar in stock_bars.bars
+    )
+    return CandleFrame(symbol=stock_bars.symbol, timeframe=timeframe, candles=candles)
+
+
+def _signal_spec_from_candidate(
+    candidate: SignalCandidate,
+    scanner_config: dict[str, Any],
+) -> dict[str, Any]:
+    dedupe_minutes = int(
+        candidate.features.get("dedupe_minutes")
+        or scanner_config.get("dedupe_minutes")
+        or DEFAULT_DEDUPE_MINUTES
+    )
+    return {
+        "symbol": candidate.symbol,
+        "underlying_symbol": candidate.symbol,
+        "signal_type": candidate.signal_type,
+        "direction": candidate.direction,
+        "confidence": candidate.confidence,
+        "rationale": candidate.rationale,
+        "market_context": {
+            "source": f"evaluator.{candidate.strategy_type}",
+            "strategy_type": candidate.strategy_type,
+            "dedupe_key": candidate.dedupe_key,
+            **candidate.features,
+        },
+        "dedupe_minutes": dedupe_minutes,
+    }
 
 
 def _signal_from_spec(strategy: Strategy, signal_spec: dict[str, Any]) -> Signal:

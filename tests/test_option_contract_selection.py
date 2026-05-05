@@ -107,16 +107,19 @@ class OptionContractSelectionTests(unittest.TestCase):
                         "SPY260501C00510000",
                         expiration_date="2026-05-01",
                         strike_price="510",
+                        open_interest="100",
                     ),
                     build_contract(
                         "SPY260417C00505000",
                         expiration_date="2026-04-17",
                         strike_price="505",
+                        open_interest="100",
                     ),
                     build_contract(
                         "SPY260417C00495000",
                         expiration_date="2026-04-17",
                         strike_price="495",
+                        open_interest="100",
                     ),
                 ]
             ),
@@ -137,6 +140,7 @@ class OptionContractSelectionTests(unittest.TestCase):
                     "SPY260501C00510000",
                     expiration_date="2026-05-01",
                     strike_price="510",
+                    open_interest="100",
                 )
             ]
         )
@@ -173,11 +177,13 @@ class OptionContractSelectionTests(unittest.TestCase):
                         "SPY260417C00500000",
                         expiration_date="2026-04-17",
                         strike_price="500",
+                        open_interest="100",
                     ),
                     build_contract(
                         "SPY260417C00720000",
                         expiration_date="2026-04-17",
                         strike_price="720",
+                        open_interest="100",
                     ),
                 ]
             ),
@@ -257,6 +263,7 @@ class OptionContractSelectionTests(unittest.TestCase):
                         "SPY260424C00510000",
                         expiration_date="2026-04-24",
                         strike_price="510",
+                        open_interest="100",
                     ),
                 ]
             ),

@@ -142,6 +142,64 @@ def build_moving_average_strategy_payload(
     }
 
 
+def build_momentum_rate_of_change_strategy_payload(
+    *,
+    symbol: str,
+    target_strike: Decimal,
+    name: str | None = None,
+    option_type: str = "call",
+    direction: str = "bullish",
+    timeframe: str = "1Min",
+    lookback_minutes: int = 30,
+    change_above_percent: str = "0.35",
+    change_below_percent: str = "-0.35",
+    short_average_type: str = "ema",
+    short_average_window: int = 9,
+    confidence: str = "0.6500",
+    dedupe_minutes: int = 120,
+) -> dict[str, Any]:
+    clean_symbol = symbol.strip().upper()
+    if name is None:
+        name = f"Paper {clean_symbol} momentum rate-of-change {option_type} preview"
+
+    return {
+        "name": name,
+        "description": (
+            f"{clean_symbol} {option_type} strategy that watches "
+            "short-term price momentum and candle confirmation."
+        ),
+        "is_active": True,
+        "config": {
+            "scanner": {
+                "type": "momentum_rate_of_change",
+                "symbols": [clean_symbol],
+                "timeframe": timeframe,
+                "lookback_minutes": lookback_minutes,
+                "change_above_percent": change_above_percent,
+                "change_below_percent": change_below_percent,
+                "short_average_type": short_average_type,
+                "short_average_window": short_average_window,
+                "require_latest_candle_confirmation": True,
+                "direction": direction,
+                "confidence": confidence,
+                "rationale": (
+                    f"{clean_symbol} momentum rate-of-change scanner triggered {direction}"
+                ),
+                "data_feed": "iex",
+                "dedupe_minutes": dedupe_minutes,
+                "preview": _preview_config(
+                    symbol=clean_symbol,
+                    option_type=option_type,
+                    target_strike=target_strike,
+                    rationale=f"{name}: auto-submit enabled.",
+                ),
+                "exit": _exit_config(),
+                "submit": _submit_config(),
+            }
+        },
+    }
+
+
 def build_trend_confirmation_strategy_payload(
     *,
     symbol: str,

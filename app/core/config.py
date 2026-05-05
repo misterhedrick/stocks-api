@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
     paper_strategy_stop_loss_percent: Decimal = Decimal("15")
     paper_strategy_preview_profiles_enabled: bool = True
+    signal_evaluators_enabled: bool = True
+    momentum_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

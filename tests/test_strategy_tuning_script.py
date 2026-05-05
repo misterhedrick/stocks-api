@@ -105,7 +105,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         scanner = payload["config"]["scanner"]
         self.assertEqual(scanner["preview"]["target_strike"], "501")
         self.assertEqual(scanner["type"], "moving_average")
-        self.assertFalse(scanner["submit"]["enabled"])
+        self.assertTrue(scanner["submit"]["enabled"])
 
     def test_trend_confirmation_payload_from_args_uses_sample_price(self) -> None:
         payload = trend_confirmation_payload_from_args(
@@ -129,7 +129,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(scanner["preview"]["target_strike"], "501")
         self.assertEqual(scanner["type"], "trend_confirmation")
         self.assertEqual(scanner["preview"]["max_spread"], "0.20")
-        self.assertFalse(scanner["submit"]["enabled"])
+        self.assertTrue(scanner["submit"]["enabled"])
 
     def test_upsert_strategy_creates_and_audits(self) -> None:
         payload = moving_average_payload_from_args(

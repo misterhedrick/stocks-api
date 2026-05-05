@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.db.models import JobRun, OrderIntent, Signal, Strategy
 from app.db.session import DatabaseSchemaNotReadyError, get_db
 from app.integrations.alpaca import AlpacaTradingConfigurationError, AlpacaTradingError
@@ -27,6 +28,8 @@ from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
 from app.services.trade_lifecycle import TradeCasesResult, TradeLifecycleResult
 from app.services.trading_reset import TradingDataResetResult
+
+_AUTH = {"Authorization": f"Bearer {settings.admin_api_token}"}
 
 
 class FakeRouteSession:
@@ -170,7 +173,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ):
             response = client.get(
                 "/api/v1/ready",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -187,7 +190,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ):
             response = client.get(
                 "/api/v1/ready",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 503)
@@ -201,7 +204,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         response = client.post(
             "/api/v1/strategies",
-            headers={"Authorization": "Bearer change-me"},
+            headers=_AUTH,
             json={
                 "name": "Opening Range Breakout",
                 "description": "Test strategy",
@@ -224,7 +227,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         response = client.post(
             "/api/v1/signals",
-            headers={"Authorization": "Bearer change-me"},
+            headers=_AUTH,
             json={
                 "strategy_id": str(strategy.id),
                 "symbol": "SPY260417C00500000",
@@ -247,7 +250,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         response = client.post(
             "/api/v1/signals",
-            headers={"Authorization": "Bearer change-me"},
+            headers=_AUTH,
             json={
                 "strategy_id": str(uuid.uuid4()),
                 "symbol": "SPY260417C00500000",
@@ -272,7 +275,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         response = client.post(
             "/api/v1/order-intents",
-            headers={"Authorization": "Bearer change-me"},
+            headers=_AUTH,
             json={
                 "strategy_id": str(strategy.id),
                 "signal_id": str(signal.id),
@@ -302,7 +305,7 @@ class RouteBehaviorTests(unittest.TestCase):
 
         response = client.post(
             "/api/v1/order-intents",
-            headers={"Authorization": "Bearer change-me"},
+            headers=_AUTH,
             json={
                 "strategy_id": str(strategy.id),
                 "signal_id": str(signal.id),
@@ -329,7 +332,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/v1/options/select-contract",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
                 json={
                     "underlying_symbol": "SPY",
                     "option_type": "call",
@@ -360,7 +363,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as reconcile:
             response = client.post(
                 "/api/v1/jobs/reconcile-broker?order_limit=25&fill_page_size=50",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -383,7 +386,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/v1/jobs/reconcile-broker",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 500)
@@ -402,7 +405,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ):
             response = client.post(
                 "/api/v1/jobs/reconcile-broker",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 502)
@@ -424,7 +427,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as scanner:
             response = client.post(
                 "/api/v1/jobs/scan-signals?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -449,7 +452,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as market_cycle:
             response = client.post(
                 "/api/v1/jobs/market-cycle?scan_limit=25&order_limit=50&fill_page_size=75",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -479,7 +482,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as market_cycle:
             response = client.post(
                 "/api/v1/jobs/market-cycle-stress?scan_limit=130&order_limit=25&fill_page_size=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -513,7 +516,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as maintenance:
             response = client.post(
                 "/api/v1/jobs/market-maintenance?phase=auto&news_enabled=false",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -543,7 +546,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as maintenance:
             response = client.post(
                 "/api/v1/jobs/pre-market-maintenance?order_limit=25&fill_page_size=50&stale_after_hours=8&news_enabled=false",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -574,7 +577,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as maintenance:
             response = client.post(
                 "/api/v1/jobs/post-market-maintenance?order_limit=250&fill_page_size=250&stale_after_hours=0",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -603,7 +606,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as reset:
             response = client.post(
                 "/api/v1/jobs/reset-trading-data?dry_run=false&confirm=RESET_TRADING_DATA",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -647,7 +650,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as exits:
             response = client.post(
                 "/api/v1/jobs/evaluate-exits?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -687,7 +690,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as unmanaged_exits:
             response = client.post(
                 "/api/v1/jobs/preview-unmanaged-exits?symbol=SPY&limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -711,7 +714,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as news_scan:
             response = client.post(
                 "/api/v1/jobs/check-news?market_limit=3&ticker_limit=2",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -772,7 +775,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as automation_status:
             response = client.get(
                 "/api/v1/automation/status",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -816,7 +819,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as positions:
             response = client.get(
                 "/api/v1/automation/positions?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -869,7 +872,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as performance:
             response = client.get(
                 "/api/v1/automation/performance?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -908,7 +911,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as lifecycle:
             response = client.get(
                 "/api/v1/automation/trade-lifecycle?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -942,7 +945,7 @@ class RouteBehaviorTests(unittest.TestCase):
         ) as trade_cases:
             response = client.get(
                 "/api/v1/automation/trade-cases?limit=25",
-                headers={"Authorization": "Bearer change-me"},
+                headers=_AUTH,
             )
 
         self.assertEqual(response.status_code, 200)

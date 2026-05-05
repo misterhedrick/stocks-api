@@ -59,14 +59,14 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertEqual(scanner["preview"]["max_days_to_expiration"], 7)
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_estimated_notional"]),
-                Decimal("2500.00"),
+                Decimal("3000.00"),
             )
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_spread"]),
                 Decimal("0.20"),
             )
             self.assertEqual(scanner["preview"]["max_spread_percent"], "20")
-            self.assertEqual(scanner["preview"]["min_open_interest"], 100)
+            self.assertEqual(scanner["preview"]["min_open_interest"], 50)
             if scanner["type"] in {"moving_average", "trend_confirmation"}:
                 self.assertTrue(scanner["market_regime"]["enabled"])
 
@@ -104,7 +104,7 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertTrue(scanner["require_short_average_slope"])
         self.assertTrue(scanner["require_price_above_short_average"])
         self.assertTrue(scanner["market_regime"]["enabled"])
-        self.assertEqual(scanner["preview"]["max_estimated_notional"], "2500.00")
+        self.assertEqual(scanner["preview"]["max_estimated_notional"], "3000")
         self.assertEqual(scanner["preview"]["max_spread"], "0.20")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")

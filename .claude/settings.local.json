@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Miste\\\\OneDrive\\\\Documents\\\\dev\\\\stocks-api\" -Force | ForEach-Object { if \\($_.PSIsContainer\\) { \"DIR: $\\($_.Name\\)\" } else { \"FILE: $\\($_.Name\\)\" } } | Sort-Object)",
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Miste\\\\OneDrive\\\\Documents\\\\dev\\\\stocks-api\" -Recurse -File | Where-Object { $_.FullName -notmatch '\\\\.venv' } | Select-Object -ExpandProperty FullName)"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Miste\\\\OneDrive\\\\Documents\\\\dev\\\\stocks-api\" -Recurse -File | Where-Object { $_.FullName -notmatch '\\\\.venv' } | Select-Object -ExpandProperty FullName)",
+      "Bash(python -m pytest tests/services/signals/ -v)",
+      "Bash(.venv\\\\Scripts\\\\pytest.exe tests/services/signals/ -v)"
     ]
   }
 }
