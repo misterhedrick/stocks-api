@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     rsi_evaluator_enabled: bool = True
     macd_evaluator_enabled: bool = True
     mean_reversion_evaluator_enabled: bool = True
+    breakout_price_threshold_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
