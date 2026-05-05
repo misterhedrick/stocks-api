@@ -7,6 +7,7 @@ from app.services.signals.evaluators.mean_reversion import MeanReversionEvaluato
 from app.services.signals.evaluators.momentum import MomentumRateOfChangeEvaluator
 from app.services.signals.evaluators.moving_average import MovingAverageTrendEvaluator
 from app.services.signals.evaluators.rsi import RsiReversalEvaluator
+from app.services.signals.evaluators.volatility_squeeze import VolatilitySqueezeEvaluator
 from app.services.signals.evaluators.volume_breakout import VolumeConfirmedBreakoutEvaluator
 
 _REGISTRY: dict[str, SignalEvaluator] = {
@@ -17,6 +18,7 @@ _REGISTRY: dict[str, SignalEvaluator] = {
     MeanReversionEvaluator.strategy_type: MeanReversionEvaluator(),
     BreakoutPriceThresholdEvaluator.strategy_type: BreakoutPriceThresholdEvaluator(),
     VolumeConfirmedBreakoutEvaluator.strategy_type: VolumeConfirmedBreakoutEvaluator(),
+    VolatilitySqueezeEvaluator.strategy_type: VolatilitySqueezeEvaluator(),
 }
 
 
