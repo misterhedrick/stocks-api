@@ -8,6 +8,7 @@ import pytest
 
 from app.integrations.alpaca import AlpacaStockBar, AlpacaStockBars
 from app.services.signal_scanner import (
+    _breakout_price_threshold_signal_specs,
     _candle_frame_from_stock_bars,
     _macd_crossover_signal_specs,
     _mean_reversion_signal_specs,
@@ -16,13 +17,20 @@ from app.services.signal_scanner import (
     _rsi_reversal_signal_specs,
     _signal_spec_from_candidate,
     _signal_specs_from_scanner,
+    _support_resistance_signal_specs,
+    _volatility_squeeze_signal_specs,
+    _volume_confirmed_breakout_signal_specs,
 )
 from app.services.signals.candles import Candle, CandleFrame
 from app.services.signals.evaluators.base import SignalCandidate
+from app.services.signals.evaluators.breakout import BreakoutPriceThresholdEvaluator
 from app.services.signals.evaluators.macd import MacdCrossoverEvaluator
 from app.services.signals.evaluators.mean_reversion import MeanReversionEvaluator
 from app.services.signals.evaluators.registry import get_evaluator
 from app.services.signals.evaluators.rsi import RsiReversalEvaluator
+from app.services.signals.evaluators.support_resistance import SupportResistanceEvaluator
+from app.services.signals.evaluators.volatility_squeeze import VolatilitySqueezeEvaluator
+from app.services.signals.evaluators.volume_breakout import VolumeConfirmedBreakoutEvaluator
 
 
 # ---------------------------------------------------------------------------
@@ -758,3 +766,474 @@ def test_mean_reversion_creates_signal_through_routing() -> None:
     assert spec["direction"] == "bullish"
     assert spec["signal_type"] == "mean_reversion_lower_band_recovery"
     assert spec["market_context"]["source"] == "evaluator.mean_reversion"
+
+
+# ---------------------------------------------------------------------------
+# Registry — breakout / volume / squeeze / support evaluators
+# ---------------------------------------------------------------------------
+
+
+def test_registry_returns_breakout_price_threshold_evaluator() -> None:
+    evaluator = get_evaluator("breakout_price_threshold")
+    assert evaluator is not None
+    assert evaluator.strategy_type == "breakout_price_threshold"
+
+
+def test_registry_returns_volume_confirmed_breakout_evaluator() -> None:
+    evaluator = get_evaluator("volume_confirmed_breakout")
+    assert evaluator is not None
+    assert evaluator.strategy_type == "volume_confirmed_breakout"
+
+
+def test_registry_returns_volatility_squeeze_evaluator() -> None:
+    evaluator = get_evaluator("volatility_squeeze")
+    assert evaluator is not None
+    assert evaluator.strategy_type == "volatility_squeeze"
+
+
+def test_registry_returns_support_resistance_evaluator() -> None:
+    evaluator = get_evaluator("support_resistance")
+    assert evaluator is not None
+    assert evaluator.strategy_type == "support_resistance"
+
+
+# ---------------------------------------------------------------------------
+# _breakout_price_threshold_signal_specs — feature flag guards
+# ---------------------------------------------------------------------------
+
+_BPT_BASE_CONFIG = {
+    "type": "breakout_price_threshold",
+    "timeframe": "5Min",
+    "price_above": "105.0",
+}
+
+
+def test_breakout_price_threshold_evaluators_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = False
+        mock_settings.breakout_price_threshold_evaluator_enabled = True
+        result = _breakout_price_threshold_signal_specs(
+            "test-strategy",
+            _BPT_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SIGNAL_EVALUATORS_ENABLED=false" in r for r in reasons)
+
+
+def test_breakout_price_threshold_evaluator_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.breakout_price_threshold_evaluator_enabled = False
+        result = _breakout_price_threshold_signal_specs(
+            "test-strategy",
+            _BPT_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED=false" in r for r in reasons)
+
+
+def test_breakout_price_threshold_no_bars_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.breakout_price_threshold_evaluator_enabled = True
+        result = _breakout_price_threshold_signal_specs(
+            "test-strategy",
+            _BPT_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("no usable bars" in r for r in reasons)
+
+
+def test_breakout_price_threshold_evaluator_no_signal_flat_prices() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 20)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.breakout_price_threshold_evaluator_enabled = True
+        result = _breakout_price_threshold_signal_specs(
+            "test-strategy",
+            _BPT_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("produced no signal" in r for r in reasons)
+
+
+def test_breakout_price_threshold_creates_signal_through_routing() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 20)
+    reasons: list[str] = []
+    candidate = SignalCandidate(
+        symbol="SPY",
+        strategy_type="breakout_price_threshold",
+        signal_type="price_breakout",
+        direction="bullish",
+        confidence=Decimal("0.60"),
+        rationale="SPY broke above configured price threshold",
+        features={"dedupe_minutes": 240},
+        dedupe_key="SPY:breakout_price_threshold:price_breakout:bullish",
+    )
+    with patch("app.services.signal_scanner.settings") as mock_settings, patch.object(
+        BreakoutPriceThresholdEvaluator, "evaluate", return_value=candidate
+    ):
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.breakout_price_threshold_evaluator_enabled = True
+        result = _breakout_price_threshold_signal_specs(
+            "test-strategy",
+            _BPT_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert len(result) == 1
+    spec = result[0]
+    assert spec["symbol"] == "SPY"
+    assert spec["direction"] == "bullish"
+    assert spec["signal_type"] == "price_breakout"
+    assert spec["market_context"]["source"] == "evaluator.breakout_price_threshold"
+
+
+# ---------------------------------------------------------------------------
+# _volume_confirmed_breakout_signal_specs — feature flag guards
+# ---------------------------------------------------------------------------
+
+_VCB_BASE_CONFIG = {
+    "type": "volume_confirmed_breakout",
+    "timeframe": "5Min",
+    "price_above": "105.0",
+}
+
+
+def test_volume_confirmed_breakout_evaluators_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = False
+        mock_settings.volume_confirmed_breakout_evaluator_enabled = True
+        result = _volume_confirmed_breakout_signal_specs(
+            "test-strategy",
+            _VCB_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SIGNAL_EVALUATORS_ENABLED=false" in r for r in reasons)
+
+
+def test_volume_confirmed_breakout_evaluator_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volume_confirmed_breakout_evaluator_enabled = False
+        result = _volume_confirmed_breakout_signal_specs(
+            "test-strategy",
+            _VCB_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED=false" in r for r in reasons)
+
+
+def test_volume_confirmed_breakout_no_bars_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volume_confirmed_breakout_evaluator_enabled = True
+        result = _volume_confirmed_breakout_signal_specs(
+            "test-strategy",
+            _VCB_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("no usable bars" in r for r in reasons)
+
+
+def test_volume_confirmed_breakout_evaluator_no_signal_flat_prices() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 25)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volume_confirmed_breakout_evaluator_enabled = True
+        result = _volume_confirmed_breakout_signal_specs(
+            "test-strategy",
+            _VCB_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("produced no signal" in r for r in reasons)
+
+
+def test_volume_confirmed_breakout_creates_signal_through_routing() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 25)
+    reasons: list[str] = []
+    candidate = SignalCandidate(
+        symbol="SPY",
+        strategy_type="volume_confirmed_breakout",
+        signal_type="volume_confirmed_price_breakout",
+        direction="bullish",
+        confidence=Decimal("0.65"),
+        rationale="SPY broke above threshold with elevated volume",
+        features={"dedupe_minutes": 240},
+        dedupe_key="SPY:volume_confirmed_breakout:volume_confirmed_price_breakout:bullish",
+    )
+    with patch("app.services.signal_scanner.settings") as mock_settings, patch.object(
+        VolumeConfirmedBreakoutEvaluator, "evaluate", return_value=candidate
+    ):
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volume_confirmed_breakout_evaluator_enabled = True
+        result = _volume_confirmed_breakout_signal_specs(
+            "test-strategy",
+            _VCB_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert len(result) == 1
+    spec = result[0]
+    assert spec["symbol"] == "SPY"
+    assert spec["direction"] == "bullish"
+    assert spec["signal_type"] == "volume_confirmed_price_breakout"
+    assert spec["market_context"]["source"] == "evaluator.volume_confirmed_breakout"
+
+
+# ---------------------------------------------------------------------------
+# _volatility_squeeze_signal_specs — feature flag guards
+# ---------------------------------------------------------------------------
+
+_VS_BASE_CONFIG = {
+    "type": "volatility_squeeze",
+    "timeframe": "5Min",
+    "bollinger_period": 5,
+    "squeeze_lookback_candles": 5,
+    "range_lookback_candles": 5,
+}
+
+
+def test_volatility_squeeze_evaluators_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = False
+        mock_settings.volatility_squeeze_evaluator_enabled = True
+        result = _volatility_squeeze_signal_specs(
+            "test-strategy",
+            _VS_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SIGNAL_EVALUATORS_ENABLED=false" in r for r in reasons)
+
+
+def test_volatility_squeeze_evaluator_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volatility_squeeze_evaluator_enabled = False
+        result = _volatility_squeeze_signal_specs(
+            "test-strategy",
+            _VS_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("VOLATILITY_SQUEEZE_EVALUATOR_ENABLED=false" in r for r in reasons)
+
+
+def test_volatility_squeeze_no_bars_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volatility_squeeze_evaluator_enabled = True
+        result = _volatility_squeeze_signal_specs(
+            "test-strategy",
+            _VS_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("no usable bars" in r for r in reasons)
+
+
+def test_volatility_squeeze_evaluator_no_signal_trending_prices() -> None:
+    # Steady uptrend produces expanding bands (no compression), so no squeeze signal
+    closes = [100.0 + i * 0.2 for i in range(25)]
+    stock_bars = _make_stock_bars("SPY", closes)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volatility_squeeze_evaluator_enabled = True
+        result = _volatility_squeeze_signal_specs(
+            "test-strategy",
+            {**_VS_BASE_CONFIG, "compression_ratio_threshold": "0.30"},
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("produced no signal" in r for r in reasons)
+
+
+def test_volatility_squeeze_creates_signal_through_routing() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 25)
+    reasons: list[str] = []
+    candidate = SignalCandidate(
+        symbol="SPY",
+        strategy_type="volatility_squeeze",
+        signal_type="volatility_squeeze_bullish_breakout",
+        direction="bullish",
+        confidence=Decimal("0.66"),
+        rationale="SPY broke above squeeze range after Bollinger Band compression",
+        features={"dedupe_minutes": 240},
+        dedupe_key="SPY:volatility_squeeze:volatility_squeeze_bullish_breakout:bullish",
+    )
+    with patch("app.services.signal_scanner.settings") as mock_settings, patch.object(
+        VolatilitySqueezeEvaluator, "evaluate", return_value=candidate
+    ):
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.volatility_squeeze_evaluator_enabled = True
+        result = _volatility_squeeze_signal_specs(
+            "test-strategy",
+            _VS_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert len(result) == 1
+    spec = result[0]
+    assert spec["symbol"] == "SPY"
+    assert spec["direction"] == "bullish"
+    assert spec["signal_type"] == "volatility_squeeze_bullish_breakout"
+    assert spec["market_context"]["source"] == "evaluator.volatility_squeeze"
+
+
+# ---------------------------------------------------------------------------
+# _support_resistance_signal_specs — feature flag guards
+# ---------------------------------------------------------------------------
+
+_SR_BASE_CONFIG = {
+    "type": "support_resistance",
+    "timeframe": "5Min",
+    "support_levels": [90.0],
+    "mode": "bounce",
+}
+
+
+def test_support_resistance_evaluators_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = False
+        mock_settings.support_resistance_evaluator_enabled = True
+        result = _support_resistance_signal_specs(
+            "test-strategy",
+            _SR_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SIGNAL_EVALUATORS_ENABLED=false" in r for r in reasons)
+
+
+def test_support_resistance_evaluator_disabled_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.support_resistance_evaluator_enabled = False
+        result = _support_resistance_signal_specs(
+            "test-strategy",
+            _SR_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=None,
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("SUPPORT_RESISTANCE_EVALUATOR_ENABLED=false" in r for r in reasons)
+
+
+def test_support_resistance_no_bars_returns_empty() -> None:
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.support_resistance_evaluator_enabled = True
+        result = _support_resistance_signal_specs(
+            "test-strategy",
+            _SR_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("no usable bars" in r for r in reasons)
+
+
+def test_support_resistance_evaluator_no_signal_flat_prices() -> None:
+    # Flat prices far from the configured support level produce no signal
+    stock_bars = _make_stock_bars("SPY", [100.0] * 30)
+    reasons: list[str] = []
+    with patch("app.services.signal_scanner.settings") as mock_settings:
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.support_resistance_evaluator_enabled = True
+        result = _support_resistance_signal_specs(
+            "test-strategy",
+            _SR_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert result == []
+    assert any("produced no signal" in r for r in reasons)
+
+
+def test_support_resistance_creates_signal_through_routing() -> None:
+    stock_bars = _make_stock_bars("SPY", [100.0] * 30)
+    reasons: list[str] = []
+    candidate = SignalCandidate(
+        symbol="SPY",
+        strategy_type="support_resistance",
+        signal_type="support_bounce",
+        direction="bullish",
+        confidence=Decimal("0.60"),
+        rationale="SPY bounced off support level",
+        features={"dedupe_minutes": 240},
+        dedupe_key="SPY:support_resistance:support_bounce:bullish",
+    )
+    with patch("app.services.signal_scanner.settings") as mock_settings, patch.object(
+        SupportResistanceEvaluator, "evaluate", return_value=candidate
+    ):
+        mock_settings.signal_evaluators_enabled = True
+        mock_settings.support_resistance_evaluator_enabled = True
+        result = _support_resistance_signal_specs(
+            "test-strategy",
+            _SR_BASE_CONFIG,
+            ["SPY"],
+            market_data_client=_mock_client({"SPY": stock_bars}),
+            no_signal_reasons=reasons,
+        )
+    assert len(result) == 1
+    spec = result[0]
+    assert spec["symbol"] == "SPY"
+    assert spec["direction"] == "bullish"
+    assert spec["signal_type"] == "support_bounce"
+    assert spec["market_context"]["source"] == "evaluator.support_resistance"

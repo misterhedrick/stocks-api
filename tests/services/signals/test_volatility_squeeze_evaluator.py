@@ -62,7 +62,7 @@ BEARISH_SQUEEZE_BREAKDOWN = [
     99.95,
     100.05,
     100.0,
-    99.2,
+    98.5,
 ]
 
 
