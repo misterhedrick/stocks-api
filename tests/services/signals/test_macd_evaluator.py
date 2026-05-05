@@ -37,8 +37,39 @@ def _indicators(frame: CandleFrame) -> IndicatorFrame:
     )
 
 
+BULLISH_CROSS_CLOSES = [
+    100,
+    99.7577041233068,
+    99.79481420046872,
+    99.7841830476994,
+    99.87243437716285,
+    99.45540170883189,
+    99.24891920689157,
+    99.1018997513621,
+    98.95777500678071,
+    98.69418245718987,
+    98.64894967755845,
+    101.20704045353115,
+]
+
+BEARISH_CROSS_CLOSES = [
+    100,
+    100.30793190296691,
+    100.78002439766175,
+    100.92071487516952,
+    100.90232434820594,
+    101.20769991324669,
+    101.15720078711166,
+    101.48449212537011,
+    101.53409723091359,
+    101.8911811986045,
+    102.19075666987278,
+    100.4537614535399,
+]
+
+
 def test_bullish_macd_crossover_signal() -> None:
-    frame = _frame([100, 99.8, 99.6, 99.4, 99.2, 99.0, 99.1, 99.3, 99.8, 100.4, 101.0])
+    frame = _frame(BULLISH_CROSS_CLOSES)
     signal = MacdCrossoverEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -59,7 +90,7 @@ def test_bullish_macd_crossover_signal() -> None:
 
 
 def test_bearish_macd_crossover_signal() -> None:
-    frame = _frame([100, 100.2, 100.4, 100.6, 100.8, 101.0, 100.9, 100.7, 100.2, 99.6, 99.0])
+    frame = _frame(BEARISH_CROSS_CLOSES)
     signal = MacdCrossoverEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -78,7 +109,7 @@ def test_bearish_macd_crossover_signal() -> None:
 
 
 def test_respects_configured_direction() -> None:
-    frame = _frame([100, 99.8, 99.6, 99.4, 99.2, 99.0, 99.1, 99.3, 99.8, 100.4, 101.0])
+    frame = _frame(BULLISH_CROSS_CLOSES)
     signal = MacdCrossoverEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -95,7 +126,22 @@ def test_respects_configured_direction() -> None:
 
 
 def test_rejects_without_price_confirmation() -> None:
-    frame = _frame([100, 99.8, 99.6, 99.4, 99.2, 99.0, 99.1, 99.3, 99.8, 100.4, 100.3])
+    frame = _frame(
+        [
+            100,
+            100.53280451002044,
+            100.55133767183129,
+            102.23700876915007,
+            100.36538675680373,
+            100.81751281306839,
+            102.35945614617215,
+            103.68063483541728,
+            104.62739204213482,
+            105.78656419452177,
+            105.36270692014725,
+            105.65909889194583,
+        ]
+    )
     signal = MacdCrossoverEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -127,7 +173,7 @@ def test_rejects_when_not_enough_indicator_values() -> None:
 
 
 def test_can_disable_histogram_confirmation() -> None:
-    frame = _frame([100, 99.8, 99.6, 99.4, 99.2, 99.0, 99.1, 99.3, 99.8, 100.4, 101.0])
+    frame = _frame(BULLISH_CROSS_CLOSES)
     signal = MacdCrossoverEvaluator().evaluate(
         symbol="SPY",
         config={
