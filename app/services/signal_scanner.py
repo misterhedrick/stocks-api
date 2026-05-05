@@ -248,7 +248,7 @@ def _signal_specs_from_scanner(
             no_signal_reasons=no_signal_reasons,
         )
     if scanner_type == "moving_average":
-        return _moving_average_signal_specs(
+        return _moving_average_evaluator_signal_specs(
             strategy.name,
             scanner_config,
             clean_symbols,
@@ -271,7 +271,68 @@ def _signal_specs_from_scanner(
             market_data_client=market_data_client,
             no_signal_reasons=no_signal_reasons,
         )
-    raise ValueError("scanner.type must be price_threshold, percent_change, moving_average, trend_confirmation, or momentum_rate_of_change")
+    if scanner_type == "rsi_reversal":
+        return _rsi_reversal_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "macd_crossover":
+        return _macd_crossover_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "mean_reversion":
+        return _mean_reversion_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "breakout_price_threshold":
+        return _breakout_price_threshold_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "volume_confirmed_breakout":
+        return _volume_confirmed_breakout_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "volatility_squeeze":
+        return _volatility_squeeze_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    if scanner_type == "support_resistance":
+        return _support_resistance_signal_specs(
+            strategy.name,
+            scanner_config,
+            clean_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
+    raise ValueError(
+        "scanner.type must be price_threshold, percent_change, moving_average, "
+        "trend_confirmation, momentum_rate_of_change, rsi_reversal, macd_crossover, "
+        "mean_reversion, breakout_price_threshold, volume_confirmed_breakout, "
+        "volatility_squeeze, or support_resistance"
+    )
 
 
 def _price_threshold_signal_specs(
@@ -655,6 +716,84 @@ def _moving_average_signal_specs(
     return signal_specs
 
 
+def _moving_average_evaluator_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping moving average evaluator"
+        )
+        return []
+    if not settings.moving_average_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: MOVING_AVERAGE_EVALUATOR_ENABLED=false, skipping moving average evaluator"
+        )
+        return []
+
+    short_window = _positive_int(scanner_config, "short_window", default=5)
+    long_window = _positive_int(scanner_config, "long_window", default=20)
+    if short_window >= long_window:
+        raise ValueError("scanner.short_window must be less than scanner.long_window")
+
+    evaluator = get_evaluator("moving_average")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 3:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for moving average evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: moving average evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
 def _trend_confirmation_signal_specs(
     strategy_name: str,
     scanner_config: dict[str, Any],
@@ -898,6 +1037,517 @@ def _momentum_rate_of_change_signal_specs(
         if candidate is None:
             no_signal_reasons.append(
                 f"{strategy_name}.{symbol}: momentum evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _rsi_reversal_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping rsi_reversal evaluator"
+        )
+        return []
+    if not settings.rsi_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: RSI_EVALUATOR_ENABLED=false, skipping rsi_reversal evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("rsi_reversal")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for rsi_reversal evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: rsi_reversal evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _macd_crossover_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping macd_crossover evaluator"
+        )
+        return []
+    if not settings.macd_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: MACD_EVALUATOR_ENABLED=false, skipping macd_crossover evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("macd_crossover")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for macd_crossover evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: macd_crossover evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _mean_reversion_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping mean_reversion evaluator"
+        )
+        return []
+    if not settings.mean_reversion_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: MEAN_REVERSION_EVALUATOR_ENABLED=false, skipping mean_reversion evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("mean_reversion")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for mean_reversion evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: mean_reversion evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _breakout_price_threshold_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping breakout_price_threshold evaluator"
+        )
+        return []
+    if not settings.breakout_price_threshold_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED=false, skipping breakout_price_threshold evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("breakout_price_threshold")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for breakout_price_threshold evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: breakout_price_threshold evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _volume_confirmed_breakout_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping volume_confirmed_breakout evaluator"
+        )
+        return []
+    if not settings.volume_confirmed_breakout_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED=false, skipping volume_confirmed_breakout evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("volume_confirmed_breakout")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for volume_confirmed_breakout evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: volume_confirmed_breakout evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _volatility_squeeze_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping volatility_squeeze evaluator"
+        )
+        return []
+    if not settings.volatility_squeeze_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: VOLATILITY_SQUEEZE_EVALUATOR_ENABLED=false, skipping volatility_squeeze evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("volatility_squeeze")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for volatility_squeeze evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: volatility_squeeze evaluator produced no signal"
+            )
+            continue
+
+        signal_specs.append(_signal_spec_from_candidate(candidate, scanner_config))
+
+    return signal_specs
+
+
+def _support_resistance_signal_specs(
+    strategy_name: str,
+    scanner_config: dict[str, Any],
+    symbols: list[str],
+    *,
+    market_data_client: AlpacaMarketDataClient | None,
+    no_signal_reasons: list[str],
+) -> list[dict[str, Any]]:
+    if not settings.signal_evaluators_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SIGNAL_EVALUATORS_ENABLED=false, skipping support_resistance evaluator"
+        )
+        return []
+    if not settings.support_resistance_evaluator_enabled:
+        no_signal_reasons.append(
+            f"{strategy_name}: SUPPORT_RESISTANCE_EVALUATOR_ENABLED=false, skipping support_resistance evaluator"
+        )
+        return []
+
+    evaluator = get_evaluator("support_resistance")
+    if evaluator is None:
+        return []
+
+    features = evaluator.required_features(scanner_config)
+    timeframe = features.timeframe
+    lookback_minutes = features.lookback_minutes
+    feed = _scanner_string(scanner_config, "data_feed", default="iex")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(minutes=lookback_minutes + 5)
+
+    client = market_data_client or AlpacaMarketDataClient.from_settings()
+    bars_by_symbol = client.get_stock_bars(
+        symbols,
+        timeframe=timeframe,
+        start=start,
+        end=end,
+        feed=feed,
+        limit=max(lookback_minutes + 10, 20),
+    )
+
+    signal_specs: list[dict[str, Any]] = []
+    for symbol in symbols:
+        stock_bars = bars_by_symbol.get(symbol)
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: no usable bars for support_resistance evaluator"
+            )
+            continue
+
+        candle_frame = _candle_frame_from_stock_bars(stock_bars, timeframe)
+        indicator_frame = IndicatorFrame(
+            close=candle_frame.closes,
+            high=candle_frame.highs,
+            low=candle_frame.lows,
+            volume=candle_frame.volumes,
+        )
+        candidate = evaluator.evaluate(
+            symbol=symbol,
+            config=scanner_config,
+            candles=candle_frame,
+            indicators=indicator_frame,
+        )
+        if candidate is None:
+            no_signal_reasons.append(
+                f"{strategy_name}.{symbol}: support_resistance evaluator produced no signal"
             )
             continue
 

@@ -22,9 +22,16 @@ from app.db.session import SessionLocal
 from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import (
+    build_breakout_price_threshold_strategy_payload,
+    build_macd_crossover_strategy_payload,
+    build_mean_reversion_strategy_payload,
     build_momentum_rate_of_change_strategy_payload,
     build_moving_average_strategy_payload,
+    build_rsi_reversal_strategy_payload,
+    build_support_resistance_strategy_payload,
     build_trend_confirmation_strategy_payload,
+    build_volatility_squeeze_strategy_payload,
+    build_volume_confirmed_breakout_strategy_payload,
 )
 
 
@@ -188,6 +195,90 @@ def _strategy_payloads(
                     direction="bullish",
                 ),
                 build_momentum_rate_of_change_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_rsi_reversal_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_rsi_reversal_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_macd_crossover_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_macd_crossover_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_mean_reversion_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_mean_reversion_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_breakout_price_threshold_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_breakout_price_threshold_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_volume_confirmed_breakout_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_volume_confirmed_breakout_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_volatility_squeeze_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_volatility_squeeze_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="put",
+                    direction="bearish",
+                ),
+                build_support_resistance_strategy_payload(
+                    symbol=symbol,
+                    target_strike=target_strike,
+                    option_type="call",
+                    direction="bullish",
+                ),
+                build_support_resistance_strategy_payload(
                     symbol=symbol,
                     target_strike=target_strike,
                     option_type="put",

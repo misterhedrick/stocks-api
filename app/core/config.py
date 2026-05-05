@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     paper_strategy_preview_profiles_enabled: bool = True
     signal_evaluators_enabled: bool = True
     momentum_evaluator_enabled: bool = True
+    moving_average_evaluator_enabled: bool = True
+    rsi_evaluator_enabled: bool = True
+    macd_evaluator_enabled: bool = True
+    mean_reversion_evaluator_enabled: bool = True
+    breakout_price_threshold_evaluator_enabled: bool = True
+    volume_confirmed_breakout_evaluator_enabled: bool = True
+    volatility_squeeze_evaluator_enabled: bool = True
+    support_resistance_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(
