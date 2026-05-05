@@ -37,8 +37,12 @@ def _indicators(frame: CandleFrame) -> IndicatorFrame:
     )
 
 
+BULLISH_LOWER_BAND_CLOSES = [100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 93.7, 98.7]
+BEARISH_UPPER_BAND_CLOSES = [100, 99.8, 99.9, 99.7, 99.8, 99.9, 100, 100.1, 100.2, 100.2, 100.1]
+
+
 def test_bullish_lower_band_recovery_signal() -> None:
-    frame = _frame([100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 98.0, 99.1])
+    frame = _frame(BULLISH_LOWER_BAND_CLOSES)
     signal = MeanReversionEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -59,7 +63,7 @@ def test_bullish_lower_band_recovery_signal() -> None:
 
 
 def test_bearish_upper_band_rejection_signal() -> None:
-    frame = _frame([100, 99.8, 99.9, 99.7, 99.8, 99.9, 100, 100.1, 100.2, 102.0, 100.9])
+    frame = _frame(BEARISH_UPPER_BAND_CLOSES)
     signal = MeanReversionEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -78,7 +82,7 @@ def test_bearish_upper_band_rejection_signal() -> None:
 
 
 def test_respects_configured_direction() -> None:
-    frame = _frame([100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 98.0, 99.1])
+    frame = _frame(BULLISH_LOWER_BAND_CLOSES)
     signal = MeanReversionEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -93,7 +97,7 @@ def test_respects_configured_direction() -> None:
 
 
 def test_rejects_without_price_confirmation() -> None:
-    frame = _frame([100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 98.0, 97.9])
+    frame = _frame([100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 93.7, 93.6])
     signal = MeanReversionEvaluator().evaluate(
         symbol="SPY",
         config={
@@ -120,7 +124,7 @@ def test_rejects_when_not_enough_indicator_values() -> None:
 
 
 def test_rejects_when_too_far_from_middle_band() -> None:
-    frame = _frame([100, 100.2, 100.1, 100.3, 100.2, 100.1, 100.0, 99.9, 99.8, 98.0, 99.1])
+    frame = _frame(BULLISH_LOWER_BAND_CLOSES)
     signal = MeanReversionEvaluator().evaluate(
         symbol="SPY",
         config={
