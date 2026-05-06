@@ -178,7 +178,7 @@ services:
       - key: SUPPORT_RESISTANCE_EVALUATOR_ENABLED
         value: true
       - key: MARKET_CYCLE_PHASE_TIMEOUT_SECONDS
-        value: 70
+        value: 220
       - key: PAPER_STRATEGY_MIN_CHANGE_PERCENT
         value: 0.10
       - key: PAPER_STRATEGY_TREND_MIN_CHANGE_PERCENT
