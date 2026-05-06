@@ -357,7 +357,7 @@ def _preview_config(
     min_open_interest: int | None = None,
     min_quote_size: int = 1,
     min_days_to_expiration: int = 2,
-    max_days_to_expiration: int = 7,
+    max_days_to_expiration: int = 30,
 ) -> dict[str, Any]:
     return {
         "enabled": True,
