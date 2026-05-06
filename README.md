@@ -48,7 +48,7 @@ Run tests:
 python -m pytest
 ```
 
-Fallback if pytest is unavailable:
+`pytest` is included in `requirements.txt` because the evaluator test suite contains pytest-style tests. Fallback for unittest-only coverage if pytest is unavailable:
 
 ```bash
 python -m unittest discover -s tests
@@ -70,12 +70,12 @@ curl.exe --ssl-no-revoke -L --max-time 90 https://stocks-api-z11i.onrender.com/h
 
 ## Main API areas
 
-- `/api/v1/strategies` — create/list/update strategy rows.
-- `/api/v1/signals` — create/list/update signal rows.
-- `/api/v1/order-intents` — preview, submit, and cancel option order intents.
-- `/api/v1/options/select-contract` — select an active tradable Alpaca option contract.
-- `/api/v1/jobs/*` — protected operational jobs for reconciliation, scans, cycles, exits, maintenance, resets, and trade-case population.
-- `/api/v1/automation/*` — read-only operational dashboards for readiness, positions, lifecycle, performance, trade cases, and learning reports.
+- `/api/v1/strategies` - create/list/update strategy rows.
+- `/api/v1/signals` - create/list/update signal rows.
+- `/api/v1/order-intents` - preview, submit, and cancel option order intents.
+- `/api/v1/options/select-contract` - select an active tradable Alpaca option contract.
+- `/api/v1/jobs/*` - protected operational jobs for reconciliation, scans, cycles, exits, maintenance, resets, and trade-case population.
+- `/api/v1/automation/*` - read-only operational dashboards for readiness, positions, lifecycle, performance, trade cases, and learning reports.
 
 ## Trading pipeline
 
@@ -83,12 +83,12 @@ Current execution model:
 
 ```text
 strategy config
-→ scanner creates signal
-→ preview creates order_intent
-→ optional auto-submit places Alpaca paper order
-→ broker reconciliation imports orders/fills/positions
-→ exit cycle evaluates managed positions
-→ post-market maintenance populates trade_cases
+-> scanner creates signal
+-> preview creates order_intent
+-> optional auto-submit places Alpaca paper order
+-> broker reconciliation imports orders/fills/positions
+-> exit cycle evaluates managed positions
+-> post-market maintenance populates trade_cases
 ```
 
 All execution flows through previewed `order_intents` before orders are submitted.
@@ -99,8 +99,8 @@ Render cron schedules are UTC and are not DST-aware.
 
 | Service | Purpose | Endpoint | Current schedule |
 |---|---|---|---|
-| `stocks-api-market-cycle` | Entry cycle: scan → reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100` | `*/5 14-19 * * 1-5` |
-| `stocks-api-market-exits` | Exit protection: reconcile → exit-eval → exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
+| `stocks-api-market-cycle` | Entry cycle: scan -> reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100` | `*/5 14-19 * * 1-5` |
+| `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
@@ -131,6 +131,17 @@ Paper safety settings that should remain enabled:
 ```text
 ALPACA_PAPER=true
 AUTO_SUBMIT_REQUIRES_PAPER=true
+```
+
+Automation risk caps:
+
+```text
+MAX_AUTO_ORDERS_PER_CYCLE
+MAX_AUTO_ORDERS_PER_DAY
+MAX_OPEN_POSITIONS
+MAX_OPEN_POSITIONS_PER_SYMBOL
+MAX_CONTRACTS_PER_ORDER
+MAX_ESTIMATED_PREMIUM_PER_ORDER
 ```
 
 ## Preview profiles by signal strategy type
@@ -180,7 +191,7 @@ Committed. updated=43 skipped=0
 Manual workflow:
 
 ```text
-Actions → Update Strategy Preview Profiles → Run workflow
+Actions -> Update Strategy Preview Profiles -> Run workflow
 ```
 
 Workflow file:
@@ -243,24 +254,11 @@ Detailed signal strategy specs live under:
 
 ```text
 docs/signal-strategies/
-docs/signal-strategies/deep-dives/
 ```
 
-Covered signal families:
+Each strategy now has its own folder with `description.md`, `deep-dive.md`, and `tuning.md`. Strategies with implementation notes also include `implementation-note.md`.
 
-```text
-moving_average_trend_following
-momentum_rate_of_change
-breakout_price_threshold
-mean_reversion
-rsi_overbought_oversold
-macd_crossover
-support_resistance
-volume_confirmed_breakout
-volatility_squeeze
-```
-
-The docs describe purpose, inputs, formulas, bullish/bearish rules, rejection rules, confidence scoring, feature payloads, pseudocode, and tests.
+The docs describe purpose, inputs, formulas, bullish/bearish rules, rejection rules, confidence scoring, feature payloads, pseudocode, tests, and human/AI-friendly tuning guidance.
 
 ## Signal evaluator foundation
 

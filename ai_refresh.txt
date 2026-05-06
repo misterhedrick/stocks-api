@@ -105,6 +105,20 @@ Paper-only safeguards:
 - ALPACA_PAPER=true
 - AUTO_SUBMIT_REQUIRES_PAPER=true
 
+Automation risk caps:
+- MAX_AUTO_ORDERS_PER_CYCLE caps submitted orders per cycle.
+- MAX_AUTO_ORDERS_PER_DAY caps submitted orders per day.
+- MAX_OPEN_POSITIONS caps total open positions.
+- MAX_OPEN_POSITIONS_PER_SYMBOL caps open positions per underlying.
+- MAX_CONTRACTS_PER_ORDER caps order quantity.
+- MAX_ESTIMATED_PREMIUM_PER_ORDER caps estimated premium per order.
+
+Render cron runner env:
+- JOB_PATH selects the protected API job endpoint.
+- JOB_TIMEOUT_SECONDS controls request timeout.
+- JOB_RETRY_DELAYS_SECONDS controls retry backoff.
+- JOB_SKIP_HTTP_STATUS_CODES lists non-fatal HTTP statuses, currently useful for 429 rate limits.
+
 === CURRENT DATABASE / STRATEGY STATE ===
 
 Existing production DB strategies were patched with preview profiles by GitHub Actions.
@@ -203,33 +217,25 @@ Purpose:
 Folder:
 - docs/signal-strategies/
 
-Strategy overview files:
-- moving_average_trend_following.md
-- momentum_rate_of_change.md
-- breakout_price_threshold.md
-- mean_reversion.md
-- rsi_overbought_oversold.md
-- macd_crossover.md
-- support_resistance.md
-- volume_confirmed_breakout.md
-- volatility_squeeze.md
+Each strategy now has its own folder:
+- moving-average-trend-following/
+- momentum-rate-of-change/
+- breakout-price-threshold/
+- mean-reversion/
+- rsi-overbought-oversold/
+- macd-crossover/
+- support-resistance/
+- volume-confirmed-breakout/
+- volatility-squeeze/
+- shared/
 
-Deep dive folder:
-- docs/signal-strategies/deep-dives/
+Each strategy folder has:
+- description.md
+- deep-dive.md
+- tuning.md
+- implementation-note.md where an implementation note exists.
 
-Deep-dive files:
-- shared_indicator_engine.md
-- moving_average_trend_following_deep_dive.md
-- momentum_rate_of_change_deep_dive.md
-- breakout_price_threshold_deep_dive.md
-- mean_reversion_deep_dive.md
-- rsi_overbought_oversold_deep_dive.md
-- macd_crossover_deep_dive.md
-- support_resistance_deep_dive.md
-- volume_confirmed_breakout_deep_dive.md
-- volatility_squeeze_deep_dive.md
-
-These docs include formulas, config schemas, bullish/bearish rules, rejection rules, confidence scoring, features to persist, pseudocode, tests, and suggested implementation order.
+The tuning docs are human-readable and AI-friendly. They include evidence to inspect, scanner knobs, preview/risk knobs, human tuning rules, and an AI adjustment contract for small reviewed config changes.
 
 3. Signal evaluation foundation and scanner routing
 
@@ -345,6 +351,9 @@ Migration 0003 added:
 - trade_cases
 - ai_trade_reviews
 - strategy_change_suggestions
+
+Migration 0004 added:
+- Enables scanner.submit.enabled on existing strategy configs that were previously false.
 
 Implemented:
 - app/services/trade_cases.py

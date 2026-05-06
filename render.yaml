@@ -1,4 +1,4 @@
-# Render blueprint — paper trading, Mon-Fri market hours, fully automated.
+# Render blueprint - paper trading, Mon-Fri market hours, fully automated.
 # Paper-only safeguards: ALPACA_PAPER=true, AUTO_SUBMIT_REQUIRES_PAPER=true.
 # Automation is intentionally enabled: TRADING_AUTOMATION_ENABLED=true,
 # SCHEDULED_JOBS_ENABLED=true, MARKET_CYCLE_SUBMIT_ENABLED=true.
@@ -65,7 +65,7 @@ services:
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
         value: true
-      # Moderate daily limits — enough trades to collect data; avoids runaway correlated positions.
+      # Moderate daily limits - enough trades to collect data; avoids runaway correlated positions.
       - key: MAX_AUTO_ORDERS_PER_CYCLE
         value: 3
       - key: MAX_AUTO_ORDERS_PER_DAY
@@ -193,11 +193,11 @@ services:
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   # Entry market-cycle cron: scan/reconcile/preview/submit every 5 min.
-  # 14-21 UTC covers 10am-5pm EDT (UTC-4) and 9am-4pm EST (UTC-5).
+  # 14-19 UTC covers 10am-3:55pm EDT (UTC-4) and 9am-2:55pm EST (UTC-5).
   # strategy scanner.submit.trade_windows (10:00-16:00 ET) blocks submissions
   # outside the target window in both seasons, so the extra cron coverage is safe.
   # DST caveat: during EST, 9am ET is one hour early but trade_windows blocks entry.
-  # During EDT, the cron runs until 5pm ET; trade_windows stops entries at 4pm ET.
+  # During EDT, this schedule matches the current 10am-3:55pm ET entry window.
   - type: cron
     name: stocks-api-market-cycle
     env: python

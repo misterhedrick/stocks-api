@@ -27,21 +27,38 @@ support_resistance
 
 Legacy direct scanner paths still exist for `price_threshold`, `percent_change`, and `trend_confirmation`.
 
-## Strategy files
+## Folder Layout
 
-- `moving_average_trend_following.md`
-- `momentum_rate_of_change.md`
-- `breakout_price_threshold.md`
-- `mean_reversion.md`
-- `rsi_overbought_oversold.md`
-- `macd_crossover.md`
-- `support_resistance.md`
-- `volume_confirmed_breakout.md`
-- `volatility_squeeze.md`
+Each strategy has its own folder:
+
+```text
+<strategy-folder>/
+  description.md
+  deep-dive.md
+  tuning.md
+  implementation-note.md  # only where an implementation note exists
+```
+
+Strategy folders:
+
+| Folder | Scanner type | Notes |
+|---|---|---|
+| `moving-average-trend-following/` | `moving_average` | Trend/crossover strategy |
+| `momentum-rate-of-change/` | `momentum_rate_of_change` | Short-term momentum strategy |
+| `breakout-price-threshold/` | `breakout_price_threshold` | Includes implementation note |
+| `mean-reversion/` | `mean_reversion` | Bollinger Band reversion strategy |
+| `rsi-overbought-oversold/` | `rsi_reversal` | RSI reversal strategy |
+| `macd-crossover/` | `macd_crossover` | MACD signal-line crossover strategy |
+| `support-resistance/` | `support_resistance` | Includes implementation note |
+| `volume-confirmed-breakout/` | `volume_confirmed_breakout` | Includes implementation note |
+| `volatility-squeeze/` | `volatility_squeeze` | Includes implementation note |
+| `shared/` | shared | Shared indicator engine notes |
+
+Use `tuning.md` when making human-reviewed or AI-assisted strategy adjustments. The tuning files are written to support small, evidence-driven changes and include AI adjustment contracts that can be reviewed before applying any config change.
 
 ## Common implementation shape
 
-Each strategy should eventually produce a normalized signal record with fields like:
+Each evaluator-backed strategy produces a normalized signal candidate that the scanner turns into records with fields like:
 
 ```json
 {

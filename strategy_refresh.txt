@@ -17,7 +17,7 @@ Product context:
 Infrastructure:
 - Python FastAPI application.
 - SQLAlchemy ORM with PostgreSQL/JSONB models.
-- Alembic migrations define the trading schema (0001 initial tables, 0002 performance indexes, 0003 AI review tables).
+- Alembic migrations define the trading schema (0001 initial tables, 0002 performance indexes, 0003 AI review tables, 0004 strategy auto-submit enablement).
 - Alpaca integration is used for market data, option contract selection, paper trading orders, fills, and positions.
 - Render deployment is configured in render.yaml.
 - Main configuration is environment-variable driven through app/core/config.py and .env.
@@ -34,6 +34,9 @@ Important app settings for strategy refinement:
 - MARKET_CYCLE_NEWS_ENABLED controls news risk gating.
 - MARKET_CYCLE_SUBMIT_ENABLED controls auto-submit.
 - TRADING_AUTOMATION_ENABLED plus strategy-level submit config must also permit submit before orders are sent.
+- MAX_AUTO_ORDERS_PER_CYCLE and MAX_AUTO_ORDERS_PER_DAY cap submit volume.
+- MAX_OPEN_POSITIONS and MAX_OPEN_POSITIONS_PER_SYMBOL cap concurrent exposure.
+- MAX_CONTRACTS_PER_ORDER and MAX_ESTIMATED_PREMIUM_PER_ORDER cap individual order risk.
 - For refinement work, prefer preview-first changes unless explicitly asked to enable submit.
 
 Where to inspect the database schema and usable strategy data:
@@ -48,7 +51,7 @@ Where to inspect the database schema and usable strategy data:
     - position_snapshots: latest reconciled broker positions, cost basis, market value, unrealized P/L, raw_position JSONB.
     - job_runs: scan/reconcile/market-cycle job details, errors, no-signal reasons, created IDs.
     - audit_logs: workflow audit trail and strategy update history.
-    - trade_cases: schema ready (migration 0003); intended for closed round-trip records for AI review. Service not yet implemented.
+    - trade_cases: closed round-trip records populated from reconciled fills for AI review.
     - ai_trade_reviews: schema ready (migration 0003); will store AI review results per trade case.
     - strategy_change_suggestions: schema ready (migration 0003); will store AI-suggested strategy config changes.
 - alembic/versions/0001_initial_trading_tables.py
@@ -57,6 +60,8 @@ Where to inspect the database schema and usable strategy data:
   - 13 query-performance indexes added on signals, order_intents, broker_orders, fills, position_snapshots, job_runs.
 - alembic/versions/0003_add_ai_review_tables.py
   - trade_cases, ai_trade_reviews, strategy_change_suggestions tables with FKs and indexes.
+- alembic/versions/0004_enable_strategy_auto_submit.py
+  - Enables scanner.submit.enabled on existing strategy configs that were previously false.
 - app/db/session.py
   - SessionLocal and database connection setup.
 - app/db/migrations.py
@@ -65,7 +70,7 @@ Where to inspect the database schema and usable strategy data:
 Where to inspect current strategy behavior:
 - app/services/strategy_templates.py
   - Factory for preview-first paper strategies.
-  - Defines current moving-average and confirmed-trend default configs.
+  - Defines current seeded paper strategy configs across the active strategy families.
   - Shows scanner.preview, scanner.exit, and scanner.submit config shapes.
   - Moving-average template default trigger is bullish_cross (fires only at the crossover event, not on sustained trend).
   - bullish_cross is more selective than bullish_trend; it fires once at the MA crossover moment rather than on every bar the short MA stays above the long MA.
@@ -75,9 +80,18 @@ Where to inspect current strategy behavior:
     - percent_change
     - moving_average
     - trend_confirmation
+    - momentum_rate_of_change
+    - rsi_reversal
+    - macd_crossover
+    - mean_reversion
+    - breakout_price_threshold
+    - volume_confirmed_breakout
+    - volatility_squeeze
+    - support_resistance
   - Shows exactly which config keys are recognized.
   - Records no_signal_reasons in job_runs.details.
   - Adds market_context to generated signals.
+  - Routes evaluator-backed scanner types through app/services/signals/evaluators/registry.py when enabled.
 - app/services/order_intents.py
   - Converts signals/previews into durable order intents.
   - Inspect preview validation, option quote checks, max spread, and estimated notional logic before changing strategy preview constraints.
@@ -109,6 +123,9 @@ Where to inspect performance evidence:
 - app/services/trade_lifecycle.py
   - Provides open-position lifecycle views and trade cases.
   - Trade cases expose the same matched round trips/open lots in a stable shape for later AI review.
+- app/services/trade_cases.py
+  - Idempotently populates persisted trade_cases from FIFO matched closed round trips.
+  - Uses (entry_fill_id, exit_fill_id) dedupe and is called by post-market maintenance in an isolated transaction.
 - app/api/routes/automation.py
   - Endpoints for strategy refinement review:
     - GET /api/v1/automation/learning-report (start here)
@@ -137,7 +154,8 @@ Useful local scripts:
 - scripts/seed_paper_strategies.py
   - Seeds preview-first paper strategy payloads from current underlying prices.
 - scripts/seed_paper_trade_universe.py
-  - Seeds a broader liquid paper-trading universe (SPY, QQQ, NVDA, TSLA, IWM, AMZN, MSFT, GOOGL, META, AAPL by default).
+  - Seeds the current liquid paper-trading universe (SPY, QQQ, NVDA, AAPL, MSFT by default).
+  - Accepts explicit symbol overrides for broader experiments.
 - scripts/analyze_paper_learning.py
   - Calls GET /api/v1/automation/learning-report and prints a structured diagnostic summary.
   - Good first script to run at the start of a strategy review session.
@@ -157,7 +175,7 @@ Useful local scripts:
 Current strategy configuration shape:
 - Strategy.config is JSONB.
 - Most active strategies use config.scanner.
-- config.scanner.type can currently be price_threshold, percent_change, moving_average, or trend_confirmation.
+- config.scanner.type can currently be price_threshold, percent_change, moving_average, trend_confirmation, momentum_rate_of_change, rsi_reversal, macd_crossover, mean_reversion, breakout_price_threshold, volume_confirmed_breakout, volatility_squeeze, or support_resistance.
 - Common scanner keys include:
   - symbols
   - data_feed
@@ -250,11 +268,12 @@ Boundaries and safety:
 - Do not invent performance results. Pull data from the configured database/API.
 - Do not rewrite the app architecture just to improve strategies.
 - Do not change secrets in .env.
+- When tuning a signal family, read that strategy's docs/signal-strategies/<strategy-folder>/tuning.md first.
 - Prefer auditable changes through existing strategy update scripts, API endpoints, or small code changes that preserve existing architecture.
 
 Good next AI behavior:
 - Start by calling GET /api/v1/automation/learning-report or running scripts/analyze_paper_learning.py.
-- Then inspect app/db/models.py, app/services/strategy_templates.py, app/services/signal_scanner.py, app/services/performance_review.py, and scripts/tune_paper_strategies.py.
+- Then inspect app/db/models.py, app/services/strategy_templates.py, app/services/signal_scanner.py, app/services/performance_review.py, scripts/tune_paper_strategies.py, and the relevant strategy tuning doc.
 - Then inspect current strategy data and performance using the configured database or automation endpoints.
 - Summarize what is known, what is missing, and the exact evidence behind any recommended strategy change.
 - If implementing changes, keep them minimal, testable, and easy to revert.
