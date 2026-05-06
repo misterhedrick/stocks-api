@@ -128,7 +128,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         scanner = payload["config"]["scanner"]
         self.assertEqual(scanner["preview"]["target_strike"], "501")
         self.assertEqual(scanner["type"], "trend_confirmation")
-        self.assertEqual(scanner["preview"]["max_spread"], "0.20")
+        self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertTrue(scanner["submit"]["enabled"])
 
     def test_upsert_strategy_creates_and_audits(self) -> None:

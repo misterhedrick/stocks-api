@@ -1,6 +1,6 @@
 # Signal strategy planning docs
 
-This folder documents popular entry signal strategy families for future implementation in the paper trading system.
+This folder documents entry signal strategy families implemented in the paper trading system and the design references used to build them.
 
 Important terminology:
 
@@ -8,6 +8,24 @@ Important terminology:
 - **Option strategy**: decides what option structure to trade after a signal exists, such as long call, long put, debit spread, credit spread, straddle, or iron condor.
 
 The current app mostly maps bullish signals to long calls and bearish signals to long puts. These docs focus only on signal logic.
+
+## Current app status
+
+The evaluator-backed scanner path is implemented for:
+
+```text
+momentum_rate_of_change
+moving_average
+rsi_reversal
+macd_crossover
+mean_reversion
+breakout_price_threshold
+volume_confirmed_breakout
+volatility_squeeze
+support_resistance
+```
+
+Legacy direct scanner paths still exist for `price_threshold`, `percent_change`, and `trend_confirmation`.
 
 ## Strategy files
 

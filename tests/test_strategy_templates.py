@@ -59,14 +59,14 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertEqual(scanner["preview"]["max_days_to_expiration"], 7)
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_estimated_notional"]),
-                Decimal("3000.00"),
+                Decimal("5000.00"),
             )
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_spread"]),
-                Decimal("0.20"),
+                Decimal("0.35"),
             )
-            self.assertEqual(scanner["preview"]["max_spread_percent"], "20")
-            self.assertEqual(scanner["preview"]["min_open_interest"], 50)
+            self.assertEqual(scanner["preview"]["max_spread_percent"], "35")
+            self.assertEqual(scanner["preview"]["min_open_interest"], 25)
             if scanner["type"] in {"moving_average", "trend_confirmation"}:
                 self.assertTrue(scanner["market_regime"]["enabled"])
 
@@ -89,7 +89,7 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertTrue(scanner["preview"]["enabled"])
         self.assertTrue(scanner["submit"]["enabled"])
 
-    def test_build_trend_confirmation_strategy_payload_has_tighter_risk_controls(self) -> None:
+    def test_build_trend_confirmation_strategy_payload_uses_data_gathering_controls(self) -> None:
         payload = build_trend_confirmation_strategy_payload(
             symbol="spy",
             target_strike=Decimal("500"),
@@ -100,12 +100,12 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["type"], "trend_confirmation")
         self.assertEqual(scanner["short_window"], 8)
         self.assertEqual(scanner["long_window"], 21)
-        self.assertEqual(scanner["min_change_percent"], "0.35")
+        self.assertEqual(scanner["min_change_percent"], "0.175")
         self.assertTrue(scanner["require_short_average_slope"])
         self.assertTrue(scanner["require_price_above_short_average"])
         self.assertTrue(scanner["market_regime"]["enabled"])
-        self.assertEqual(scanner["preview"]["max_estimated_notional"], "3000")
-        self.assertEqual(scanner["preview"]["max_spread"], "0.20")
+        self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
+        self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
         self.assertTrue(scanner["submit"]["enabled"])

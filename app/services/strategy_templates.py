@@ -151,12 +151,12 @@ def build_momentum_rate_of_change_strategy_payload(
     direction: str = "bullish",
     timeframe: str = "1Min",
     lookback_minutes: int = 30,
-    change_above_percent: str = "0.35",
-    change_below_percent: str = "-0.35",
+    change_above_percent: str = "0.175",
+    change_below_percent: str = "-0.175",
     short_average_type: str = "ema",
     short_average_window: int = 9,
     confidence: str = "0.6500",
-    dedupe_minutes: int = 120,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -325,7 +325,7 @@ def _percent_change_payload(
                 "symbols": [symbol],
                 "lookback_minutes": 30,
                 "timeframe": "1Min",
-                "change_above_percent": "0.35",
+                "change_above_percent": "0.175",
                 "signal_type": "momentum_breakout",
                 "direction": "bullish",
                 "confidence": "0.6000",
@@ -469,11 +469,11 @@ def build_rsi_reversal_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 480,
     rsi_period: int = 14,
-    oversold_level: str = "30",
-    overbought_level: str = "70",
+    oversold_level: str = "35",
+    overbought_level: str = "65",
     confirmation_mode: str = "cross_back_inside",
     confidence: str = "0.6000",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -530,7 +530,7 @@ def build_macd_crossover_strategy_payload(
     slow_period: int = 26,
     signal_period: int = 9,
     confidence: str = "0.6200",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -552,6 +552,7 @@ def build_macd_crossover_strategy_payload(
                 "fast_period": fast_period,
                 "slow_period": slow_period,
                 "signal_period": signal_period,
+                "require_histogram_confirmation": False,
                 "require_price_confirmation": True,
                 "direction": direction,
                 "confidence": confidence,
@@ -585,7 +586,8 @@ def build_mean_reversion_strategy_payload(
     bollinger_period: int = 20,
     bollinger_stddev: str = "2.0",
     confidence: str = "0.6200",
-    dedupe_minutes: int = 240,
+    max_distance_to_middle_percent: str = "2.0",
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -606,6 +608,7 @@ def build_mean_reversion_strategy_payload(
                 "lookback_minutes": lookback_minutes,
                 "bollinger_period": bollinger_period,
                 "bollinger_stddev": bollinger_stddev,
+                "max_distance_to_middle_percent": max_distance_to_middle_percent,
                 "require_price_confirmation": True,
                 "direction": direction,
                 "confidence": confidence,
@@ -637,10 +640,10 @@ def build_breakout_price_threshold_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 480,
     range_lookback_candles: int = 20,
-    breakout_buffer_percent: str = "0.10",
-    max_breakout_distance_percent: str = "2.0",
+    breakout_buffer_percent: str = "0.05",
+    max_breakout_distance_percent: str = "3.0",
     confidence: str = "0.6200",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -694,11 +697,11 @@ def build_volume_confirmed_breakout_strategy_payload(
     lookback_minutes: int = 480,
     range_lookback_candles: int = 20,
     volume_lookback_candles: int = 20,
-    min_relative_volume: str = "1.5",
-    breakout_buffer_percent: str = "0.10",
-    max_breakout_distance_percent: str = "2.0",
+    min_relative_volume: str = "1.25",
+    breakout_buffer_percent: str = "0.05",
+    max_breakout_distance_percent: str = "3.0",
     confidence: str = "0.6500",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -756,11 +759,11 @@ def build_volatility_squeeze_strategy_payload(
     bollinger_stddev: str = "2.0",
     squeeze_lookback_candles: int = 20,
     range_lookback_candles: int = 20,
-    compression_ratio_threshold: str = "0.75",
-    breakout_buffer_percent: str = "0.10",
-    max_breakout_distance_percent: str = "3.0",
+    compression_ratio_threshold: str = "0.90",
+    breakout_buffer_percent: str = "0.05",
+    max_breakout_distance_percent: str = "4.0",
     confidence: str = "0.6500",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -820,11 +823,11 @@ def build_support_resistance_strategy_payload(
     swing_window: int = 3,
     lookback_candles: int = 60,
     min_touches: int = 2,
-    level_tolerance_percent: str = "0.10",
-    breakout_buffer_percent: str = "0.15",
-    max_distance_percent: str = "0.5",
+    level_tolerance_percent: str = "0.20",
+    breakout_buffer_percent: str = "0.075",
+    max_distance_percent: str = "1.0",
     confidence: str = "0.6000",
-    dedupe_minutes: int = 240,
+    dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -875,7 +878,7 @@ def _market_regime_config(direction: str) -> dict[str, Any]:
     return {
         "enabled": True,
         "symbols": ["SPY", "QQQ"],
-        "bullish_min_change_percent": "0.05",
-        "bearish_max_change_percent": "-0.05",
+        "bullish_min_change_percent": "0.025",
+        "bearish_max_change_percent": "-0.025",
         "direction": direction,
     }

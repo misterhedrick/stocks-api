@@ -59,8 +59,8 @@ def main() -> None:
         "--max-notional-per-order",
         default=_money_string(settings.paper_strategy_max_estimated_notional),
     )
-    parser.add_argument("--max-spread", default="0.20")
-    parser.add_argument("--max-spread-percent", default="20")
+    parser.add_argument("--max-spread", default=str(settings.paper_strategy_max_spread))
+    parser.add_argument("--max-spread-percent", default=str(settings.paper_strategy_max_spread_percent))
     parser.add_argument(
         "--min-open-interest",
         type=int,
@@ -289,6 +289,8 @@ def _strategy_payloads(
     for payload in payloads:
         scanner = payload["config"]["scanner"]
         scanner_type = scanner.get("type")
+        scanner["strictness_level"] = "0.50"
+        scanner["strictness_profile"] = "balanced_data_gathering"
         scanner["preview"]["preview_profile"] = _preview_profile_for_type(scanner_type)
         scanner["preview"]["max_estimated_notional"] = max_notional_per_order
         scanner["preview"]["max_spread"] = max_spread

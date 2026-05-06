@@ -120,13 +120,21 @@ Patch result confirmed:
 - Committed. updated=43 skipped=0
 
 Existing active strategies now have:
-- scanner.preview.preview_profile = price_threshold | percent_change | moving_average | trend_confirmation
+- scanner.preview.preview_profile set from scanner type where patched or seeded.
 
 Current strategy type / preview profile names:
 - price_threshold
 - percent_change
 - moving_average
 - trend_confirmation
+- momentum_rate_of_change
+- rsi_reversal
+- macd_crossover
+- mean_reversion
+- breakout_price_threshold
+- volume_confirmed_breakout
+- volatility_squeeze
+- support_resistance
 
 Preview profile env pattern:
 - PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>
@@ -136,6 +144,8 @@ Examples:
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
 - PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_ESTIMATED_NOTIONAL=3500
+- PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
+- PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 
 The runtime contract selector can now use profile-specific env limits when preview_profile is supplied.
 
@@ -143,9 +153,34 @@ The runtime contract selector can now use profile-specific env limits when previ
 
 scripts/seed_paper_trade_universe.py default universe:
 
-SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AMD, NFLX, AVGO, JPM, XOM
+SPY, QQQ, NVDA, AAPL, MSFT
 
-The script seeds moving-average call/put and confirmed-trend call/put strategy variants per symbol and tags preview_profile from scanner type.
+The GitHub Actions seed workflow defaults to the same five-symbol universe and accepts a comma-separated symbol override.
+
+The script seeds call/put variants per symbol for:
+- moving_average
+- trend_confirmation
+- momentum_rate_of_change
+- rsi_reversal
+- macd_crossover
+- mean_reversion
+- breakout_price_threshold
+- volume_confirmed_breakout
+- volatility_squeeze
+- support_resistance
+
+Each seeded strategy tags scanner.preview.preview_profile from scanner type.
+
+Current paper data-gathering profile for the active 100 strategies:
+- strictness_level=0.50
+- max_estimated_notional=5000
+- max_notional_per_order=5000
+- min_open_interest=25
+- max_spread=0.35
+- max_spread_percent=35
+- dedupe_minutes=60
+
+The profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in Alpaca paper mode.
 
 === RECENT IMPORTANT CODE CHANGES ON DEVELOP ===
 
@@ -196,20 +231,38 @@ Deep-dive files:
 
 These docs include formulas, config schemas, bullish/bearish rules, rejection rules, confidence scoring, features to persist, pseudocode, tests, and suggested implementation order.
 
-3. New signal evaluation foundation
+3. Signal evaluation foundation and scanner routing
 
-Added on develop:
+Implemented on develop:
 - app/services/signals/__init__.py
 - app/services/signals/candles.py
 - app/services/signals/indicators.py
 - app/services/signals/evaluators/__init__.py
 - app/services/signals/evaluators/base.py
 - app/services/signals/evaluators/momentum.py
+- app/services/signals/evaluators/moving_average.py
+- app/services/signals/evaluators/rsi.py
+- app/services/signals/evaluators/macd.py
+- app/services/signals/evaluators/mean_reversion.py
+- app/services/signals/evaluators/breakout.py
+- app/services/signals/evaluators/volume_breakout.py
+- app/services/signals/evaluators/volatility_squeeze.py
+- app/services/signals/evaluators/support_resistance.py
+- app/services/signals/evaluators/registry.py
 
 Tests added:
 - tests/services/signals/__init__.py
 - tests/services/signals/test_indicators.py
 - tests/services/signals/test_momentum_evaluator.py
+- tests/services/signals/test_moving_average_evaluator.py
+- tests/services/signals/test_rsi_evaluator.py
+- tests/services/signals/test_macd_evaluator.py
+- tests/services/signals/test_mean_reversion_evaluator.py
+- tests/services/signals/test_breakout_evaluator.py
+- tests/services/signals/test_volume_breakout_evaluator.py
+- tests/services/signals/test_volatility_squeeze_evaluator.py
+- tests/services/signals/test_support_resistance_evaluator.py
+- tests/services/signals/test_signal_scanner_evaluator.py
 
 Implemented indicator helpers:
 - SMA
@@ -220,46 +273,71 @@ Implemented indicator helpers:
 - ATR
 - percent_change
 
-Implemented first evaluator:
+Implemented evaluators:
 - MomentumRateOfChangeEvaluator
+- MovingAverageTrendEvaluator
+- RsiReversalEvaluator
+- MacdCrossoverEvaluator
+- MeanReversionEvaluator
+- BreakoutPriceThresholdEvaluator
+- VolumeConfirmedBreakoutEvaluator
+- VolatilitySqueezeEvaluator
+- SupportResistanceEvaluator
 
-Important: this foundation is NOT wired into live scanning yet. It is a reusable base plus first evaluator implementation.
+Live scanner routing is implemented for:
+- momentum_rate_of_change
+- moving_average
+- rsi_reversal
+- macd_crossover
+- mean_reversion
+- breakout_price_threshold
+- volume_confirmed_breakout
+- volatility_squeeze
+- support_resistance
+
+Legacy direct scanner paths still exist for:
+- price_threshold
+- percent_change
+- trend_confirmation
 
 === CURRENT RECOMMENDED NEXT TASK ===
 
 Next code task:
-Add evaluator registry and connect MomentumRateOfChangeEvaluator to the live scan path behind feature flags.
+Paper-test and tune the full evaluator-backed strategy set now that registry, scanner routing, strategy templates, seed script entries, and scanner tests exist.
 
-Recommended feature flags:
-- SIGNAL_EVALUATORS_ENABLED=false by default initially.
-- MOMENTUM_EVALUATOR_ENABLED=true/false if a per-evaluator kill switch is desired.
+Current evaluator feature flags:
+- SIGNAL_EVALUATORS_ENABLED
+- MOMENTUM_EVALUATOR_ENABLED
+- MOVING_AVERAGE_EVALUATOR_ENABLED
+- RSI_EVALUATOR_ENABLED
+- MACD_EVALUATOR_ENABLED
+- MEAN_REVERSION_EVALUATOR_ENABLED
+- BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED
+- VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED
+- VOLATILITY_SQUEEZE_EVALUATOR_ENABLED
+- SUPPORT_RESISTANCE_EVALUATOR_ENABLED
 
-Recommended integration steps:
-1. Add evaluator registry:
-   - map strategy_type -> evaluator class.
-   - start with momentum_rate_of_change only.
-2. Add adapter from DB strategy config to evaluator config.
-3. In scan phase, when feature flag is enabled and strategy type is supported, use new evaluator.
-4. Convert SignalCandidate into the existing DB Signal create path.
-5. Preserve duplicate suppression.
-6. Add scan integration tests.
-7. Paper-test momentum only before adding RSI/MACD/mean reversion.
+Recommended next steps:
+1. Run controlled paper tests on the five-symbol seeded universe.
+2. Compare signal volume and no-signal reasons by scanner type.
+3. Tune scanner thresholds and PAPER_PREVIEW_PROFILE_<PROFILE>_* settings.
+4. Keep entries paper-only and human-review strategy changes before changing live logic.
 
-Do NOT add all new strategies at once. Prove the evaluator architecture end-to-end first.
+Do NOT let AI or automation directly rewrite strategy logic. AI can recommend changes only.
 
 === STRATEGY IMPLEMENTATION ORDER ===
 
-Recommended order:
+Current implementation status:
 1. Shared indicator/evaluator foundation. DONE on develop.
-2. Momentum / rate-of-change evaluator. Foundation evaluator DONE, not live-wired.
-3. Moving average refactor into evaluator shape.
-4. Breakout / price-threshold refactor.
-5. RSI reversal.
-6. MACD crossover.
-7. Mean reversion.
-8. Volume-confirmed breakout.
-9. Support/resistance.
-10. Volatility squeeze.
+2. Momentum / rate-of-change evaluator and scanner routing. DONE.
+3. Moving average evaluator refactor and scanner routing. DONE.
+4. RSI reversal evaluator and scanner routing. DONE.
+5. MACD crossover evaluator and scanner routing. DONE.
+6. Mean reversion evaluator and scanner routing. DONE.
+7. Breakout / price-threshold evaluator and scanner routing. DONE.
+8. Volume-confirmed breakout evaluator and scanner routing. DONE.
+9. Volatility squeeze evaluator and scanner routing. DONE.
+10. Support/resistance evaluator and scanner routing. DONE.
 
 === AI REVIEW LAYER STATE ===
 
@@ -284,7 +362,7 @@ Rule:
 
 === CURRENT KNOWN GAPS ===
 
-- New signal evaluator foundation is not live-wired yet.
+- Full evaluator-backed strategy set needs paper-volume tuning and production observation.
 - Option contract selection is first-pass and lacks robust delta/Greeks/moneyness/liquidity scoring.
 - Broker reconciliation lacks pagination loop.
 - No real DB integration test suite yet.

@@ -144,6 +144,14 @@ price_threshold
 percent_change
 moving_average
 trend_confirmation
+momentum_rate_of_change
+rsi_reversal
+macd_crossover
+mean_reversion
+breakout_price_threshold
+volume_confirmed_breakout
+volatility_squeeze
+support_resistance
 ```
 
 Env format:
@@ -159,6 +167,8 @@ PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
 PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_ESTIMATED_NOTIONAL=3500
+PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 ```
 
 The existing production strategies were patched with `scanner.preview.preview_profile` using the GitHub Actions workflow and the result was:
@@ -188,13 +198,44 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-`seed_paper_trade_universe.py` now targets a broader liquid universe:
+`seed_paper_trade_universe.py` defaults to five core liquid symbols:
 
 ```text
-SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AMD, NFLX, AVGO, JPM, XOM
+SPY, QQQ, NVDA, AAPL, MSFT
 ```
 
-It seeds moving-average, confirmed-trend, and momentum rate-of-change call/put variants and tags `scanner.preview.preview_profile` from the scanner type.
+The GitHub Actions workflow also defaults to the same five-symbol set, and both the script and workflow accept explicit symbol overrides.
+
+The seed script creates call/put variants for:
+
+```text
+moving_average
+trend_confirmation
+momentum_rate_of_change
+rsi_reversal
+macd_crossover
+mean_reversion
+breakout_price_threshold
+volume_confirmed_breakout
+volatility_squeeze
+support_resistance
+```
+
+Each seeded strategy tags `scanner.preview.preview_profile` from the scanner type.
+
+Current paper data-gathering profile:
+
+```text
+strictness_level=0.50
+max_estimated_notional=5000
+max_notional_per_order=5000
+min_open_interest=25
+max_spread=0.35
+max_spread_percent=35
+dedupe_minutes=60
+```
+
+This profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in the Alpaca paper sandbox.
 
 ## Signal strategy planning docs
 
@@ -235,6 +276,10 @@ app/services/signals/evaluators/moving_average.py
 app/services/signals/evaluators/rsi.py
 app/services/signals/evaluators/macd.py
 app/services/signals/evaluators/mean_reversion.py
+app/services/signals/evaluators/breakout.py
+app/services/signals/evaluators/volume_breakout.py
+app/services/signals/evaluators/volatility_squeeze.py
+app/services/signals/evaluators/support_resistance.py
 ```
 
 Tests:
@@ -246,6 +291,10 @@ tests/services/signals/test_moving_average_evaluator.py
 tests/services/signals/test_rsi_evaluator.py
 tests/services/signals/test_macd_evaluator.py
 tests/services/signals/test_mean_reversion_evaluator.py
+tests/services/signals/test_breakout_evaluator.py
+tests/services/signals/test_volume_breakout_evaluator.py
+tests/services/signals/test_volatility_squeeze_evaluator.py
+tests/services/signals/test_support_resistance_evaluator.py
 tests/services/signals/test_signal_scanner_evaluator.py
 ```
 
@@ -269,11 +318,42 @@ MovingAverageTrendEvaluator
 RsiReversalEvaluator
 MacdCrossoverEvaluator
 MeanReversionEvaluator
+BreakoutPriceThresholdEvaluator
+VolumeConfirmedBreakoutEvaluator
+VolatilitySqueezeEvaluator
+SupportResistanceEvaluator
 ```
 
-The evaluator registry currently includes `momentum_rate_of_change`, `moving_average`, `rsi_reversal`, `macd_crossover`, and `mean_reversion`. The live scanner routes `scanner.type == "momentum_rate_of_change"` through the evaluator-backed scan path, and the `feature/add-signal-strategies` branch also routes `scanner.type == "moving_average"` through the evaluator-backed path.
+The evaluator registry currently includes:
 
-RSI, MACD, and mean-reversion evaluators are implemented and registered, but their live scanner routing still needs to be added locally using the same evaluator-backed scanner pattern. Add feature-flag guards consistently with the existing evaluator settings: `SIGNAL_EVALUATORS_ENABLED`, `RSI_EVALUATOR_ENABLED`, `MACD_EVALUATOR_ENABLED`, and `MEAN_REVERSION_EVALUATOR_ENABLED`.
+```text
+momentum_rate_of_change
+moving_average
+rsi_reversal
+macd_crossover
+mean_reversion
+breakout_price_threshold
+volume_confirmed_breakout
+volatility_squeeze
+support_resistance
+```
+
+The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths. Legacy hand-built scanner paths still exist for `price_threshold`, `percent_change`, and `trend_confirmation`.
+
+Evaluator feature flags:
+
+```text
+SIGNAL_EVALUATORS_ENABLED
+MOMENTUM_EVALUATOR_ENABLED
+MOVING_AVERAGE_EVALUATOR_ENABLED
+RSI_EVALUATOR_ENABLED
+MACD_EVALUATOR_ENABLED
+MEAN_REVERSION_EVALUATOR_ENABLED
+BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED
+VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED
+VOLATILITY_SQUEEZE_EVALUATOR_ENABLED
+SUPPORT_RESISTANCE_EVALUATOR_ENABLED
+```
 
 Review note: `app/services/signal_scanner.py` is a large file. Some GitHub connector reads may truncate it before the evaluator helper implementations. When reviewing or editing scanner routing, use a local checkout or otherwise verify the complete file before making full-file replacements.
 
@@ -295,19 +375,19 @@ Not implemented yet:
 
 Current high-priority next steps:
 
-1. Wire `rsi_reversal`, `macd_crossover`, and `mean_reversion` into `app/services/signal_scanner.py` using the evaluator-backed scanner pattern.
-2. Add more evaluator-backed signal strategies from `docs/signal-strategies/`, starting with breakout, volume-confirmed breakout, volatility squeeze, and support/resistance.
-3. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
-4. Add broker reconciliation pagination.
-5. Add real DB integration tests or a local Docker Compose/Postgres helper.
-6. Build AI trade review service using persisted `trade_cases`.
+1. Paper-test the full evaluator-backed strategy set and tune scanner thresholds / preview-profile limits by strategy type.
+2. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
+3. Add broker reconciliation pagination.
+4. Add real DB integration tests or a local Docker Compose/Postgres helper.
+5. Build AI trade review service using persisted `trade_cases`.
+6. Add rejected-signal/outcome comparison so AI review can learn from skipped setups, not only closed round trips.
 
 Known limitations:
 
 - Option contract selection is still first-pass and can reject many candidates due open interest, notional, spread, or quote quality.
+- Render only needs explicit evaluator env vars when overriding defaults; `render.yaml` lists them so deployed behavior is visible.
 - News scanning is lightweight RSS/headline gating only.
 - Statuses are plain strings, not a formal enum/state machine.
-- RSI, MACD, and mean-reversion evaluators are not live scanner-routed yet.
 
 ## Useful manual job calls
 
