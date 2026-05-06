@@ -18,7 +18,6 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: bash ./start.sh
     healthCheckPath: /health
-    ipAllowList: []
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
