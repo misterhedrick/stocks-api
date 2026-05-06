@@ -56,7 +56,7 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertEqual(scanner["preview"]["quantity"], 1)
             self.assertEqual(scanner["preview"]["limit"], 20)
             self.assertEqual(scanner["preview"]["min_days_to_expiration"], 2)
-            self.assertEqual(scanner["preview"]["max_days_to_expiration"], 7)
+            self.assertEqual(scanner["preview"]["max_days_to_expiration"], 30)
             self.assertLessEqual(
                 Decimal(scanner["preview"]["max_estimated_notional"]),
                 Decimal("5000.00"),

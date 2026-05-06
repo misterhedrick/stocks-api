@@ -73,6 +73,8 @@ def main() -> None:
     parser.add_argument("--max-open-contracts-per-strategy", type=int, default=100)
     parser.add_argument("--trade-window-start", default="09:45")
     parser.add_argument("--trade-window-end", default="15:30")
+    parser.add_argument("--min-days-to-expiration", type=int, default=2)
+    parser.add_argument("--max-days-to-expiration", type=int, default=30)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -94,6 +96,8 @@ def main() -> None:
         max_open_contracts_per_strategy=args.max_open_contracts_per_strategy,
         trade_window_start=args.trade_window_start,
         trade_window_end=args.trade_window_end,
+        min_days_to_expiration=args.min_days_to_expiration,
+        max_days_to_expiration=args.max_days_to_expiration,
     )
 
     if args.dry_run:
@@ -148,6 +152,8 @@ def _strategy_payloads(
     max_open_contracts_per_strategy: int,
     trade_window_start: str,
     trade_window_end: str,
+    min_days_to_expiration: int = 2,
+    max_days_to_expiration: int = 30,
 ) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -297,6 +303,8 @@ def _strategy_payloads(
         scanner["preview"]["max_spread_percent"] = max_spread_percent
         scanner["preview"]["min_open_interest"] = min_open_interest
         scanner["preview"]["min_quote_size"] = min_quote_size
+        scanner["preview"]["min_days_to_expiration"] = min_days_to_expiration
+        scanner["preview"]["max_days_to_expiration"] = max_days_to_expiration
         scanner["submit"] = deepcopy(submit_config)
     return payloads
 
