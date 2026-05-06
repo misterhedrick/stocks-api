@@ -252,6 +252,30 @@ services:
         value: 429
       - key: ADMIN_API_TOKEN
         sync: false
+  # Temporary one-shot cron: patch strategy DTE window to 2-30 days.
+  # Remove this service once strategies_updated > 0 is confirmed in the job logs.
+  - type: cron
+    name: stocks-api-patch-strategy-dte
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "*/5 * * * *"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/patch-strategy-dte?min_dte=2&max_dte=30
+      - key: JOB_TIMEOUT_SECONDS
+        value: 60
+      - key: ADMIN_API_TOKEN
+        sync: false
   # Maintenance cron: pre/post-market at 12:30 and 21:30 UTC.
   # 12:30 UTC = 8:30am EDT / 7:30am EST. 21:30 UTC = 5:30pm EDT / 4:30pm EST.
   # Post-market run also auto-populates trade_cases (limit=5000).

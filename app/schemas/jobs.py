@@ -109,3 +109,10 @@ class TradeCasePopulationRead(BaseModel):
     updated: int
     skipped: int
     errors: list[str]
+
+
+class PatchStrategyDteRead(BaseModel):
+    job_run: JobRunRead
+    strategies_seen: int
+    strategies_updated: int
+    strategies_skipped: int

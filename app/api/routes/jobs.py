@@ -18,11 +18,13 @@ from app.schemas.jobs import (
     PositionExitEvaluationRead,
     SignalScanRead,
     TradeCasePopulationRead,
+    PatchStrategyDteRead,
     TradingDataResetRead,
 )
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import run_market_cycle
 from app.services.market_maintenance import (
+    patch_strategy_dte,
     run_market_maintenance,
     run_post_market_maintenance,
     run_pre_market_maintenance,
@@ -578,4 +580,23 @@ def populate_trade_cases_route(
         updated=result.updated,
         skipped=result.skipped,
         errors=result.errors,
+    )
+
+
+@router.post(
+    "/patch-strategy-dte",
+    response_model=PatchStrategyDteRead,
+    status_code=status.HTTP_200_OK,
+)
+def patch_strategy_dte_route(
+    db: Annotated[Session, Depends(get_db)],
+    min_dte: Annotated[int, Query(ge=0)] = 2,
+    max_dte: Annotated[int, Query(ge=1)] = 30,
+) -> PatchStrategyDteRead:
+    result = patch_strategy_dte(db, min_dte=min_dte, max_dte=max_dte)
+    return PatchStrategyDteRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        strategies_seen=result.strategies_seen,
+        strategies_updated=result.strategies_updated,
+        strategies_skipped=result.strategies_skipped,
     )
