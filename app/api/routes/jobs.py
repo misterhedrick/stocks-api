@@ -498,7 +498,7 @@ def pre_market_maintenance_route(
 def post_market_maintenance_route(
     db: Annotated[Session, Depends(get_db)],
     order_limit: Annotated[int, Query(ge=1, le=500)] = 500,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 500,
+    fill_page_size: Annotated[int, Query(ge=1, le=100)] = 100,
     stale_after_hours: Annotated[int, Query(ge=0, le=72)] = 0,
 ) -> MarketMaintenanceRead:
     try:

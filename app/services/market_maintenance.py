@@ -59,7 +59,7 @@ def run_market_maintenance(
     return run_post_market_maintenance(
         db,
         order_limit=500 if order_limit is None else order_limit,
-        fill_page_size=500 if fill_page_size is None else fill_page_size,
+        fill_page_size=100 if fill_page_size is None else fill_page_size,
         stale_after_hours=0 if stale_after_hours is None else stale_after_hours,
     )
 
@@ -143,7 +143,7 @@ def run_post_market_maintenance(
     db: Session,
     *,
     order_limit: int = 500,
-    fill_page_size: int = 500,
+    fill_page_size: int = 100,
     stale_after_hours: int = 0,
 ) -> MarketMaintenanceResult:
     logger.info("Running post-market maintenance (order_limit=%d, stale_after_hours=%d)", order_limit, stale_after_hours)
