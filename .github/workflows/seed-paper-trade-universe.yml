@@ -12,9 +12,9 @@ on:
           - "true"
           - "false"
       symbols:
-        description: "Comma-separated tickers to seed (leave blank for full default universe)"
+        description: "Comma-separated tickers to seed"
         required: false
-        default: ""
+        default: "SPY,QQQ,NVDA,AAPL,MSFT"
       max_notional_per_order:
         description: Max notional per order (e.g. 500.00)
         required: false
