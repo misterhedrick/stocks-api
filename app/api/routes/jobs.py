@@ -1,9 +1,11 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
+from app.db.models import JobRun
 from app.db.session import get_db
 from app.integrations.alpaca import (
     AlpacaTradingConfigurationError,
@@ -44,6 +46,8 @@ router = APIRouter(
     tags=["jobs"],
     dependencies=[Depends(require_admin)],
 )
+
+public_router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.post(
@@ -600,3 +604,28 @@ def patch_strategy_dte_route(
         strategies_updated=result.strategies_updated,
         strategies_skipped=result.strategies_skipped,
     )
+
+
+@public_router.get("/recent", status_code=status.HTTP_200_OK)
+def recent_jobs_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    job_name: Annotated[str | None, Query()] = None,
+) -> list[dict[str, Any]]:
+    """Public read-only endpoint — returns recent job run summaries, no auth required."""
+    statement = select(JobRun).order_by(desc(JobRun.started_at)).limit(limit)
+    if job_name:
+        statement = statement.where(JobRun.job_name == job_name)
+    runs = list(db.scalars(statement))
+    return [
+        {
+            "id": str(r.id),
+            "job_name": r.job_name,
+            "status": r.status,
+            "started_at": r.started_at.isoformat(),
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            "details": r.details,
+            "error": r.error,
+        }
+        for r in runs
+    ]
