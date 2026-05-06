@@ -38,19 +38,9 @@ from app.services.strategy_templates import (
 DEFAULT_UNIVERSE = (
     "SPY",
     "QQQ",
-    "IWM",
+    "NVDA",
     "AAPL",
     "MSFT",
-    "NVDA",
-    "AMZN",
-    "META",
-    "GOOGL",
-    "TSLA",
-    "AMD",
-    "NFLX",
-    "AVGO",
-    "JPM",
-    "XOM",
 )
 
 
