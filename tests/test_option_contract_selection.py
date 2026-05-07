@@ -80,6 +80,7 @@ def build_contract(
     *,
     expiration_date: str,
     strike_price: str,
+    underlying_symbol: str = "SPY",
     status: str = "active",
     tradable: bool = True,
     open_interest: str | None = None,
@@ -91,8 +92,8 @@ def build_contract(
         "status": status,
         "tradable": tradable,
         "expiration_date": expiration_date,
-        "root_symbol": "SPY",
-        "underlying_symbol": "SPY",
+        "root_symbol": underlying_symbol,
+        "underlying_symbol": underlying_symbol,
         "type": "call",
         "style": "american",
         "strike_price": strike_price,
@@ -104,7 +105,11 @@ def build_contract(
 
 
 class OptionContractSelectionTests(unittest.TestCase):
-    def test_select_option_contract_picks_nearest_expiration_and_target_strike(self) -> None:
+    def test_select_option_contract_picks_by_dte_then_strike(self) -> None:
+        # With OPTIONS_TARGET_DTE=14 and today=2026-05-07:
+        # SPY260501C00510000 has DTE=-6 (distance 20 from 14) and strike distance 7 from 503.
+        # SPY260417C00505000 has DTE=-20 (distance 34 from 14) and strike distance 2 from 503.
+        # DTE score wins: SPY260501C00510000 is selected (closer to target DTE).
         result = select_option_contract(
             OptionContractSelectionCreate(
                 underlying_symbol="SPY",
@@ -136,7 +141,7 @@ class OptionContractSelectionTests(unittest.TestCase):
             market_data_client=FakeMarketDataClient(),
         )
 
-        self.assertEqual(result.selected_contract.symbol, "SPY260417C00505000")
+        self.assertEqual(result.selected_contract.symbol, "SPY260501C00510000")
         self.assertEqual(result.quote["bid_price"], "1.20")
         self.assertEqual(result.quote["ask_price"], "1.30")
         self.assertEqual(result.quote["midpoint"], "1.25")
@@ -173,6 +178,33 @@ class OptionContractSelectionTests(unittest.TestCase):
             date.today(),
         )
         self.assertIsNotNone(trading_client.calls[-1]["expiration_date_lte"])
+
+    def test_default_dte_window_applied_when_no_expiration_filters_set(self) -> None:
+        trading_client = FakeTradingClient(
+            [
+                build_contract(
+                    "SPY260521C00500000",
+                    expiration_date="2026-05-21",
+                    strike_price="500",
+                    open_interest="100",
+                )
+            ]
+        )
+
+        select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+            ),
+            trading_client=trading_client,
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        call = trading_client.calls[-1]
+        # Default window should be applied (min/max DTE from settings)
+        self.assertIsNotNone(call["expiration_date_gte"])
+        self.assertIsNotNone(call["expiration_date_lte"])
+        self.assertGreater(call["expiration_date_lte"], call["expiration_date_gte"])
 
     def test_select_option_contract_skips_quotes_over_notional_cap(self) -> None:
         result = select_option_contract(
@@ -318,25 +350,29 @@ class OptionContractSelectionTests(unittest.TestCase):
         self.assertEqual(result.selected_contract.symbol, "SPY260417C00500000")
 
     def test_failure_emits_grouped_rejection_reasons(self) -> None:
+        # Use AAPL (not in the missing-OI allowlist) so missing OI is always rejected.
         with self.assertLogs("app.services.option_contracts", level="INFO"):
             with self.assertRaises(OptionContractNotFoundError) as context:
                 select_option_contract(
                     OptionContractSelectionCreate(
-                        underlying_symbol="SPY",
+                        underlying_symbol="AAPL",
                         option_type="call",
                         min_open_interest=Decimal("100"),
                     ),
                     trading_client=FakeTradingClient(
                         [
                             build_contract(
-                                "SPY260417C00500000",
+                                "AAPL260417C00500000",
                                 expiration_date="2026-04-17",
                                 strike_price="500",
+                                underlying_symbol="AAPL",
+                                # No open_interest → missing
                             ),
                             build_contract(
-                                "SPY260417C00505000",
+                                "AAPL260417C00505000",
                                 expiration_date="2026-04-17",
                                 strike_price="505",
+                                underlying_symbol="AAPL",
                                 open_interest="10",
                             ),
                         ]
@@ -345,7 +381,7 @@ class OptionContractSelectionTests(unittest.TestCase):
                 )
 
         diagnostics = context.exception.diagnostics
-        self.assertEqual(diagnostics["underlying_symbol"], "SPY")
+        self.assertEqual(diagnostics["underlying_symbol"], "AAPL")
         self.assertEqual(diagnostics["reason_counts"]["missing_open_interest"], 1)
         self.assertEqual(diagnostics["reason_counts"]["low_open_interest"], 1)
         self.assertEqual(len(diagnostics["rejections"]), 2)
@@ -442,6 +478,328 @@ class OptionContractSelectionTests(unittest.TestCase):
             )
 
         self.assertEqual(context.exception.diagnostics["reason_counts"]["quote_unavailable"], 1)
+
+    # ------------------------------------------------------------------
+    # New tests: relative spread OR logic
+    # ------------------------------------------------------------------
+
+    def test_relative_spread_passes_when_absolute_spread_fails(self) -> None:
+        # bid=3.00, ask=3.40 → spread=0.40 > max_spread=0.35 (abs FAILS)
+        # mid=3.20, spread_pct=0.40/3.20=12.5% ≤ options_max_spread_pct=15% (pct PASSES)
+        # OR logic → contract is accepted.
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                max_spread=Decimal("0.35"),
+            ),
+            trading_client=FakeTradingClient(
+                [
+                    build_contract(
+                        "SPY260521C00500000",
+                        expiration_date="2026-05-21",
+                        strike_price="500",
+                        open_interest="500",
+                    )
+                ]
+            ),
+            market_data_client=FakeMarketDataClient(
+                {
+                    "SPY260521C00500000": {
+                        "bp": "3.00",
+                        "bs": "20",
+                        "ap": "3.40",
+                        "as": "18",
+                        "t": "2026-05-07T16:00:00Z",
+                    }
+                }
+            ),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260521C00500000")
+
+    def test_both_spread_checks_fail_rejects_contract(self) -> None:
+        # bid=1.10, ask=1.60 → spread=0.50 > 0.35 (abs FAILS)
+        # mid=1.35, spread_pct=0.50/1.35=37% > 15% (pct FAILS)
+        # Both fail → rejected.
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                    max_spread=Decimal("0.35"),
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "SPY260521C00500000",
+                            expiration_date="2026-05-21",
+                            strike_price="500",
+                            open_interest="500",
+                        )
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(
+                    {
+                        "SPY260521C00500000": {
+                            "bp": "1.10",
+                            "bs": "5",
+                            "ap": "1.60",
+                            "as": "5",
+                            "t": "2026-05-07T16:00:00Z",
+                        }
+                    }
+                ),
+            )
+
+        self.assertIn("spread_too_wide", context.exception.diagnostics["reason_counts"])
+
+    # ------------------------------------------------------------------
+    # New tests: missing OI allowlist
+    # ------------------------------------------------------------------
+
+    def test_spy_missing_oi_passes_with_good_quote(self) -> None:
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                min_open_interest=Decimal("25"),
+            ),
+            trading_client=FakeTradingClient(
+                [
+                    build_contract(
+                        "SPY260521C00500000",
+                        expiration_date="2026-05-21",
+                        strike_price="500",
+                        underlying_symbol="SPY",
+                        # No open_interest → missing; SPY is allowlisted
+                    )
+                ]
+            ),
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260521C00500000")
+
+    def test_qqq_missing_oi_passes_with_good_quote(self) -> None:
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="QQQ",
+                option_type="call",
+                min_open_interest=Decimal("25"),
+            ),
+            trading_client=FakeTradingClient(
+                [
+                    build_contract(
+                        "QQQ260521C00400000",
+                        expiration_date="2026-05-21",
+                        strike_price="400",
+                        underlying_symbol="QQQ",
+                        # No open_interest → missing; QQQ is allowlisted
+                    )
+                ]
+            ),
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "QQQ260521C00400000")
+
+    def test_aapl_missing_oi_fails_by_default(self) -> None:
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="AAPL",
+                    option_type="call",
+                    min_open_interest=Decimal("25"),
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "AAPL260521C00200000",
+                            expiration_date="2026-05-21",
+                            strike_price="200",
+                            underlying_symbol="AAPL",
+                            # No open_interest; AAPL is NOT in the allowlist
+                        )
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(),
+            )
+
+        self.assertIn(
+            "missing_open_interest", context.exception.diagnostics["reason_counts"]
+        )
+
+    def test_msft_missing_oi_fails_by_default(self) -> None:
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="MSFT",
+                    option_type="call",
+                    min_open_interest=Decimal("25"),
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "MSFT260521C00450000",
+                            expiration_date="2026-05-21",
+                            strike_price="450",
+                            underlying_symbol="MSFT",
+                        )
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(),
+            )
+
+        self.assertIn(
+            "missing_open_interest", context.exception.diagnostics["reason_counts"]
+        )
+
+    # ------------------------------------------------------------------
+    # New tests: DTE filtering
+    # ------------------------------------------------------------------
+
+    def test_dte_filter_avoids_near_term_contracts(self) -> None:
+        # When no explicit expiration filters are set, the selector should apply
+        # OPTIONS_MIN_DTE/OPTIONS_MAX_DTE defaults via expiration_date_gte/lte.
+        trading_client = FakeTradingClient(
+            [
+                build_contract(
+                    "SPY260521C00500000",
+                    expiration_date="2026-05-21",
+                    strike_price="500",
+                    open_interest="200",
+                )
+            ]
+        )
+
+        select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+            ),
+            trading_client=trading_client,
+            market_data_client=FakeMarketDataClient(),
+        )
+
+        call = trading_client.calls[-1]
+        # Expiration gte should be at least today (options_min_dte ≥ 0)
+        self.assertIsNotNone(call["expiration_date_gte"])
+        # Expiration lte should be bounded (options_max_dte)
+        self.assertIsNotNone(call["expiration_date_lte"])
+        # Min DTE filter keeps ultra-near contracts out
+        self.assertGreaterEqual(call["expiration_date_gte"], date.today())
+
+    # ------------------------------------------------------------------
+    # New tests: expanded candidate scoring
+    # ------------------------------------------------------------------
+
+    def test_expanded_candidates_finds_valid_after_first_five_fail(self) -> None:
+        # First 5 contracts fail (wide spread / high notional); 6th passes.
+        failing_quotes = {
+            f"SPY260521C005{i:02d}000": {
+                "bp": "1.00",
+                "bs": "5",
+                "ap": "1.80",  # spread=0.80, mid=1.40, pct=57% — fails both
+                "as": "5",
+                "t": "2026-05-07T16:00:00Z",
+            }
+            for i in range(5)
+        }
+        passing_quote = {
+            "SPY260521C00560000": {
+                "bp": "1.20",
+                "bs": "10",
+                "ap": "1.30",  # spread=0.10, pct=7.7% — passes
+                "as": "10",
+                "t": "2026-05-07T16:00:00Z",
+            }
+        }
+
+        failing_contracts = [
+            build_contract(
+                f"SPY260521C005{i:02d}000",
+                expiration_date="2026-05-21",
+                strike_price=f"5{i:02d}",
+                open_interest="200",
+            )
+            for i in range(5)
+        ]
+        passing_contract = build_contract(
+            "SPY260521C00560000",
+            expiration_date="2026-05-21",
+            strike_price="560",
+            open_interest="300",
+        )
+
+        result = select_option_contract(
+            OptionContractSelectionCreate(
+                underlying_symbol="SPY",
+                option_type="call",
+                max_spread=Decimal("0.35"),
+                underlying_price=Decimal("500"),
+            ),
+            trading_client=FakeTradingClient(failing_contracts + [passing_contract]),
+            market_data_client=FakeMarketDataClient({**failing_quotes, **passing_quote}),
+        )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260521C00560000")
+
+    def test_rejection_summary_groups_reasons_correctly(self) -> None:
+        # Mix of rejection types: 2 low_oi, 1 spread_too_wide → grouped accurately.
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="AAPL",
+                    option_type="call",
+                    min_open_interest=Decimal("100"),
+                    max_spread=Decimal("0.10"),
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "AAPL260521C00200000",
+                            expiration_date="2026-05-21",
+                            strike_price="200",
+                            underlying_symbol="AAPL",
+                            open_interest="5",  # low OI
+                        ),
+                        build_contract(
+                            "AAPL260521C00205000",
+                            expiration_date="2026-05-21",
+                            strike_price="205",
+                            underlying_symbol="AAPL",
+                            open_interest="3",  # low OI
+                        ),
+                        build_contract(
+                            "AAPL260521C00210000",
+                            expiration_date="2026-05-21",
+                            strike_price="210",
+                            underlying_symbol="AAPL",
+                            open_interest="500",  # passes OI
+                        ),
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(
+                    {
+                        "AAPL260521C00210000": {
+                            "bp": "1.10",
+                            "bs": "5",
+                            "ap": "1.60",  # spread=0.50 > 0.10, pct=38% > 15% → rejected
+                            "as": "5",
+                            "t": "2026-05-07T16:00:00Z",
+                        }
+                    }
+                ),
+            )
+
+        counts = context.exception.diagnostics["reason_counts"]
+        self.assertEqual(counts.get("low_open_interest", 0), 2)
+        self.assertEqual(counts.get("spread_too_wide", 0), 1)
+
+    # ------------------------------------------------------------------
+    # Existing route tests (unchanged)
+    # ------------------------------------------------------------------
 
     def test_select_option_contract_route_maps_not_found(self) -> None:
         with self.assertRaises(HTTPException) as context:

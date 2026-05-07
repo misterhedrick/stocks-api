@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
     paper_strategy_stop_loss_percent: Decimal = Decimal("15")
     paper_strategy_preview_profiles_enabled: bool = True
+    options_min_dte: int = 7
+    options_target_dte: int = 14
+    options_max_dte: int = 45
+    options_max_candidates: int = 25
+    options_max_spread_pct: Decimal = Decimal("0.15")
+    options_allow_missing_oi_symbols: str = "SPY,QQQ"
     signal_evaluators_enabled: bool = True
     momentum_evaluator_enabled: bool = True
     moving_average_evaluator_enabled: bool = True

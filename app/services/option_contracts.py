@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.core.config import settings
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaMarketDataClient,
@@ -50,7 +51,8 @@ def select_option_contract(
     market_data_client: AlpacaMarketDataClient | None = None,
 ) -> OptionContractSelectionRead:
     trading = trading_client or AlpacaTradingClient.from_settings()
-    expiration_date_gte, expiration_date_lte = _expiration_range(payload)
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    expiration_date_gte, expiration_date_lte = _expiration_range(payload, today=today)
     contracts_page = trading.list_option_contracts(
         underlying_symbol=payload.underlying_symbol,
         option_type=payload.option_type,
@@ -69,10 +71,18 @@ def select_option_contract(
         else:
             available_contracts.append(contract)
 
+    target_dte = settings.options_target_dte
     candidates = sorted(
         available_contracts,
-        key=lambda contract: _contract_sort_key(contract, target_strike=target_strike),
+        key=lambda contract: _contract_sort_key(
+            contract,
+            target_strike=target_strike,
+            target_dte=target_dte,
+            today=today,
+        ),
     )
+    candidates = candidates[: settings.options_max_candidates]
+
     if not candidates:
         reason = "no_expiration_strike_match" if not contracts_page.contracts else "not_tradable"
         rejections = prefiltered_rejections or [
@@ -118,6 +128,7 @@ def select_option_contract(
         min_open_interest=payload.min_open_interest,
     )
 
+    allow_missing_oi = _missing_oi_allowlist()
     market_data = market_data_client or AlpacaMarketDataClient.from_settings()
     selected, latest_quote = _select_quoted_contract(
         candidates,
@@ -127,10 +138,12 @@ def select_option_contract(
         max_estimated_notional=limits.max_estimated_notional,
         max_spread=limits.max_spread,
         max_spread_percent=limits.max_spread_percent,
+        max_spread_pct=settings.options_max_spread_pct,
         min_open_interest=Decimal(limits.min_open_interest)
         if limits.min_open_interest is not None
         else None,
         min_quote_size=payload.min_quote_size,
+        allow_missing_oi_symbols=allow_missing_oi,
         initial_rejections=prefiltered_rejections,
         payload=payload,
         candidates_seen=len(contracts_page.contracts),
@@ -158,8 +171,10 @@ def _select_quoted_contract(
     max_estimated_notional: Decimal | None,
     max_spread: Decimal | None,
     max_spread_percent: Decimal | None,
+    max_spread_pct: Decimal | None,
     min_open_interest: Decimal | None,
     min_quote_size: Decimal | None,
+    allow_missing_oi_symbols: frozenset[str],
     initial_rejections: list[CandidateRejection],
     payload: OptionContractSelectionCreate,
     candidates_seen: int,
@@ -195,8 +210,10 @@ def _select_quoted_contract(
             max_estimated_notional=max_estimated_notional,
             max_spread=max_spread,
             max_spread_percent=max_spread_percent,
+            max_spread_pct=max_spread_pct,
             min_open_interest=min_open_interest,
             min_quote_size=min_quote_size,
+            allow_missing_oi_symbols=allow_missing_oi_symbols,
         )
         if rejection_reason is None:
             accepted.append((index, contract, latest_quote, quote_context))
@@ -214,8 +231,15 @@ def _select_quoted_contract(
     )
     _log_selection_failure(diagnostics)
     raise OptionContractNotFoundError(
-        "No active tradable option contract matched the quote constraints: "
-        + "; ".join(item.reason for item in rejected[:5]),
+        "No option contract matched quote constraints for "
+        + payload.underlying_symbol
+        + ": "
+        + ", ".join(
+            f"{code}×{count}"
+            for code, count in sorted(
+                Counter(r.reason_code for r in rejected).items()
+            )
+        ),
         diagnostics=diagnostics,
     )
 
@@ -243,10 +267,24 @@ def _expiration_range(
     *,
     today: date | None = None,
 ) -> tuple[date | None, date | None]:
-    if (
-        payload.min_days_to_expiration is None
-        and payload.max_days_to_expiration is None
-    ):
+    has_relative = (
+        payload.min_days_to_expiration is not None
+        or payload.max_days_to_expiration is not None
+    )
+    has_absolute = (
+        payload.expiration_date_gte is not None
+        or payload.expiration_date_lte is not None
+    )
+
+    if not has_relative and not has_absolute:
+        # No explicit filters: apply default DTE window from settings.
+        base_date = today or datetime.now(ZoneInfo("America/New_York")).date()
+        return (
+            base_date + timedelta(days=settings.options_min_dte),
+            base_date + timedelta(days=settings.options_max_dte),
+        )
+
+    if has_absolute and not has_relative:
         return payload.expiration_date_gte, payload.expiration_date_lte
 
     base_date = today or datetime.now(ZoneInfo("America/New_York")).date()
@@ -263,6 +301,11 @@ def _expiration_range(
     return expiration_date_gte, expiration_date_lte
 
 
+def _missing_oi_allowlist() -> frozenset[str]:
+    raw = settings.options_allow_missing_oi_symbols
+    return frozenset(s.strip().upper() for s in raw.split(",") if s.strip())
+
+
 def _quote_rejection_reason(
     contract: AlpacaOptionContract,
     quote_context: dict[str, object],
@@ -270,29 +313,37 @@ def _quote_rejection_reason(
     max_estimated_notional: Decimal | None,
     max_spread: Decimal | None,
     max_spread_percent: Decimal | None,
+    max_spread_pct: Decimal | None,
     min_open_interest: Decimal | None,
     min_quote_size: Decimal | None,
+    allow_missing_oi_symbols: frozenset[str],
 ) -> CandidateRejection | None:
+    underlying = (contract.underlying_symbol or "").upper()
+    allow_missing_oi = underlying in allow_missing_oi_symbols
+
     if min_open_interest is not None and contract.open_interest is None:
-        return CandidateRejection(
-            symbol=contract.symbol,
-            reason_code="missing_open_interest",
-            reason=f"{contract.symbol} missing open interest",
-            details={"min_open_interest": str(min_open_interest)},
-        )
-    if min_open_interest is not None and contract.open_interest < min_open_interest:
-        return CandidateRejection(
-            symbol=contract.symbol,
-            reason_code="low_open_interest",
-            reason=(
-                f"{contract.symbol} open interest {contract.open_interest} "
-                f"is below min {min_open_interest}"
-            ),
-            details={
-                "open_interest": str(contract.open_interest),
-                "min_open_interest": str(min_open_interest),
-            },
-        )
+        if not allow_missing_oi:
+            return CandidateRejection(
+                symbol=contract.symbol,
+                reason_code="missing_open_interest",
+                reason=f"{contract.symbol} missing open interest",
+                details={"min_open_interest": str(min_open_interest)},
+            )
+        # Allowlisted symbol: skip missing-OI rejection; quote quality still checked below.
+    elif min_open_interest is not None and contract.open_interest is not None:
+        if contract.open_interest < min_open_interest:
+            return CandidateRejection(
+                symbol=contract.symbol,
+                reason_code="low_open_interest",
+                reason=(
+                    f"{contract.symbol} open interest {contract.open_interest} "
+                    f"is below min {min_open_interest}"
+                ),
+                details={
+                    "open_interest": str(contract.open_interest),
+                    "min_open_interest": str(min_open_interest),
+                },
+            )
 
     bid_price = _decimal_from_context(quote_context.get("bid_price"))
     ask_price = _decimal_from_context(quote_context.get("ask_price"))
@@ -339,33 +390,52 @@ def _quote_rejection_reason(
                 "max_estimated_notional": str(max_estimated_notional),
             },
         )
-    if max_spread is not None and spread is not None and spread > max_spread:
-        return CandidateRejection(
-            symbol=contract.symbol,
-            reason_code="spread_too_wide",
-            reason=f"{contract.symbol} spread {spread} exceeds max {max_spread}",
-            details={"spread": str(spread), "max_spread": str(max_spread)},
+
+    # Spread check: OR logic — accept if absolute spread is acceptable OR relative spread is
+    # acceptable.  Only reject when both thresholds are exceeded.
+    if spread is not None and (max_spread is not None or max_spread_pct is not None or max_spread_percent is not None):
+        abs_ok = max_spread is None or spread <= max_spread
+
+        spread_pct: Decimal | None = None
+        if midpoint is not None and midpoint > Decimal("0"):
+            spread_pct = spread / midpoint
+
+        # Determine effective relative-spread threshold (fraction, e.g. 0.15).
+        # max_spread_pct (fraction) takes precedence; fall back to max_spread_percent/100.
+        pct_candidates = []
+        if max_spread_pct is not None:
+            pct_candidates.append(max_spread_pct)
+        if max_spread_percent is not None:
+            pct_candidates.append(max_spread_percent / Decimal("100"))
+        effective_pct = min(pct_candidates) if pct_candidates else None
+
+        pct_ok = (
+            effective_pct is None
+            or spread_pct is None
+            or spread_pct <= effective_pct
         )
-    if (
-        max_spread_percent is not None
-        and spread is not None
-        and midpoint is not None
-        and midpoint > Decimal("0")
-    ):
-        spread_percent = (spread / midpoint) * Decimal("100")
-        if spread_percent > max_spread_percent:
+
+        if not abs_ok and not pct_ok:
+            pct_display = (
+                f"{float(spread_pct) * 100:.1f}%"
+                if spread_pct is not None
+                else "unknown%"
+            )
             return CandidateRejection(
                 symbol=contract.symbol,
-                reason_code="spread_percent_too_wide",
+                reason_code="spread_too_wide",
                 reason=(
-                    f"{contract.symbol} spread percent {spread_percent} "
-                    f"exceeds max {max_spread_percent}"
+                    f"{contract.symbol} spread {spread} ({pct_display}) exceeds "
+                    f"abs max {max_spread} and pct max {effective_pct}"
                 ),
                 details={
-                    "spread_percent": str(spread_percent),
-                    "max_spread_percent": str(max_spread_percent),
+                    "spread": str(spread),
+                    "spread_pct": str(spread_pct) if spread_pct is not None else None,
+                    "max_spread": str(max_spread) if max_spread is not None else None,
+                    "effective_max_spread_pct": str(effective_pct) if effective_pct is not None else None,
                 },
             )
+
     return None
 
 
@@ -398,9 +468,7 @@ def _selection_failure_diagnostics(
             if payload.max_estimated_notional is not None
             else None,
             "max_spread": str(payload.max_spread) if payload.max_spread is not None else None,
-            "max_spread_percent": str(payload.max_spread_percent)
-            if payload.max_spread_percent is not None
-            else None,
+            "max_spread_pct": str(settings.options_max_spread_pct),
             "min_open_interest": str(payload.min_open_interest)
             if payload.min_open_interest is not None
             else None,
@@ -409,8 +477,17 @@ def _selection_failure_diagnostics(
 
 
 def _log_selection_failure(diagnostics: dict[str, Any]) -> None:
+    symbol = diagnostics.get("underlying_symbol", "?")
+    option_type = diagnostics.get("option_type", "?")
+    seen = diagnostics.get("candidates_seen", 0)
+    reason_counts = diagnostics.get("reason_counts") or {}
+    summary = ", ".join(f"{k}×{v}" for k, v in sorted(reason_counts.items()))
     logger.info(
-        "Option contract selection failed",
+        "Option contract selection failed: %s %s — %d candidate(s) checked, rejections: [%s]",
+        symbol,
+        option_type,
+        seen,
+        summary or "none",
         extra={"option_selection_diagnostics": diagnostics},
     )
 
@@ -443,16 +520,20 @@ def _contract_sort_key(
     contract: AlpacaOptionContract,
     *,
     target_strike: Decimal | None,
+    target_dte: int | None = None,
+    today: date | None = None,
 ) -> tuple:
+    if target_dte is not None and today is not None:
+        contract_dte = (contract.expiration_date - today).days
+        dte_score = abs(contract_dte - target_dte)
+    else:
+        dte_score = 0
+
     if target_strike is None:
-        return (
-            contract.expiration_date,
-            contract.strike_price,
-            contract.symbol,
-        )
+        return (dte_score, contract.strike_price, contract.symbol)
 
     return (
-        contract.expiration_date,
+        dte_score,
         abs(contract.strike_price - target_strike),
         contract.strike_price,
         contract.symbol,
@@ -465,10 +546,10 @@ def _selection_reason(
 ) -> str:
     if target_strike is None:
         return (
-            "Selected the earliest expiration and lowest strike among active tradable contracts"
+            "Selected the contract nearest to the target DTE among active tradable contracts"
         )
     return (
-        "Selected the earliest expiration with strike closest to "
+        "Selected the contract nearest to the target DTE with strike closest to "
         f"{target_strike}; selected {contract.strike_price}"
     )
 
