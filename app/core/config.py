@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     market_cycle_news_enabled: bool = False
     market_cycle_submit_enabled: bool = False
     market_cycle_phase_timeout_seconds: int = 70
+    market_cycle_max_runtime_seconds: int = 120
     news_request_timeout_seconds: int = 10
     news_market_rss_feeds: str = (
         "https://news.google.com/rss/search?q=stock%20market%20OR%20S%26P%20500%20OR%20Nasdaq%20OR%20Dow%20Jones&hl=en-US&gl=US&ceid=US:en,"

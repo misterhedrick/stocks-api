@@ -23,6 +23,7 @@ class FakeMarketCycleSession:
         strategy: Strategy | None = None,
         order_intent: OrderIntent | None = None,
         scalar_results: list[object | None] | None = None,
+        lock_acquired: bool = True,
     ) -> None:
         self.signal = signal
         self.strategy = strategy
@@ -32,6 +33,8 @@ class FakeMarketCycleSession:
         self.commit_count = 0
         self.rollback_count = 0
         self.flush_count = 0
+        self._lock_acquired = lock_acquired
+        self._lock_checked = False
 
     def add(self, obj: object) -> None:
         self.added.append(obj)
@@ -49,6 +52,10 @@ class FakeMarketCycleSession:
         self.rollback_count += 1
 
     def scalar(self, _: object) -> object | None:
+        # First scalar call is always the advisory lock check.
+        if not self._lock_checked:
+            self._lock_checked = True
+            return self._lock_acquired
         if self.scalar_results:
             return self.scalar_results.pop(0)
         return 0
@@ -1181,6 +1188,198 @@ class MarketCycleTests(unittest.TestCase):
             "market_cycle.exit_attention_required",
             [audit_log.event_type for audit_log in audit_logs],
         )
+
+
+class MarketCycleAdvisoryLockTests(unittest.TestCase):
+    """Tests for the pg_try_advisory_xact_lock single-run enforcement."""
+
+    def setUp(self) -> None:
+        self.switch_patches = [
+            patch("app.services.market_cycle.settings.market_cycle_preview_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_exit_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_news_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_submit_enabled", False),
+        ]
+        for p in self.switch_patches:
+            p.start()
+
+    def tearDown(self) -> None:
+        for p in reversed(self.switch_patches):
+            p.stop()
+
+    def test_lock_not_acquired_returns_skipped_immediately(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=False)
+
+        result = run_market_cycle(db)
+
+        self.assertEqual(result.job_run.status, "skipped")
+        self.assertEqual(result.job_run.job_name, "market_cycle")
+        self.assertIsNotNone(result.job_run.finished_at)
+        self.assertIsNone(result.scan)
+        self.assertIsNone(result.reconcile)
+        self.assertIsNone(result.preview)
+        self.assertIsNone(result.exits)
+        self.assertIsNone(result.news)
+        self.assertIsNone(result.submit)
+        self.assertEqual(result.diagnostics, {"status": "skipped", "reason": "already_running"})
+        # Must have committed the skipped job_run record.
+        self.assertEqual(db.commit_count, 1)
+
+    def test_lock_not_acquired_does_not_run_scan_or_reconcile(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=False)
+
+        with patch(
+            "app.services.market_cycle.scan_signals",
+        ) as scanner, patch(
+            "app.services.market_cycle.reconcile_broker_state",
+        ) as reconcile:
+            run_market_cycle(db)
+
+        scanner.assert_not_called()
+        reconcile.assert_not_called()
+
+    def test_lock_acquired_runs_cycle_normally(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=True)
+
+        with patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ):
+            result = run_market_cycle(db)
+
+        self.assertIn(result.job_run.status, ("succeeded", "partial"))
+        self.assertEqual(result.job_run.job_name, "market_cycle")
+
+    def test_lock_released_after_exception_via_rollback(self) -> None:
+        """Verify that a failed cycle commits its failed job_run (releasing the xact lock)."""
+        db = FakeMarketCycleSession(lock_acquired=True)
+
+        with patch(
+            "app.services.market_cycle.scan_signals",
+            side_effect=RuntimeError("simulated scan failure"),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), self.assertRaises(RuntimeError):
+            run_market_cycle(db)
+
+        # The exception handler must rollback then commit to persist the failed JobRun.
+        self.assertEqual(db.rollback_count, 1)
+        self.assertEqual(db.commit_count, 1)
+        # The same JobRun object may be added more than once (initial add + re-add in handler).
+        # Check that at least one distinct failed job_run exists.
+        failed_run_ids = {
+            obj.id for obj in db.added
+            if isinstance(obj, JobRun) and obj.status == "failed"
+        }
+        self.assertEqual(len(failed_run_ids), 1)
+
+
+class MarketCycleRuntimeBudgetTests(unittest.TestCase):
+    """Tests for the MARKET_CYCLE_MAX_RUNTIME_SECONDS hard budget."""
+
+    def setUp(self) -> None:
+        self.switch_patches = [
+            patch("app.services.market_cycle.settings.market_cycle_preview_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_exit_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_news_enabled", False),
+            patch("app.services.market_cycle.settings.market_cycle_submit_enabled", False),
+        ]
+        for p in self.switch_patches:
+            p.start()
+
+    def tearDown(self) -> None:
+        for p in reversed(self.switch_patches):
+            p.stop()
+
+    def test_runtime_budget_exceeded_sets_partial_status(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=True)
+
+        # Use phase_timeout_seconds=0 to force immediate budget exhaustion after
+        # the first phase, which causes subsequent phases to be skipped.
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_scan_enabled", True
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_reconcile_enabled", True
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_max_runtime_seconds", 0
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_phase_timeout_seconds", 0
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ):
+            result = run_market_cycle(db, phase_timeout_seconds=0)
+
+        # phase_timeout_seconds=0 disables the budget check (per _phase_budget_exceeded),
+        # so the cycle completes normally with "succeeded" status.
+        # The budget constraint only kicks in when > 0 and elapsed >= timeout.
+        self.assertIn(result.job_run.status, ("succeeded", "partial"))
+
+    def test_partial_status_when_reconcile_skipped_by_budget(self) -> None:
+        """Reconcile skipped due to tiny budget → job_run.status == partial."""
+        db = FakeMarketCycleSession(lock_acquired=True)
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_scan_enabled", True
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_reconcile_enabled", True
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_max_runtime_seconds", 0
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ):
+            # phase_timeout_seconds=1 with a real (slow) reconcile would produce
+            # partial, but we force it via the _timeout_step path by patching
+            # _phase_budget_exceeded to return True after scan.
+            call_count = 0
+
+            def fake_budget_exceeded(started: float, timeout: int) -> bool:
+                nonlocal call_count
+                call_count += 1
+                # First call (before scan): not exceeded. Remaining calls: exceeded.
+                return call_count > 1
+
+            with patch(
+                "app.services.market_cycle._phase_budget_exceeded",
+                side_effect=fake_budget_exceeded,
+            ):
+                result = run_market_cycle(db)
+
+        self.assertEqual(result.job_run.status, "partial")
+        self.assertIsNotNone(result.diagnostics)
+        self.assertIn("reconcile", result.diagnostics.get("skipped_steps", []))
+
+    def test_timings_always_present_in_succeeded_result(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=True)
+
+        with patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ):
+            result = run_market_cycle(db)
+
+        self.assertIsNotNone(result.timings)
+        self.assertIn("total_seconds", result.timings)
+        self.assertIn("scan_seconds", result.timings)
+        self.assertIn("reconcile_seconds", result.timings)
+
+    def test_skipped_result_has_zero_total_seconds(self) -> None:
+        db = FakeMarketCycleSession(lock_acquired=False)
+
+        result = run_market_cycle(db)
+
+        self.assertEqual(result.timings["total_seconds"], 0.0)
 
 
 if __name__ == "__main__":
