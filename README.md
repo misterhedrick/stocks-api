@@ -268,6 +268,8 @@ Each strategy now has its own folder with `description.md`, `deep-dive.md`, and 
 
 The docs describe purpose, inputs, formulas, bullish/bearish rules, rejection rules, confidence scoring, feature payloads, pseudocode, tests, and human/AI-friendly tuning guidance.
 
+> **TODO (remove when done):** `docs/signal-strategies/shared/option-selection.md` was added alongside the global option selection improvements but its content is covered by the per-strategy `tuning.md` cross-references. Either move the detail into each tuning file or confirm it is useful as a standalone reference, then remove this note. The cross-reference lines added to all 9 `tuning.md` files should be removed at the same time if the shared doc is dropped.
+
 ## Signal evaluator foundation
 
 The app contains a reusable signal evaluation foundation:
