@@ -59,6 +59,7 @@ def preview_order_intent_from_signal(
     *,
     market_data_client: AlpacaMarketDataClient | None = None,
     trading_client: AlpacaTradingClient | None = None,
+    deadline: float | None = None,
 ) -> OrderIntent:
     signal = db.get(Signal, payload.signal_id)
     if signal is None:
@@ -82,6 +83,7 @@ def preview_order_intent_from_signal(
                 selection_payload,
                 trading_client=trading_client,
                 market_data_client=market_data_client,
+                deadline=deadline,
             )
         except OptionContractNotFoundError as exc:
             _record_option_selection_diagnostic(

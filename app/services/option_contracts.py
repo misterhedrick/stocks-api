@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from time import perf_counter
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -49,6 +50,7 @@ def select_option_contract(
     *,
     trading_client: AlpacaTradingClient | None = None,
     market_data_client: AlpacaMarketDataClient | None = None,
+    deadline: float | None = None,
 ) -> OptionContractSelectionRead:
     trading = trading_client or AlpacaTradingClient.from_settings()
     today = datetime.now(ZoneInfo("America/New_York")).date()
@@ -147,6 +149,7 @@ def select_option_contract(
         initial_rejections=prefiltered_rejections,
         payload=payload,
         candidates_seen=len(contracts_page.contracts),
+        deadline=deadline,
     )
 
     return OptionContractSelectionRead(
@@ -178,12 +181,30 @@ def _select_quoted_contract(
     initial_rejections: list[CandidateRejection],
     payload: OptionContractSelectionCreate,
     candidates_seen: int,
+    deadline: float | None = None,
 ) -> tuple[AlpacaOptionContract, AlpacaLatestOptionQuote]:
     rejected: list[CandidateRejection] = list(initial_rejections)
     accepted: list[
         tuple[int, AlpacaOptionContract, AlpacaLatestOptionQuote, dict[str, object]]
     ] = []
     for index, contract in enumerate(candidates):
+        if deadline is not None and perf_counter() >= deadline:
+            logger.warning(
+                "Option contract quote loop stopped: budget exceeded after %d/%d candidates for %s",
+                index,
+                len(candidates),
+                payload.underlying_symbol,
+            )
+            for skipped_contract in candidates[index:]:
+                rejected.append(
+                    CandidateRejection(
+                        symbol=skipped_contract.symbol,
+                        reason_code="budget_exceeded",
+                        reason=f"{skipped_contract.symbol} skipped: runtime budget exceeded",
+                        details={},
+                    )
+                )
+            break
         try:
             latest_quote = market_data_client.get_latest_option_quote(
                 contract.symbol,

@@ -4,6 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import perf_counter
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def reconcile_broker_state(
     trading_client: AlpacaTradingClient | None = None,
     order_limit: int = 100,
     fill_page_size: int = 100,
+    deadline: float | None = None,
 ) -> BrokerReconciliationResult:
     started_at = datetime.now(timezone.utc)
     job_run = JobRun(
@@ -72,6 +74,7 @@ def reconcile_broker_state(
             client,
             page_size=safe_fill_page_size,
             requested_page_size=requested_fill_page_size,
+            deadline=deadline,
         )
         fill_rows = fill_page.rows
         position_rows = client.list_positions()
@@ -187,11 +190,13 @@ def _list_all_fill_activities(
     *,
     page_size: int,
     requested_page_size: int,
+    deadline: float | None = None,
 ) -> FillActivityPaginationResult:
     all_rows: list[tuple[AlpacaFillActivity, dict]] = []
     page_token: str | None = None
     seen_page_tokens: set[str] = set()
     page_number = 0
+    stop_reason = "budget_exceeded"
 
     logger.info(
         "Fetching Alpaca FILL activities with requested_page_size=%d page_size=%d",
@@ -200,6 +205,13 @@ def _list_all_fill_activities(
     )
 
     while True:
+        if deadline is not None and perf_counter() >= deadline:
+            logger.warning(
+                "Alpaca FILL pagination stopped: runtime budget exceeded after %d page(s); total_fills_seen=%d",
+                page_number,
+                len(all_rows),
+            )
+            break
         page_number += 1
         rows = client.list_fill_activities(
             page_size=page_size,
@@ -244,7 +256,7 @@ def _list_all_fill_activities(
     return FillActivityPaginationResult(
         rows=all_rows,
         pages_fetched=page_number,
-        complete=stop_reason != "missing_or_repeated_next_page_token",
+        complete=stop_reason not in {"missing_or_repeated_next_page_token", "budget_exceeded"},
         stop_reason=stop_reason,
     )
 

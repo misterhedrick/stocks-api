@@ -4,7 +4,7 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.services.automation_guard import AutomationDecision
@@ -326,7 +326,7 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.news["status"], "disabled")
         self.assertEqual(result.submit["status"], "disabled")
         scanner.assert_called_once_with(db, limit=25)
-        reconcile.assert_called_once_with(db, order_limit=50, fill_page_size=75)
+        reconcile.assert_called_once_with(db, order_limit=50, fill_page_size=75, deadline=ANY)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "market_cycle.succeeded")
 
@@ -1376,6 +1376,123 @@ class MarketCycleRuntimeBudgetTests(unittest.TestCase):
         result = run_market_cycle(db)
 
         self.assertEqual(result.timings["total_seconds"], 0.0)
+
+
+class MarketCycleLoopBudgetTests(unittest.TestCase):
+    """Budget enforcement inside per-item loops, not just between phases."""
+
+    def test_fill_pagination_stops_immediately_when_deadline_already_passed(self) -> None:
+        from time import perf_counter as _pc
+        from unittest.mock import MagicMock
+
+        from app.services.broker_reconciliation import _list_all_fill_activities
+
+        mock_client = MagicMock()
+        past_deadline = _pc() - 1.0
+
+        result = _list_all_fill_activities(
+            mock_client,
+            page_size=50,
+            requested_page_size=50,
+            deadline=past_deadline,
+        )
+
+        self.assertEqual(result.stop_reason, "budget_exceeded")
+        self.assertEqual(result.pages_fetched, 0)
+        self.assertEqual(result.rows, [])
+        self.assertFalse(result.complete)
+        mock_client.list_fill_activities.assert_not_called()
+
+    def test_fill_pagination_no_deadline_runs_normally(self) -> None:
+        from unittest.mock import MagicMock
+
+        from app.services.broker_reconciliation import _list_all_fill_activities
+
+        mock_client = MagicMock()
+        mock_client.list_fill_activities.return_value = []
+
+        result = _list_all_fill_activities(
+            mock_client,
+            page_size=50,
+            requested_page_size=50,
+            deadline=None,
+        )
+
+        self.assertEqual(result.stop_reason, "empty_page_no_next_page")
+        self.assertEqual(result.pages_fetched, 1)
+        mock_client.list_fill_activities.assert_called_once()
+
+    def test_preview_loop_skips_all_signals_when_budget_already_expired(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals
+
+        signal_ids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+        db = FakeMarketCycleSession()
+        past_cycle_started = _pc() - 200
+
+        result = _preview_created_signals(
+            db,
+            signal_ids,
+            cycle_started=past_cycle_started,
+            phase_timeout=90,
+        )
+
+        self.assertEqual(result["previews_created"], 0)
+        self.assertEqual(result["previews_skipped"], len(signal_ids))
+        self.assertTrue(
+            any("budget exceeded" in e for e in result["errors"]),
+            msg=f"Expected budget-exceeded error in {result['errors']}",
+        )
+
+    def test_submit_loop_skips_all_intents_when_budget_already_expired(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _submit_previewed_order_intents
+
+        order_intent_ids = [uuid.uuid4(), uuid.uuid4()]
+        db = FakeMarketCycleSession()
+        past_cycle_started = _pc() - 200
+
+        result = _submit_previewed_order_intents(
+            db,
+            order_intent_ids,
+            cycle_started=past_cycle_started,
+            phase_timeout=90,
+        )
+
+        self.assertEqual(result["submitted"], 0)
+        self.assertEqual(result["skipped"], len(order_intent_ids))
+        self.assertTrue(
+            any("budget exceeded" in e for e in result["errors"]),
+            msg=f"Expected budget-exceeded error in {result['errors']}",
+        )
+
+    def test_preview_and_submit_loops_unlimited_when_phase_timeout_zero(self) -> None:
+        """phase_timeout=0 means no budget limit; loops must not short-circuit."""
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals, _submit_previewed_order_intents
+
+        db = FakeMarketCycleSession()
+        # Even with a past cycle_started, phase_timeout=0 means no deadline.
+        past_cycle_started = _pc() - 200
+
+        preview_result = _preview_created_signals(
+            db,
+            [],
+            cycle_started=past_cycle_started,
+            phase_timeout=0,
+        )
+        self.assertEqual(preview_result["previews_skipped"], 0)
+
+        submit_result = _submit_previewed_order_intents(
+            db,
+            [],
+            cycle_started=past_cycle_started,
+            phase_timeout=0,
+        )
+        self.assertEqual(submit_result["skipped"], 0)
 
 
 if __name__ == "__main__":

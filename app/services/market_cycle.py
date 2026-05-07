@@ -287,7 +287,12 @@ def run_market_cycle(
                     "news_risk": news_risk,
                 }
             else:
-                preview = _preview_created_signals(db, signal_ids_for_preview)
+                preview = _preview_created_signals(
+                    db,
+                    signal_ids_for_preview,
+                    cycle_started=cycle_started,
+                    phase_timeout=phase_timeout,
+                )
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
             elapsed = _elapsed_seconds(step_started)
             timings["preview_seconds"] = elapsed
@@ -323,6 +328,8 @@ def run_market_cycle(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
+                cycle_started=cycle_started,
+                phase_timeout=phase_timeout,
             )
             elapsed = _elapsed_seconds(step_started)
             timings["reconcile_seconds"] = elapsed
@@ -382,6 +389,8 @@ def run_market_cycle(
                 db,
                 submittable_order_intent_ids,
                 cycle_id=str(job_run.id),
+                cycle_started=cycle_started,
+                phase_timeout=phase_timeout,
             )
             elapsed = _elapsed_seconds(step_started)
             timings["submit_seconds"] = elapsed
@@ -418,6 +427,8 @@ def run_market_cycle(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
+                cycle_started=cycle_started,
+                phase_timeout=phase_timeout,
             )
             elapsed = _elapsed_seconds(step_started)
             timings["reconcile_seconds"] = elapsed
@@ -580,11 +591,15 @@ def _reconcile_step(
     *,
     order_limit: int,
     fill_page_size: int,
+    cycle_started: float,
+    phase_timeout: int,
 ) -> dict[str, Any]:
+    deadline = cycle_started + phase_timeout if phase_timeout > 0 else None
     reconciliation_result = reconcile_broker_state(
         db,
         order_limit=order_limit,
         fill_page_size=fill_page_size,
+        deadline=deadline,
     )
     return {
         "job_run_id": str(reconciliation_result.job_run.id),
@@ -708,13 +723,30 @@ def _reason_categories(reasons: list[str]) -> dict[str, int]:
 def _preview_created_signals(
     db: Session,
     signal_ids: list[uuid.UUID],
+    *,
+    cycle_started: float,
+    phase_timeout: int,
 ) -> dict[str, Any]:
+    deadline = cycle_started + phase_timeout if phase_timeout > 0 else None
     previews_created = 0
     previews_skipped = 0
     errors: list[str] = []
     order_intent_ids: list[str] = []
 
-    for signal_id in signal_ids:
+    for i, signal_id in enumerate(signal_ids):
+        if deadline is not None and perf_counter() >= deadline:
+            remaining = len(signal_ids) - i
+            previews_skipped += remaining
+            errors.append(
+                f"Skipped {remaining} signal(s): runtime budget exceeded"
+            )
+            logger.warning(
+                "market_cycle preview loop stopped: budget exceeded after %d/%d signals",
+                i,
+                len(signal_ids),
+            )
+            break
+
         signal = db.get(Signal, signal_id)
         if signal is None:
             previews_skipped += 1
@@ -741,7 +773,7 @@ def _preview_created_signals(
             continue
 
         try:
-            order_intent = preview_order_intent_from_signal(db, payload)
+            order_intent = preview_order_intent_from_signal(db, payload, deadline=deadline)
         except Exception as exc:
             previews_skipped += 1
             errors.append(f"Signal '{signal_id}': {exc.__class__.__name__}: {exc}")
@@ -813,7 +845,10 @@ def _submit_previewed_order_intents(
     order_intent_ids: list[uuid.UUID],
     *,
     cycle_id: str | None = None,
+    cycle_started: float,
+    phase_timeout: int,
 ) -> dict[str, Any]:
+    deadline = cycle_started + phase_timeout if phase_timeout > 0 else None
     submitted = 0
     rejected = 0
     skipped = 0
@@ -823,7 +858,19 @@ def _submit_previewed_order_intents(
     orders_submitted_by_strategy: dict[uuid.UUID, int] = {}
     contracts_submitted_by_strategy: dict[uuid.UUID, int] = {}
     contracts_submitted_by_strategy_symbol: dict[tuple[uuid.UUID, str], int] = {}
-    for order_intent_id in order_intent_ids:
+    for i, order_intent_id in enumerate(order_intent_ids):
+        if deadline is not None and perf_counter() >= deadline:
+            remaining = len(order_intent_ids) - i
+            skipped += remaining
+            errors.append(
+                f"Skipped {remaining} order intent(s): runtime budget exceeded"
+            )
+            logger.warning(
+                "market_cycle submit loop stopped: budget exceeded after %d/%d order intents",
+                i,
+                len(order_intent_ids),
+            )
+            break
         now = datetime.now(timezone.utc)
         order_intent = db.get(OrderIntent, order_intent_id)
         if order_intent is None:
