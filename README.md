@@ -93,6 +93,10 @@ strategy config
 
 All execution flows through previewed `order_intents` before orders are submitted.
 
+Broker reconciliation imports Alpaca orders, FILL account activities, and positions. Alpaca's `/v2/account/activities/FILL` endpoint has a `page_size` maximum of **100** when no explicit date filter is used, so the app keeps `fill_page_size` at 100 and paginates with Alpaca `page_token` values instead of requesting larger pages. Reconciliation continues through FILL pages until no next page is available, and fill inserts remain idempotent through the unique Alpaca fill id.
+
+When option contract selection fails before an `order_intent` can be previewed, the app does not create a fake order intent. It emits structured selection-failure logs and stores an `option_selection_diagnostics` row grouped by signal, strategy, underlying symbol, scanner type, and preview profile. These diagnostics include candidate rejection reason counts such as missing/low open interest, notional cap, wide spread, missing quote, no usable two-sided quote, unavailable quote, no expiration/strike match, and not-tradable contracts.
+
 ## Current Render cron topology
 
 Render cron schedules are UTC and are not DST-aware.
@@ -361,13 +365,14 @@ Implemented:
 
 - `trade_cases` table and ORM model.
 - `ai_trade_reviews` and `strategy_change_suggestions` tables and ORM models.
+- `option_selection_diagnostics` table and ORM model for rejected preview/contract-selection context.
 - `app/services/trade_cases.py` to idempotently populate closed FIFO round trips.
 - Post-market maintenance automatically populates trade cases in an isolated transaction.
 
 Not implemented yet:
 
 - AI review service that reads `trade_cases` and writes `ai_trade_reviews` / `strategy_change_suggestions`.
-- Automatic strategy changes from AI suggestions. AI should recommend only; strategy logic changes remain human-approved.
+- Automatic strategy changes from AI suggestions. AI recommendations are recommendation-only; strategy logic changes remain human-approved and must not be applied automatically.
 
 ## Important limitations / next work
 
@@ -375,10 +380,9 @@ Current high-priority next steps:
 
 1. Paper-test the full evaluator-backed strategy set and tune scanner thresholds / preview-profile limits by strategy type.
 2. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
-3. Add broker reconciliation pagination.
+3. Compare `option_selection_diagnostics` with `trade_cases` so AI review can learn from rejected previews as well as closed round trips.
 4. Add real DB integration tests or a local Docker Compose/Postgres helper.
 5. Build AI trade review service using persisted `trade_cases`.
-6. Add rejected-signal/outcome comparison so AI review can learn from skipped setups, not only closed round trips.
 
 Known limitations:
 

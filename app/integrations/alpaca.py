@@ -313,13 +313,17 @@ class AlpacaTradingClient:
         *,
         page_size: int = 100,
         direction: str = "desc",
+        page_token: str | None = None,
     ) -> list[tuple[AlpacaFillActivity, dict[str, Any]]]:
+        params = {
+            "page_size": str(page_size),
+            "direction": direction,
+        }
+        if page_token:
+            params["page_token"] = page_token
         payload = self._get_json(
             "/v2/account/activities/FILL",
-            params={
-                "page_size": str(page_size),
-                "direction": direction,
-            },
+            params=params,
         )
         if not isinstance(payload, list):
             raise AlpacaTradingError("Unexpected Alpaca fill activities response")

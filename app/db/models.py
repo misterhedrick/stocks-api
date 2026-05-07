@@ -379,6 +379,52 @@ class StrategyChangeSuggestion(Base):
     ai_trade_review: Mapped[AiTradeReview | None] = relationship(back_populates="suggestions")
 
 
+class OptionSelectionDiagnostic(Base):
+    __tablename__ = "option_selection_diagnostics"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    signal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("signals.id", ondelete="SET NULL"),
+        index=True,
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        index=True,
+    )
+    strategy_name: Mapped[str | None] = mapped_column(String(120), index=True)
+    underlying_symbol: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    scanner_type: Mapped[str | None] = mapped_column(String(80), index=True)
+    preview_profile: Mapped[str | None] = mapped_column(String(80), index=True)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    reason_counts: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    market_context: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

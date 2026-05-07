@@ -65,6 +65,16 @@ class FakeMarketDataClient:
         )
 
 
+class QuoteUnavailableMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        raise AlpacaTradingError(f"quote unavailable for {symbol}")
+
+
 def build_contract(
     symbol: str,
     *,
@@ -284,6 +294,154 @@ class OptionContractSelectionTests(unittest.TestCase):
                 trading_client=FakeTradingClient([]),
                 market_data_client=FakeMarketDataClient(),
             )
+
+    def test_successful_selection_does_not_emit_failure_summary(self) -> None:
+        with self.assertNoLogs("app.services.option_contracts", level="INFO"):
+            result = select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "SPY260417C00500000",
+                            expiration_date="2026-04-17",
+                            strike_price="500",
+                            open_interest="100",
+                        )
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(),
+            )
+
+        self.assertEqual(result.selected_contract.symbol, "SPY260417C00500000")
+
+    def test_failure_emits_grouped_rejection_reasons(self) -> None:
+        with self.assertLogs("app.services.option_contracts", level="INFO"):
+            with self.assertRaises(OptionContractNotFoundError) as context:
+                select_option_contract(
+                    OptionContractSelectionCreate(
+                        underlying_symbol="SPY",
+                        option_type="call",
+                        min_open_interest=Decimal("100"),
+                    ),
+                    trading_client=FakeTradingClient(
+                        [
+                            build_contract(
+                                "SPY260417C00500000",
+                                expiration_date="2026-04-17",
+                                strike_price="500",
+                            ),
+                            build_contract(
+                                "SPY260417C00505000",
+                                expiration_date="2026-04-17",
+                                strike_price="505",
+                                open_interest="10",
+                            ),
+                        ]
+                    ),
+                    market_data_client=FakeMarketDataClient(),
+                )
+
+        diagnostics = context.exception.diagnostics
+        self.assertEqual(diagnostics["underlying_symbol"], "SPY")
+        self.assertEqual(diagnostics["reason_counts"]["missing_open_interest"], 1)
+        self.assertEqual(diagnostics["reason_counts"]["low_open_interest"], 1)
+        self.assertEqual(len(diagnostics["rejections"]), 2)
+
+    def test_multiple_candidate_failures_are_aggregated_with_accurate_counts(self) -> None:
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                    max_estimated_notional=Decimal("250"),
+                    max_spread=Decimal("0.10"),
+                    max_spread_percent=Decimal("5"),
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "SPY260417C00500000",
+                            expiration_date="2026-04-17",
+                            strike_price="500",
+                            open_interest="100",
+                            tradable=False,
+                        ),
+                        build_contract(
+                            "SPY260417C00505000",
+                            expiration_date="2026-04-17",
+                            strike_price="505",
+                            open_interest="100",
+                        ),
+                        build_contract(
+                            "SPY260417C00510000",
+                            expiration_date="2026-04-17",
+                            strike_price="510",
+                            open_interest="100",
+                        ),
+                        build_contract(
+                            "SPY260417C00515000",
+                            expiration_date="2026-04-17",
+                            strike_price="515",
+                            open_interest="100",
+                        ),
+                    ]
+                ),
+                market_data_client=FakeMarketDataClient(
+                    {
+                        "SPY260417C00505000": {
+                            "bp": "209.00",
+                            "bs": "3",
+                            "ap": "212.00",
+                            "as": "2",
+                            "t": "2026-04-23T16:00:00Z",
+                        },
+                        "SPY260417C00510000": {
+                            "bp": "1.20",
+                            "bs": "10",
+                            "ap": "1.40",
+                            "as": "12",
+                            "t": "2026-04-23T16:00:00Z",
+                        },
+                        "SPY260417C00515000": {
+                            "bp": "1.00",
+                            "bs": "10",
+                            "ap": "1.20",
+                            "as": "12",
+                            "t": "2026-04-23T16:00:00Z",
+                        },
+                    }
+                ),
+            )
+
+        reason_counts = context.exception.diagnostics["reason_counts"]
+        self.assertEqual(reason_counts["not_tradable"], 1)
+        self.assertEqual(reason_counts["estimated_notional_above_max"], 1)
+        self.assertEqual(reason_counts["spread_too_wide"], 2)
+
+    def test_quote_unavailable_is_structured_reason(self) -> None:
+        with self.assertRaises(OptionContractNotFoundError) as context:
+            select_option_contract(
+                OptionContractSelectionCreate(
+                    underlying_symbol="SPY",
+                    option_type="call",
+                ),
+                trading_client=FakeTradingClient(
+                    [
+                        build_contract(
+                            "SPY260417C00500000",
+                            expiration_date="2026-04-17",
+                            strike_price="500",
+                            open_interest="100",
+                        )
+                    ]
+                ),
+                market_data_client=QuoteUnavailableMarketDataClient(),
+            )
+
+        self.assertEqual(context.exception.diagnostics["reason_counts"]["quote_unavailable"], 1)
 
     def test_select_option_contract_route_maps_not_found(self) -> None:
         with self.assertRaises(HTTPException) as context:

@@ -19,6 +19,8 @@ from app.integrations.alpaca import (
 )
 from app.services.audit_logs import record_audit_log
 
+ALPACA_FILL_PAGE_SIZE_MAX = 100
+
 
 @dataclass(slots=True)
 class BrokerReconciliationResult:
@@ -52,7 +54,13 @@ def reconcile_broker_state(
     try:
         client = trading_client or AlpacaTradingClient.from_settings()
         order_rows = client.list_orders(limit=order_limit)
-        fill_rows = client.list_fill_activities(page_size=fill_page_size)
+        requested_fill_page_size = fill_page_size
+        safe_fill_page_size = _safe_fill_page_size(fill_page_size)
+        fill_rows = _list_all_fill_activities(
+            client,
+            page_size=safe_fill_page_size,
+            requested_page_size=requested_fill_page_size,
+        )
         position_rows = client.list_positions()
 
         orders_created = 0
@@ -80,6 +88,8 @@ def reconcile_broker_state(
             "orders_updated": orders_updated,
             "fills_seen": len(fill_rows),
             "fills_created": fills_created,
+            "fill_page_size_requested": requested_fill_page_size,
+            "fill_page_size_used": safe_fill_page_size,
             "positions_seen": len(position_rows),
             "position_snapshots_created": len(position_rows),
         }
@@ -135,6 +145,79 @@ def reconcile_broker_state(
         db.commit()
         db.refresh(job_run)
         raise
+
+
+def _safe_fill_page_size(page_size: int) -> int:
+    if page_size < 1:
+        return 1
+    if page_size > ALPACA_FILL_PAGE_SIZE_MAX:
+        logger.warning(
+            "Requested Alpaca FILL page_size=%d exceeds max=%d; clamping to %d",
+            page_size,
+            ALPACA_FILL_PAGE_SIZE_MAX,
+            ALPACA_FILL_PAGE_SIZE_MAX,
+        )
+        return ALPACA_FILL_PAGE_SIZE_MAX
+    return page_size
+
+
+def _list_all_fill_activities(
+    client: AlpacaTradingClient,
+    *,
+    page_size: int,
+    requested_page_size: int,
+) -> list[tuple[AlpacaFillActivity, dict]]:
+    all_rows: list[tuple[AlpacaFillActivity, dict]] = []
+    page_token: str | None = None
+    seen_page_tokens: set[str] = set()
+    page_number = 0
+
+    logger.info(
+        "Fetching Alpaca FILL activities with requested_page_size=%d page_size=%d",
+        requested_page_size,
+        page_size,
+    )
+
+    while True:
+        page_number += 1
+        rows = client.list_fill_activities(
+            page_size=page_size,
+            page_token=page_token,
+        )
+        logger.info(
+            "Fetched Alpaca FILL activities page=%d page_size=%d returned=%d page_token=%s",
+            page_number,
+            page_size,
+            len(rows),
+            page_token,
+        )
+        if not rows:
+            logger.info(
+                "Alpaca FILL pagination stopped: no next page available; total_fills_seen=%d",
+                len(all_rows),
+            )
+            break
+
+        all_rows.extend(rows)
+
+        if len(rows) < page_size:
+            logger.info(
+                "Alpaca FILL pagination stopped: final page returned fewer than page_size, no next page available; total_fills_seen=%d",
+                len(all_rows),
+            )
+            break
+
+        next_page_token = rows[-1][0].id
+        if not next_page_token or next_page_token in seen_page_tokens:
+            logger.warning(
+                "Alpaca FILL pagination stopped: no new next page token; total_fills_seen=%d",
+                len(all_rows),
+            )
+            break
+        seen_page_tokens.add(next_page_token)
+        page_token = next_page_token
+
+    return all_rows
 
 
 def _upsert_broker_order(

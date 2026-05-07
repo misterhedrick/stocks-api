@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import BrokerOrder, OrderIntent, Signal
+from app.db.models import BrokerOrder, OptionSelectionDiagnostic, OrderIntent, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaMarketDataClient,
@@ -20,6 +20,7 @@ from app.schemas.order_intents import OrderIntentPreviewCreate
 from app.schemas.options import OptionContractSelectionRead
 from app.services.audit_logs import record_audit_log
 from app.services.option_contracts import select_option_contract
+from app.services.option_contracts import OptionContractNotFoundError
 
 
 class OrderIntentNotFoundError(LookupError):
@@ -68,18 +69,29 @@ def preview_order_intent_from_signal(
     max_estimated_notional = _effective_max_estimated_notional(payload)
     max_spread = _effective_max_spread(payload)
     if payload.contract_selection is not None:
-        selection = select_option_contract(
-            payload.contract_selection.model_copy(
-                update={
-                    "side": payload.side,
-                    "data_feed": payload.data_feed,
-                    "max_estimated_notional": max_estimated_notional,
-                    "max_spread": max_spread,
-                }
-            ),
-            trading_client=trading_client,
-            market_data_client=market_data_client,
+        selection_payload = payload.contract_selection.model_copy(
+            update={
+                "side": payload.side,
+                "data_feed": payload.data_feed,
+                "max_estimated_notional": max_estimated_notional,
+                "max_spread": max_spread,
+            }
         )
+        try:
+            selection = select_option_contract(
+                selection_payload,
+                trading_client=trading_client,
+                market_data_client=market_data_client,
+            )
+        except OptionContractNotFoundError as exc:
+            _record_option_selection_diagnostic(
+                db,
+                signal=signal,
+                selection_payload=selection_payload,
+                diagnostics=exc.diagnostics,
+                error=str(exc),
+            )
+            raise
         option_symbol = selection.selected_contract.symbol
 
     if option_symbol is None:
@@ -170,6 +182,58 @@ def preview_order_intent_from_signal(
     db.commit()
     db.refresh(order_intent)
     return order_intent
+
+
+def _record_option_selection_diagnostic(
+    db: Session,
+    *,
+    signal: Signal,
+    selection_payload: OptionContractSelectionCreate,
+    diagnostics: dict,
+    error: str,
+) -> None:
+    strategy = db.get(Strategy, signal.strategy_id) if signal.strategy_id else None
+    scanner_config = strategy.config.get("scanner") if strategy is not None else None
+    scanner_type = scanner_config.get("type") if isinstance(scanner_config, dict) else None
+    summary = dict(diagnostics or {})
+    summary["error"] = error
+    summary["signal"] = {
+        "id": str(signal.id),
+        "status": signal.status,
+        "signal_type": signal.signal_type,
+        "direction": signal.direction,
+        "confidence": str(signal.confidence) if signal.confidence is not None else None,
+    }
+    if strategy is not None:
+        summary["strategy"] = {
+            "id": str(strategy.id),
+            "name": strategy.name,
+        }
+    summary["scanner_type"] = scanner_type
+    summary["preview_profile"] = selection_payload.preview_profile
+
+    diagnostic = OptionSelectionDiagnostic(
+        signal_id=signal.id,
+        strategy_id=signal.strategy_id,
+        strategy_name=strategy.name if strategy is not None else None,
+        underlying_symbol=selection_payload.underlying_symbol,
+        scanner_type=scanner_type,
+        preview_profile=selection_payload.preview_profile,
+        candidate_count=int(summary.get("candidates_seen") or 0),
+        reason_counts=summary.get("reason_counts") or {},
+        summary=summary,
+        market_context=signal.market_context or {},
+    )
+    db.add(diagnostic)
+    record_audit_log(
+        db,
+        event_type="option_selection.failed",
+        entity_type="signal",
+        entity_id=signal.id,
+        message="Option contract selection failed before order intent creation",
+        payload=summary,
+    )
+    db.commit()
 
 
 def submit_order_intent(

@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.routes.order_intents import create_order_intent, preview_order_intent
-from app.db.models import AuditLog, BrokerOrder, OrderIntent, Signal, Strategy
+from app.db.models import AuditLog, BrokerOrder, OptionSelectionDiagnostic, OrderIntent, Signal, Strategy
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaOrderCancellation,
@@ -184,6 +184,34 @@ class ExpensiveMarketDataClient:
                 "bs": "3",
                 "ap": "212.47",
                 "as": "2",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
+class WideQuoteMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "1.00",
+                    "bs": "10",
+                    "ap": "1.80",
+                    "as": "12",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "1.00",
+                "bs": "10",
+                "ap": "1.80",
+                "as": "12",
                 "t": "2026-04-23T16:00:00Z",
             },
         )
@@ -430,7 +458,12 @@ class OrderIntentSubmissionTests(unittest.TestCase):
 
     def test_preview_order_intent_from_signal_can_select_contract(self) -> None:
         signal = build_signal()
-        db = FakeSession(None, signal)
+        strategy = Strategy(
+            id=signal.strategy_id,
+            name="Breakout Strategy",
+            config={"scanner": {"type": "breakout_price_threshold"}},
+        )
+        db = FakeSession(None, signal, strategy)
 
         order_intent = preview_order_intent_from_signal(
             db,
@@ -457,6 +490,54 @@ class OrderIntentSubmissionTests(unittest.TestCase):
             "SPY260417C00500000",
         )
         self.assertEqual(order_intent.preview["selection"]["quote"]["midpoint"], "1.25")
+        self.assertEqual(db.commit_count, 1)
+        diagnostics = [item for item in db.added if isinstance(item, OptionSelectionDiagnostic)]
+        self.assertEqual(diagnostics, [])
+
+    def test_preview_selection_failure_records_diagnostic_without_order_intent(self) -> None:
+        signal = build_signal()
+        strategy = Strategy(
+            id=signal.strategy_id,
+            name="Breakout Strategy",
+            config={"scanner": {"type": "breakout_price_threshold"}},
+        )
+        db = FakeSession(None, signal, strategy)
+
+        with self.assertRaises(OptionContractNotFoundError):
+            preview_order_intent_from_signal(
+                db,
+                OrderIntentPreviewCreate(
+                    signal_id=signal.id,
+                    contract_selection=OptionContractSelectionCreate(
+                        underlying_symbol="SPY",
+                        option_type="call",
+                        target_strike=Decimal("500"),
+                        max_spread=Decimal("0.10"),
+                        preview_profile="breakout_price_threshold",
+                    ),
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    time_in_force="day",
+                ),
+                trading_client=SuccessfulOptionContractTradingClient(),
+                market_data_client=WideQuoteMarketDataClient(),
+            )
+
+        diagnostics = [item for item in db.added if isinstance(item, OptionSelectionDiagnostic)]
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(order_intents, [])
+        self.assertEqual(diagnostics[0].signal_id, signal.id)
+        self.assertEqual(diagnostics[0].strategy_id, signal.strategy_id)
+        self.assertEqual(diagnostics[0].strategy_name, "Breakout Strategy")
+        self.assertEqual(diagnostics[0].underlying_symbol, "SPY")
+        self.assertEqual(diagnostics[0].scanner_type, "breakout_price_threshold")
+        self.assertEqual(diagnostics[0].preview_profile, "breakout_price_threshold")
+        self.assertEqual(diagnostics[0].reason_counts["spread_too_wide"], 1)
+        self.assertEqual(audit_logs[-1].event_type, "option_selection.failed")
         self.assertEqual(db.commit_count, 1)
 
     def test_preview_order_intent_from_signal_requires_existing_signal(self) -> None:

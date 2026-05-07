@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+from collections import Counter
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.integrations.alpaca import (
@@ -18,13 +22,25 @@ from app.schemas.options import (
 )
 from app.services.preview_profiles import resolve_preview_profile_limits
 
+logger = logging.getLogger(__name__)
+
 
 class OptionContractSelectionError(RuntimeError):
     pass
 
 
 class OptionContractNotFoundError(LookupError):
-    pass
+    def __init__(self, message: str, *, diagnostics: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
+
+@dataclass(slots=True)
+class CandidateRejection:
+    symbol: str | None
+    reason_code: str
+    reason: str
+    details: dict[str, Any]
 
 
 def select_option_contract(
@@ -44,17 +60,54 @@ def select_option_contract(
         limit=payload.limit,
     )
     target_strike = payload.target_strike or payload.underlying_price
+    prefiltered_rejections: list[CandidateRejection] = []
+    available_contracts: list[AlpacaOptionContract] = []
+    for contract in contracts_page.contracts:
+        availability_rejection = _contract_availability_rejection(contract)
+        if availability_rejection is not None:
+            prefiltered_rejections.append(availability_rejection)
+        else:
+            available_contracts.append(contract)
+
     candidates = sorted(
-        [
-            contract
-            for contract in contracts_page.contracts
-            if contract.status == "active" and contract.tradable
-        ],
+        available_contracts,
         key=lambda contract: _contract_sort_key(contract, target_strike=target_strike),
     )
     if not candidates:
+        reason = "no_expiration_strike_match" if not contracts_page.contracts else "not_tradable"
+        rejections = prefiltered_rejections or [
+            CandidateRejection(
+                symbol=None,
+                reason_code=reason,
+                reason=(
+                    f"No {payload.option_type} contracts matched expiration/strike filters "
+                    f"for {payload.underlying_symbol}"
+                ),
+                details={
+                    "underlying_symbol": payload.underlying_symbol,
+                    "option_type": payload.option_type,
+                    "expiration_date": payload.expiration_date.isoformat()
+                    if payload.expiration_date is not None
+                    else None,
+                    "expiration_date_gte": expiration_date_gte.isoformat()
+                    if expiration_date_gte is not None
+                    else None,
+                    "expiration_date_lte": expiration_date_lte.isoformat()
+                    if expiration_date_lte is not None
+                    else None,
+                    "target_strike": str(target_strike) if target_strike is not None else None,
+                },
+            )
+        ]
+        diagnostics = _selection_failure_diagnostics(
+            payload,
+            candidates_seen=len(contracts_page.contracts),
+            rejected=rejections,
+        )
+        _log_selection_failure(diagnostics)
         raise OptionContractNotFoundError(
-            f"No active tradable {payload.option_type} contracts found for {payload.underlying_symbol}"
+            f"No active tradable {payload.option_type} contracts found for {payload.underlying_symbol}",
+            diagnostics=diagnostics,
         )
 
     limits = resolve_preview_profile_limits(
@@ -78,6 +131,9 @@ def select_option_contract(
         if limits.min_open_interest is not None
         else None,
         min_quote_size=payload.min_quote_size,
+        initial_rejections=prefiltered_rejections,
+        payload=payload,
+        candidates_seen=len(contracts_page.contracts),
     )
 
     return OptionContractSelectionRead(
@@ -104,16 +160,30 @@ def _select_quoted_contract(
     max_spread_percent: Decimal | None,
     min_open_interest: Decimal | None,
     min_quote_size: Decimal | None,
+    initial_rejections: list[CandidateRejection],
+    payload: OptionContractSelectionCreate,
+    candidates_seen: int,
 ) -> tuple[AlpacaOptionContract, AlpacaLatestOptionQuote]:
-    rejected_reasons: list[str] = []
+    rejected: list[CandidateRejection] = list(initial_rejections)
     accepted: list[
         tuple[int, AlpacaOptionContract, AlpacaLatestOptionQuote, dict[str, object]]
     ] = []
     for index, contract in enumerate(candidates):
-        latest_quote = market_data_client.get_latest_option_quote(
-            contract.symbol,
-            feed=feed,
-        )
+        try:
+            latest_quote = market_data_client.get_latest_option_quote(
+                contract.symbol,
+                feed=feed,
+            )
+        except Exception as exc:
+            rejected.append(
+                CandidateRejection(
+                    symbol=contract.symbol,
+                    reason_code="quote_unavailable",
+                    reason=f"{contract.symbol} quote unavailable: {exc}",
+                    details={"error_type": exc.__class__.__name__},
+                )
+            )
+            continue
         quote_context = _build_quote_context(
             latest_quote.quote,
             side=side,
@@ -131,16 +201,41 @@ def _select_quoted_contract(
         if rejection_reason is None:
             accepted.append((index, contract, latest_quote, quote_context))
             continue
-        rejected_reasons.append(rejection_reason)
+        rejected.append(rejection_reason)
 
     if accepted:
         _, selected, latest_quote, _ = sorted(accepted, key=_quoted_contract_sort_key)[0]
         return selected, latest_quote
 
+    diagnostics = _selection_failure_diagnostics(
+        payload,
+        candidates_seen=candidates_seen,
+        rejected=rejected,
+    )
+    _log_selection_failure(diagnostics)
     raise OptionContractNotFoundError(
         "No active tradable option contract matched the quote constraints: "
-        + "; ".join(rejected_reasons[:5])
+        + "; ".join(item.reason for item in rejected[:5]),
+        diagnostics=diagnostics,
     )
+
+
+def _contract_availability_rejection(
+    contract: AlpacaOptionContract,
+) -> CandidateRejection | None:
+    if contract.status != "active" or not contract.tradable:
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code="not_tradable",
+            reason=f"{contract.symbol} is not active/tradable",
+            details={
+                "status": contract.status,
+                "tradable": contract.tradable,
+                "expiration_date": contract.expiration_date.isoformat(),
+                "strike_price": str(contract.strike_price),
+            },
+        )
+    return None
 
 
 def _expiration_range(
@@ -177,26 +272,51 @@ def _quote_rejection_reason(
     max_spread_percent: Decimal | None,
     min_open_interest: Decimal | None,
     min_quote_size: Decimal | None,
-) -> str | None:
-    if min_open_interest is not None and (
-        contract.open_interest is None or contract.open_interest < min_open_interest
-    ):
-        return (
-            f"{contract.symbol} open interest {contract.open_interest} "
-            f"is below min {min_open_interest}"
+) -> CandidateRejection | None:
+    if min_open_interest is not None and contract.open_interest is None:
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code="missing_open_interest",
+            reason=f"{contract.symbol} missing open interest",
+            details={"min_open_interest": str(min_open_interest)},
+        )
+    if min_open_interest is not None and contract.open_interest < min_open_interest:
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code="low_open_interest",
+            reason=(
+                f"{contract.symbol} open interest {contract.open_interest} "
+                f"is below min {min_open_interest}"
+            ),
+            details={
+                "open_interest": str(contract.open_interest),
+                "min_open_interest": str(min_open_interest),
+            },
         )
 
     bid_price = _decimal_from_context(quote_context.get("bid_price"))
     ask_price = _decimal_from_context(quote_context.get("ask_price"))
     if bid_price is None or ask_price is None:
-        return f"{contract.symbol} had no usable two-sided quote"
+        raw_quote = quote_context.get("raw_quote")
+        reason_code = "missing_quote" if not raw_quote else "no_usable_two_sided_quote"
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code=reason_code,
+            reason=f"{contract.symbol} had no usable two-sided quote",
+            details={"bid_price": str(bid_price), "ask_price": str(ask_price)},
+        )
 
     bid_size = _decimal_from_context(quote_context.get("bid_size"))
     ask_size = _decimal_from_context(quote_context.get("ask_size"))
     if min_quote_size is not None:
         side_size = ask_size if quote_context.get("side") == "buy" else bid_size
         if side_size is None or side_size < min_quote_size:
-            return f"{contract.symbol} quote size {side_size} is below min {min_quote_size}"
+            return CandidateRejection(
+                symbol=contract.symbol,
+                reason_code="quote_size_too_low",
+                reason=f"{contract.symbol} quote size {side_size} is below min {min_quote_size}",
+                details={"quote_size": str(side_size), "min_quote_size": str(min_quote_size)},
+            )
 
     estimated_notional = _decimal_from_context(quote_context.get("estimated_notional"))
     spread = _decimal_from_context(quote_context.get("spread"))
@@ -207,12 +327,25 @@ def _quote_rejection_reason(
         and estimated_notional is not None
         and estimated_notional > max_estimated_notional
     ):
-        return (
-            f"{contract.symbol} estimated notional {estimated_notional} "
-            f"exceeds max {max_estimated_notional}"
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code="estimated_notional_above_max",
+            reason=(
+                f"{contract.symbol} estimated notional {estimated_notional} "
+                f"exceeds max {max_estimated_notional}"
+            ),
+            details={
+                "estimated_notional": str(estimated_notional),
+                "max_estimated_notional": str(max_estimated_notional),
+            },
         )
     if max_spread is not None and spread is not None and spread > max_spread:
-        return f"{contract.symbol} spread {spread} exceeds max {max_spread}"
+        return CandidateRejection(
+            symbol=contract.symbol,
+            reason_code="spread_too_wide",
+            reason=f"{contract.symbol} spread {spread} exceeds max {max_spread}",
+            details={"spread": str(spread), "max_spread": str(max_spread)},
+        )
     if (
         max_spread_percent is not None
         and spread is not None
@@ -221,11 +354,65 @@ def _quote_rejection_reason(
     ):
         spread_percent = (spread / midpoint) * Decimal("100")
         if spread_percent > max_spread_percent:
-            return (
-                f"{contract.symbol} spread percent {spread_percent} "
-                f"exceeds max {max_spread_percent}"
+            return CandidateRejection(
+                symbol=contract.symbol,
+                reason_code="spread_percent_too_wide",
+                reason=(
+                    f"{contract.symbol} spread percent {spread_percent} "
+                    f"exceeds max {max_spread_percent}"
+                ),
+                details={
+                    "spread_percent": str(spread_percent),
+                    "max_spread_percent": str(max_spread_percent),
+                },
             )
     return None
+
+
+def _selection_failure_diagnostics(
+    payload: OptionContractSelectionCreate,
+    *,
+    candidates_seen: int,
+    rejected: list[CandidateRejection],
+) -> dict[str, Any]:
+    reason_counts = Counter(item.reason_code for item in rejected)
+    return {
+        "underlying_symbol": payload.underlying_symbol,
+        "option_type": payload.option_type,
+        "side": payload.side,
+        "scanner_type": None,
+        "preview_profile": payload.preview_profile,
+        "candidates_seen": candidates_seen,
+        "reason_counts": dict(sorted(reason_counts.items())),
+        "rejections": [
+            {
+                "symbol": item.symbol,
+                "reason_code": item.reason_code,
+                "reason": item.reason,
+                "details": item.details,
+            }
+            for item in rejected
+        ],
+        "limits": {
+            "max_estimated_notional": str(payload.max_estimated_notional)
+            if payload.max_estimated_notional is not None
+            else None,
+            "max_spread": str(payload.max_spread) if payload.max_spread is not None else None,
+            "max_spread_percent": str(payload.max_spread_percent)
+            if payload.max_spread_percent is not None
+            else None,
+            "min_open_interest": str(payload.min_open_interest)
+            if payload.min_open_interest is not None
+            else None,
+        },
+    }
+
+
+def _log_selection_failure(diagnostics: dict[str, Any]) -> None:
+    logger.info(
+        "Option contract selection failed",
+        extra={"option_selection_diagnostics": diagnostics},
+    )
 
 
 def _quoted_contract_sort_key(

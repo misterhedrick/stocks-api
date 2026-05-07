@@ -78,7 +78,12 @@ class SuccessfulReconciliationClient:
             )
         ]
 
-    def list_fill_activities(self, *, page_size: int) -> list[tuple[AlpacaFillActivity, dict]]:
+    def list_fill_activities(
+        self,
+        *,
+        page_size: int,
+        page_token: str | None = None,
+    ) -> list[tuple[AlpacaFillActivity, dict]]:
         return [
             (
                 AlpacaFillActivity.model_validate(
@@ -125,6 +130,40 @@ class FailingReconciliationClient:
         raise AlpacaTradingError("Alpaca is unavailable")
 
 
+def build_fill(fill_id: str, order_id: str = "alpaca-order-123") -> tuple[AlpacaFillActivity, dict]:
+    raw = {
+        "id": fill_id,
+        "order_id": order_id,
+        "symbol": "SPY260417C00500000",
+        "side": "buy",
+        "qty": "1",
+        "price": "1.25",
+        "transaction_time": "2026-04-23T16:01:00Z",
+    }
+    return AlpacaFillActivity.model_validate(raw), raw
+
+
+class PaginatedReconciliationClient(SuccessfulReconciliationClient):
+    def __init__(self, pages: list[list[tuple[AlpacaFillActivity, dict]]]) -> None:
+        self.pages = pages
+        self.fill_calls: list[dict[str, object]] = []
+
+    def list_fill_activities(
+        self,
+        *,
+        page_size: int,
+        page_token: str | None = None,
+    ) -> list[tuple[AlpacaFillActivity, dict]]:
+        self.fill_calls.append({"page_size": page_size, "page_token": page_token})
+        index = len(self.fill_calls) - 1
+        if index >= len(self.pages):
+            return []
+        return self.pages[index]
+
+    def list_positions(self) -> list[tuple[AlpacaPosition, dict]]:
+        return []
+
+
 class BrokerReconciliationTests(unittest.TestCase):
     def test_reconcile_broker_state_persists_orders_fills_positions_and_job_run(self) -> None:
         db = FakeReconciliationSession(
@@ -158,6 +197,99 @@ class BrokerReconciliationTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "broker_reconciliation.succeeded")
         self.assertEqual(audit_logs[-1].payload["orders_seen"], 1)
+        self.assertEqual(audit_logs[-1].payload["fill_page_size_used"], 100)
+
+    def test_reconcile_broker_state_imports_multiple_fill_pages(self) -> None:
+        client = PaginatedReconciliationClient(
+            [
+                [build_fill("fill-1"), build_fill("fill-2")],
+                [build_fill("fill-3")],
+            ]
+        )
+        db = FakeReconciliationSession(
+            scalar_results=[
+                None,
+                None,
+                SimpleNamespace(id=uuid.uuid4()),
+                None,
+                SimpleNamespace(id=uuid.uuid4()),
+                None,
+                SimpleNamespace(id=uuid.uuid4()),
+            ]
+        )
+
+        result = reconcile_broker_state(
+            db,
+            trading_client=client,
+            fill_page_size=2,
+        )
+
+        self.assertEqual(result.fills_seen, 3)
+        self.assertEqual(result.fills_created, 3)
+        self.assertEqual(
+            client.fill_calls,
+            [
+                {"page_size": 2, "page_token": None},
+                {"page_size": 2, "page_token": "fill-2"},
+            ],
+        )
+
+    def test_reconcile_broker_state_handles_empty_first_fill_page(self) -> None:
+        client = PaginatedReconciliationClient([[]])
+        db = FakeReconciliationSession(scalar_results=[None])
+
+        result = reconcile_broker_state(db, trading_client=client)
+
+        self.assertEqual(result.fills_seen, 0)
+        self.assertEqual(result.fills_created, 0)
+        self.assertEqual(client.fill_calls, [{"page_size": 100, "page_token": None}])
+
+    def test_reconcile_broker_state_does_not_duplicate_existing_fills(self) -> None:
+        existing_fill = Fill(
+            id=uuid.uuid4(),
+            alpaca_fill_id="fill-1",
+            symbol="SPY260417C00500000",
+            side="buy",
+            quantity=1,
+            price=1,
+            filled_at=AlpacaFillActivity.model_validate(
+                {
+                    "id": "fill-time",
+                    "order_id": "alpaca-order-123",
+                    "symbol": "SPY260417C00500000",
+                    "side": "buy",
+                    "qty": "1",
+                    "price": "1.25",
+                    "transaction_time": "2026-04-23T16:01:00Z",
+                }
+            ).transaction_time,
+            raw_response={},
+        )
+        client = PaginatedReconciliationClient([[build_fill("fill-1")]])
+        db = FakeReconciliationSession(scalar_results=[None, existing_fill])
+
+        result = reconcile_broker_state(db, trading_client=client)
+
+        self.assertEqual(result.fills_seen, 1)
+        self.assertEqual(result.fills_created, 0)
+        fills_added = [item for item in db.added if isinstance(item, Fill)]
+        self.assertEqual(fills_added, [])
+
+    def test_reconcile_broker_state_clamps_fill_page_size_to_alpaca_max(self) -> None:
+        client = PaginatedReconciliationClient([[]])
+        db = FakeReconciliationSession(scalar_results=[None])
+
+        result = reconcile_broker_state(
+            db,
+            trading_client=client,
+            fill_page_size=500,
+        )
+
+        self.assertEqual(result.fills_seen, 0)
+        self.assertEqual(client.fill_calls, [{"page_size": 100, "page_token": None}])
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+        self.assertEqual(audit_logs[-1].payload["fill_page_size_requested"], 500)
+        self.assertEqual(audit_logs[-1].payload["fill_page_size_used"], 100)
 
     def test_reconcile_broker_state_updates_linked_order_intent_status(self) -> None:
         order_intent = OrderIntent(
