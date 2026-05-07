@@ -27,6 +27,7 @@ Default seeded posture: `5Min`, 20-candle range, `0.05%` buffer, max distance `3
 - Use `scanner.preview.preview_profile = breakout_price_threshold`.
 - Breakout entries can have wider spreads after the move; do not loosen spread limits without checking fill quality.
 - If the scanner is good but contracts are too expensive, adjust strike/DTE/preview profile before changing the breakout rule.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 

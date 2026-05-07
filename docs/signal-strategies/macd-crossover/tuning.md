@@ -27,6 +27,7 @@ Default seeded posture: `5Min`, `12/26/9`, price confirmation on, histogram conf
 - Use `scanner.preview.preview_profile = macd_crossover`.
 - MACD signals can arrive after volatility expands; watch spread and notional rejection rates.
 - If options are expensive after the move, lower max premium or require tighter spreads rather than chasing.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 

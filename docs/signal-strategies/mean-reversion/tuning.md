@@ -26,6 +26,7 @@ Default seeded posture: `5Min`, Bollinger `20`, stddev `2.0`, price confirmation
 - Use `scanner.preview.preview_profile = mean_reversion`.
 - Keep order size small because failed reversions can move quickly.
 - For reversal strategies, exit tuning often matters as much as entry tuning.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 
