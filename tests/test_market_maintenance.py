@@ -248,7 +248,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         post_market.assert_called_once_with(
             db,
             order_limit=500,
-            fill_page_size=500,
+            fill_page_size=100,
             stale_after_hours=0,
         )
 

@@ -576,7 +576,7 @@ class RouteBehaviorTests(unittest.TestCase):
             return_value=result,
         ) as maintenance:
             response = client.post(
-                "/api/v1/jobs/post-market-maintenance?order_limit=250&fill_page_size=250&stale_after_hours=0",
+                "/api/v1/jobs/post-market-maintenance?order_limit=250&fill_page_size=100&stale_after_hours=0",
                 headers=_AUTH,
             )
 
@@ -586,7 +586,7 @@ class RouteBehaviorTests(unittest.TestCase):
         maintenance.assert_called_once_with(
             db,
             order_limit=250,
-            fill_page_size=250,
+            fill_page_size=100,
             stale_after_hours=0,
         )
 
