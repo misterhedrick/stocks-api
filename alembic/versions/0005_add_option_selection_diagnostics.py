@@ -1,6 +1,6 @@
 """Add option selection diagnostics.
 
-Revision ID: 0005_add_option_selection_diagnostics
+Revision ID: 0005_option_diagnostics
 Revises: 0004_enable_strategy_auto_submit
 Create Date: 2026-05-06
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0005_add_option_selection_diagnostics"
+revision: str = "0005_option_diagnostics"
 down_revision: str | Sequence[str] | None = "0004_enable_strategy_auto_submit"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
