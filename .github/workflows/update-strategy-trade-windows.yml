@@ -64,6 +64,7 @@ jobs:
         shell: bash
         run: |
           FLAGS=""
+          AUDIT_FLAGS=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             FLAGS="$FLAGS --dry-run"
           fi
@@ -72,9 +73,18 @@ jobs:
           fi
           if [ "${{ inputs.include_inactive }}" = "true" ]; then
             FLAGS="$FLAGS --all"
+            AUDIT_FLAGS="$AUDIT_FLAGS --all"
           fi
           echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
-          echo "Running: python scripts/update_strategy_trade_windows.py$FLAGS"
+          echo "audit_flags=$AUDIT_FLAGS" >> "$GITHUB_OUTPUT"
+          echo "Running audit: python scripts/audit_strategy_trade_windows.py$AUDIT_FLAGS"
+          echo "Running update: python scripts/update_strategy_trade_windows.py$FLAGS"
+
+      - name: Audit strategy trade windows before update
+        run: python scripts/audit_strategy_trade_windows.py${{ steps.flags.outputs.audit_flags }}
 
       - name: Update strategy trade windows
         run: python scripts/update_strategy_trade_windows.py${{ steps.flags.outputs.flags }}
+
+      - name: Audit strategy trade windows after update
+        run: python scripts/audit_strategy_trade_windows.py${{ steps.flags.outputs.audit_flags }}
