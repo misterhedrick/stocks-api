@@ -103,22 +103,49 @@ When option contract selection fails before an `order_intent` can be previewed, 
 
 Render cron schedules are UTC and are not DST-aware.
 
-| Service | Purpose | Endpoint | Current schedule |
+| Service | Purpose | Endpoint | Schedule |
 |---|---|---|---|
-| `stocks-api-market-cycle` | Entry cycle: scan -> reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100` | `*/5 14-19 * * 1-5` |
+| `stocks-api-market-cycle` | Entry cycle: scan -> reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=25&order_limit=25&fill_page_size=50` | `*/10 14-19 * * 1-5` |
 | `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 
-- Entry cycle runs every 5 minutes from **10:00am through 3:55pm Eastern**.
-- Exit cycle runs every minute from about **9:00am through 4:59pm Eastern**.
-- Maintenance runs pre-market and post-market.
+- Entry cycle (`market-cycle`) runs **every 10 minutes** from **10:00am through 3:50pm Eastern**.
+- Exit cycle (`market-exits`) runs every minute from about **9:00am through 4:59pm Eastern**.
+- Maintenance runs pre-market (8:30am ET) and post-market (5:30pm EDT / 4:30pm EST).
 
-When Eastern time switches back to EST, the entry cron should be reviewed. The equivalent 10:00am through 3:55pm EST schedule is:
+### market-cycle schedule: always 10 minutes
+
+**Do not shorten `market-cycle` below 10 minutes.** The full scan → preview → reconcile → submit cycle can take 60–120+ seconds under normal load. Shorter intervals cause overlapping cron invocations, which compounds timeout pressure and can produce Render 502/504 errors.
+
+The `market-cycle` endpoint is protected by a PostgreSQL advisory lock (`pg_try_advisory_xact_lock`). If one invocation is already running, the next one returns immediately with `status: skipped, reason: already_running`. However, frequent overlapping invocations still waste cron capacity and load the free-tier web service.
+
+Only reduce the interval after timing logs (`timings` field in the response) confirm that the cycle consistently completes well inside the interval. Example: if `total_seconds` is routinely under 40s, a 5-minute schedule might be safe. If `total_seconds` is over 60s, keep it at 10 minutes.
+
+**Temporary safety limits** (lower scan/order limits reduce per-run work while the system is being tuned):
+
+```
+scan_limit=25
+order_limit=25
+fill_page_size=50
+```
+
+Restore to `scan_limit=100&order_limit=100&fill_page_size=100` only after timing confirms safe headroom.
+
+**Do not confuse `market-cycle` with `market-exits`:**
+
+- `market-cycle`: entry scans, previews, and submits. Runs every **10 minutes**. Has the advisory lock.
+- `market-exits`: exit evaluations only. Runs every **1 minute**. Time-sensitive; shorter interval is intentional.
+
+**Runtime budget:** `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS=120` (env var on the web service). The cycle aborts gracefully after this many seconds and returns `status: partial`. Completed phases are preserved. Increase this setting only if timing logs show consistently slow but necessary work.
+
+**Runner retries:** `JOB_RETRY_DELAYS_SECONDS` is intentionally empty for `market-cycle`. Render will invoke the job again in 10 minutes anyway; retrying a timed-out cycle just piles on more overlapping load.
+
+When Eastern time switches back to EST, the entry cron should be reviewed. The equivalent 10:00am through 3:50pm EST schedule is:
 
 ```yaml
-schedule: "*/5 15-20 * * 1-5"
+schedule: "*/10 15-20 * * 1-5"
 ```
 
 ## Emergency stops

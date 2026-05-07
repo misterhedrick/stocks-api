@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -48,6 +48,11 @@ class MarketCycleResult:
     diagnostics: dict[str, Any] | None = None
 
 
+# Stable integer key for the PostgreSQL advisory lock that prevents concurrent
+# market_cycle runs. Must be unique across all jobs; chosen arbitrarily.
+_MARKET_CYCLE_LOCK_KEY = 4_096_001
+
+
 EXPOSURE_BROKER_ORDER_STATUSES = (
     "new",
     "accepted",
@@ -73,6 +78,47 @@ def run_market_cycle(
     reconcile_before_exit: bool = False,
     phase_timeout_seconds: int | None = None,
 ) -> MarketCycleResult:
+    # Non-blocking advisory lock: only one market_cycle may run at a time.
+    # pg_try_advisory_xact_lock is transaction-scoped and releases on commit/rollback.
+    lock_acquired = db.scalar(
+        text("SELECT pg_try_advisory_xact_lock(:key)").bindparams(key=_MARKET_CYCLE_LOCK_KEY)
+    )
+    if not lock_acquired:
+        logger.info(
+            "market_cycle skipped: pg_try_advisory_xact_lock(%d) held by another running instance",
+            _MARKET_CYCLE_LOCK_KEY,
+        )
+        skipped_at = datetime.now(timezone.utc)
+        job_run = JobRun(
+            job_name="market_cycle",
+            status="skipped",
+            started_at=skipped_at,
+            finished_at=skipped_at,
+            details={"reason": "already_running"},
+            error=None,
+        )
+        db.add(job_run)
+        db.commit()
+        db.refresh(job_run)
+        return MarketCycleResult(
+            job_run=job_run,
+            scan_enabled=False,
+            reconcile_enabled=False,
+            preview_enabled=False,
+            exit_enabled=False,
+            news_enabled=False,
+            submit_enabled=False,
+            scan=None,
+            reconcile=None,
+            preview=None,
+            exits=None,
+            news=None,
+            submit=None,
+            timings={"total_seconds": 0.0},
+            phase_timeout_seconds=None,
+            diagnostics={"status": "skipped", "reason": "already_running"},
+        )
+
     started_at = datetime.now(timezone.utc)
     cycle_started = perf_counter()
     timings: dict[str, float] = {}
@@ -100,10 +146,19 @@ def run_market_cycle(
         settings.market_cycle_submit_enabled,
         submit_enabled_override,
     )
+
     phase_timeout = (
         settings.market_cycle_phase_timeout_seconds
         if phase_timeout_seconds is None
         else phase_timeout_seconds
+    )
+
+    logger.info(
+        "market_cycle starting: scan_limit=%d order_limit=%d fill_page_size=%d phase_timeout=%ds",
+        scan_limit,
+        order_limit,
+        fill_page_size,
+        phase_timeout,
     )
 
     scan = None
@@ -119,8 +174,10 @@ def run_market_cycle(
         news_blocks_entries = False
         if scan_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
+            logger.info("market_cycle phase=scan starting (scan_limit=%d)", scan_limit)
             scan_result = scan_signals(db, limit=scan_limit)
-            timings["scan_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["scan_seconds"] = elapsed
             created_signal_ids = scan_result.created_signal_ids
             scan = {
                 "job_run_id": str(scan_result.job_run.id),
@@ -134,6 +191,13 @@ def run_market_cycle(
                     str(signal_id) for signal_id in scan_result.created_signal_ids
                 ],
             }
+            logger.info(
+                "market_cycle phase=scan done: elapsed=%.3fs signals_created=%d signals_skipped=%d errors=%d",
+                elapsed,
+                scan_result.signals_created,
+                scan_result.signals_skipped,
+                len(scan_result.errors),
+            )
         else:
             scan = (
                 _timeout_step("scan", phase_timeout)
@@ -141,11 +205,19 @@ def run_market_cycle(
                 else _disabled_step("scan")
             )
             timings["scan_seconds"] = 0.0
+            if scan_enabled:
+                logger.warning(
+                    "market_cycle phase=scan skipped: runtime budget reached at %.3fs (limit=%ds)",
+                    _elapsed_seconds(cycle_started),
+                    phase_timeout,
+                )
 
         if news_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
+            logger.info("market_cycle phase=news starting")
             news_result = scan_market_news(db)
-            timings["news_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["news_seconds"] = elapsed
             news = {
                 "job_run_id": str(news_result.job_run.id),
                 "market_items": news_result.market_items,
@@ -160,10 +232,22 @@ def run_market_cycle(
                 isinstance(risk_assessment, dict)
                 and risk_assessment.get("should_block_new_entries") is True
             )
+            logger.info(
+                "market_cycle phase=news done: elapsed=%.3fs sources=%d blocks_entries=%s errors=%d",
+                elapsed,
+                news_result.sources_checked,
+                news_blocks_entries,
+                len(news_result.errors),
+            )
         else:
             timings["news_seconds"] = 0.0
             if news_enabled:
                 news = _timeout_step("news", phase_timeout)
+                logger.warning(
+                    "market_cycle phase=news skipped: runtime budget reached at %.3fs (limit=%ds)",
+                    _elapsed_seconds(cycle_started),
+                    phase_timeout,
+                )
 
         if preview_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
@@ -171,6 +255,10 @@ def run_market_cycle(
                 db,
                 created_signal_ids,
                 limit=scan_limit,
+            )
+            logger.info(
+                "market_cycle phase=preview starting: signals_for_preview=%d",
+                len(signal_ids_for_preview),
             )
             if news_blocks_entries:
                 news_risk = news.get("risk_assessment") if isinstance(news, dict) else None
@@ -201,11 +289,24 @@ def run_market_cycle(
             else:
                 preview = _preview_created_signals(db, signal_ids_for_preview)
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
-            timings["preview_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["preview_seconds"] = elapsed
+            logger.info(
+                "market_cycle phase=preview done: elapsed=%.3fs previews_created=%s previews_skipped=%s errors=%d",
+                elapsed,
+                preview.get("previews_created") if isinstance(preview, dict) else "n/a",
+                preview.get("previews_skipped") if isinstance(preview, dict) else "n/a",
+                len(preview.get("errors", [])) if isinstance(preview, dict) else 0,
+            )
         else:
             timings["preview_seconds"] = 0.0
             if preview_enabled:
                 preview = _timeout_step("preview", phase_timeout)
+                logger.warning(
+                    "market_cycle phase=preview skipped: runtime budget reached at %.3fs (limit=%ds)",
+                    _elapsed_seconds(cycle_started),
+                    phase_timeout,
+                )
 
         if (
             reconcile_enabled
@@ -213,17 +314,32 @@ def run_market_cycle(
             and not _phase_budget_exceeded(cycle_started, phase_timeout)
         ):
             step_started = perf_counter()
+            logger.info(
+                "market_cycle phase=reconcile starting (pre-exit): order_limit=%d fill_page_size=%d",
+                order_limit,
+                fill_page_size,
+            )
             reconcile = _reconcile_step(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
             )
-            timings["reconcile_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["reconcile_seconds"] = elapsed
+            logger.info(
+                "market_cycle phase=reconcile done: elapsed=%.3fs orders_seen=%s fills_seen=%s positions_seen=%s",
+                elapsed,
+                reconcile.get("orders_seen") if isinstance(reconcile, dict) else "n/a",
+                reconcile.get("fills_seen") if isinstance(reconcile, dict) else "n/a",
+                reconcile.get("positions_seen") if isinstance(reconcile, dict) else "n/a",
+            )
 
         if exit_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
+            logger.info("market_cycle phase=exits starting (scan_limit=%d)", scan_limit)
             exit_result = evaluate_position_exits(db, limit=scan_limit)
-            timings["exit_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["exit_seconds"] = elapsed
             exits = {
                 "status": "completed",
                 "positions_seen": exit_result.positions_seen,
@@ -239,23 +355,53 @@ def run_market_cycle(
                 ],
             }
             submittable_order_intent_ids.extend(exit_result.order_intent_ids)
+            logger.info(
+                "market_cycle phase=exits done: elapsed=%.3fs positions_seen=%d exits_created=%d errors=%d",
+                elapsed,
+                exit_result.positions_seen,
+                exit_result.exits_created,
+                len(exit_result.errors),
+            )
         else:
             timings["exit_seconds"] = 0.0
             if exit_enabled:
                 exits = _timeout_step("exits", phase_timeout)
+                logger.warning(
+                    "market_cycle phase=exits skipped: runtime budget reached at %.3fs (limit=%ds)",
+                    _elapsed_seconds(cycle_started),
+                    phase_timeout,
+                )
 
         if submit_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
+            logger.info(
+                "market_cycle phase=submit starting: order_intents=%d",
+                len(submittable_order_intent_ids),
+            )
             submit = _submit_previewed_order_intents(
                 db,
                 submittable_order_intent_ids,
                 cycle_id=str(job_run.id),
             )
-            timings["submit_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["submit_seconds"] = elapsed
+            logger.info(
+                "market_cycle phase=submit done: elapsed=%.3fs submitted=%s rejected=%s skipped=%s errors=%d",
+                elapsed,
+                submit.get("submitted") if isinstance(submit, dict) else "n/a",
+                submit.get("rejected") if isinstance(submit, dict) else "n/a",
+                submit.get("skipped") if isinstance(submit, dict) else "n/a",
+                len(submit.get("errors", [])) if isinstance(submit, dict) else 0,
+            )
         else:
             timings["submit_seconds"] = 0.0
             if submit_enabled:
                 submit = _timeout_step("submit", phase_timeout)
+                logger.warning(
+                    "market_cycle phase=submit skipped: runtime budget reached at %.3fs (limit=%ds)",
+                    _elapsed_seconds(cycle_started),
+                    phase_timeout,
+                )
 
         if (
             reconcile_enabled
@@ -263,12 +409,25 @@ def run_market_cycle(
             and not _phase_budget_exceeded(cycle_started, phase_timeout)
         ):
             step_started = perf_counter()
+            logger.info(
+                "market_cycle phase=reconcile starting (post-cycle): order_limit=%d fill_page_size=%d",
+                order_limit,
+                fill_page_size,
+            )
             reconcile = _reconcile_step(
                 db,
                 order_limit=order_limit,
                 fill_page_size=fill_page_size,
             )
-            timings["reconcile_seconds"] = _elapsed_seconds(step_started)
+            elapsed = _elapsed_seconds(step_started)
+            timings["reconcile_seconds"] = elapsed
+            logger.info(
+                "market_cycle phase=reconcile done: elapsed=%.3fs orders_seen=%s fills_seen=%s positions_seen=%s",
+                elapsed,
+                reconcile.get("orders_seen") if isinstance(reconcile, dict) else "n/a",
+                reconcile.get("fills_seen") if isinstance(reconcile, dict) else "n/a",
+                reconcile.get("positions_seen") if isinstance(reconcile, dict) else "n/a",
+            )
         else:
             if reconcile is None:
                 reconcile = (
@@ -277,8 +436,39 @@ def run_market_cycle(
                     else _disabled_step("reconcile")
                 )
                 timings["reconcile_seconds"] = 0.0
+                if reconcile_enabled:
+                    logger.warning(
+                        "market_cycle phase=reconcile skipped: runtime budget reached at %.3fs (limit=%ds)",
+                        _elapsed_seconds(cycle_started),
+                        phase_timeout,
+                    )
 
         timings["total_seconds"] = _elapsed_seconds(cycle_started)
+
+        diagnostics = _diagnostics_for_steps(
+            scan=scan,
+            preview=preview,
+            exits=exits,
+            submit=submit,
+            news=news,
+            reconcile=reconcile,
+        )
+
+        # Mark as partial when the runtime budget cut short one or more phases.
+        budget_exceeded = bool(diagnostics.get("skipped_steps"))
+        final_status = "partial" if budget_exceeded else "succeeded"
+        if budget_exceeded:
+            logger.warning(
+                "market_cycle completed with partial results: skipped_steps=%s total_elapsed=%.3fs budget=%ds",
+                diagnostics["skipped_steps"],
+                timings["total_seconds"],
+                phase_timeout,
+            )
+        else:
+            logger.info(
+                "market_cycle completed successfully: total_elapsed=%.3fs",
+                timings["total_seconds"],
+            )
 
         details = {
             "scan_enabled": scan_enabled,
@@ -295,16 +485,9 @@ def run_market_cycle(
             "submit": submit,
             "timings": timings,
             "phase_timeout_seconds": phase_timeout,
-            "diagnostics": _diagnostics_for_steps(
-                scan=scan,
-                preview=preview,
-                exits=exits,
-                submit=submit,
-                news=news,
-                reconcile=reconcile,
-            ),
+            "diagnostics": diagnostics,
         }
-        job_run.status = "succeeded"
+        job_run.status = final_status
         job_run.finished_at = datetime.now(timezone.utc)
         job_run.details = details
         job_run.error = None
@@ -321,10 +504,10 @@ def run_market_cycle(
             )
         record_audit_log(
             db,
-            event_type="market_cycle.succeeded",
+            event_type=f"market_cycle.{final_status}",
             entity_type="job_run",
             entity_id=job_run.id,
-            message="Market cycle succeeded",
+            message=f"Market cycle {final_status}",
             payload=details,
         )
         db.commit()
@@ -347,6 +530,12 @@ def run_market_cycle(
         }
         job_run.error = f"{exc.__class__.__name__}: {exc}"
         db.add(job_run)
+        logger.error(
+            "market_cycle failed after %.3fs: %s: %s",
+            timings["total_seconds"],
+            exc.__class__.__name__,
+            exc,
+        )
         record_audit_log(
             db,
             event_type="market_cycle.failed",
