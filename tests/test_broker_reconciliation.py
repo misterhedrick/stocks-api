@@ -226,6 +226,9 @@ class BrokerReconciliationTests(unittest.TestCase):
 
         self.assertEqual(result.fills_seen, 3)
         self.assertEqual(result.fills_created, 3)
+        self.assertEqual(result.fill_pages_fetched, 2)
+        self.assertEqual(result.fill_page_size_used, 2)
+        self.assertEqual(result.fill_pagination_stop_reason, "short_page_no_next_page")
         self.assertEqual(
             client.fill_calls,
             [
@@ -242,6 +245,8 @@ class BrokerReconciliationTests(unittest.TestCase):
 
         self.assertEqual(result.fills_seen, 0)
         self.assertEqual(result.fills_created, 0)
+        self.assertEqual(result.fill_pages_fetched, 1)
+        self.assertEqual(result.fill_pagination_stop_reason, "empty_page_no_next_page")
         self.assertEqual(client.fill_calls, [{"page_size": 100, "page_token": None}])
 
     def test_reconcile_broker_state_does_not_duplicate_existing_fills(self) -> None:
@@ -286,6 +291,8 @@ class BrokerReconciliationTests(unittest.TestCase):
         )
 
         self.assertEqual(result.fills_seen, 0)
+        self.assertEqual(result.fill_page_size_requested, 500)
+        self.assertEqual(result.fill_page_size_used, 100)
         self.assertEqual(client.fill_calls, [{"page_size": 100, "page_token": None}])
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].payload["fill_page_size_requested"], 500)

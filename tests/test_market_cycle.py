@@ -117,6 +117,11 @@ def build_reconciliation_result() -> BrokerReconciliationResult:
         fills_created=1,
         positions_seen=1,
         position_snapshots_created=1,
+        fill_page_size_requested=75,
+        fill_page_size_used=75,
+        fill_pages_fetched=1,
+        fill_pagination_complete=True,
+        fill_pagination_stop_reason="short_page_no_next_page",
     )
 
 
@@ -307,6 +312,8 @@ class MarketCycleTests(unittest.TestCase):
         self.assertFalse(result.submit_enabled)
         self.assertEqual(result.scan["signals_created"], 1)
         self.assertEqual(result.reconcile["orders_seen"], 2)
+        self.assertEqual(result.reconcile["fill_pages_fetched"], 1)
+        self.assertEqual(result.reconcile["fill_pagination_stop_reason"], "short_page_no_next_page")
         self.assertEqual(result.preview["status"], "disabled")
         self.assertEqual(result.exits["status"], "disabled")
         self.assertEqual(result.news["status"], "disabled")

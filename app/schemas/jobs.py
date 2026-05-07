@@ -25,6 +25,11 @@ class BrokerReconciliationRead(BaseModel):
     orders_updated: int
     fills_seen: int
     fills_created: int
+    fill_page_size_requested: int = 100
+    fill_page_size_used: int = 100
+    fill_pages_fetched: int = 0
+    fill_pagination_complete: bool = True
+    fill_pagination_stop_reason: str = "not_run"
     positions_seen: int
     position_snapshots_created: int
 

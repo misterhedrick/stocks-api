@@ -138,6 +138,11 @@ def build_reconciliation_result() -> BrokerReconciliationResult:
         fills_created=0,
         positions_seen=1,
         position_snapshots_created=1,
+        fill_page_size_requested=50,
+        fill_page_size_used=50,
+        fill_pages_fetched=1,
+        fill_pagination_complete=True,
+        fill_pagination_stop_reason="short_page_no_next_page",
     )
 
 
@@ -265,6 +270,10 @@ class MarketMaintenanceTests(unittest.TestCase):
 
         self.assertEqual(result["signals_marked_stale"], 1)
         self.assertEqual(result["order_intents_marked_stale"], 1)
+        self.assertEqual(result["oldest_stale_signal_created_at"], signal.created_at.isoformat())
+        self.assertEqual(result["oldest_stale_order_intent_created_at"], order_intent.created_at.isoformat())
+        self.assertEqual(result["signals_by_strategy_id"][str(signal.strategy_id)], 1)
+        self.assertEqual(result["order_intents_by_strategy_id"][str(order_intent.strategy_id)], 1)
         self.assertEqual(signal.status, "stale")
         self.assertEqual(order_intent.status, "stale")
         self.assertIn("Marked stale by test", signal.rejected_reason)
@@ -293,6 +302,8 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.phase, "pre_market")
         self.assertEqual(result.cleanup["signals_marked_stale"], 1)
         self.assertEqual(result.reconcile["orders_seen"], 2)
+        self.assertEqual(result.reconcile["fill_pages_fetched"], 1)
+        self.assertEqual(result.reconcile["fill_pagination_stop_reason"], "short_page_no_next_page")
         self.assertEqual(result.news["market_items_seen"], 1)
         self.assertEqual(result.readiness["active_strategies"], 1)
         self.assertEqual(result.job_run.status, "succeeded")

@@ -10,6 +10,7 @@ from unittest.mock import patch
 from scripts.run_render_job import (
     build_job_url,
     format_response_body_for_logs,
+    is_deterministic_error_body,
     is_enabled,
     run_job_from_env,
 )
@@ -53,8 +54,11 @@ class RenderJobRunnerTests(unittest.TestCase):
             '{"job_run":{"id":"job-123","job_name":"pre_market_maintenance",'
             '"status":"succeeded"},"phase":"pre_market",'
             '"cleanup":{"signals_marked_stale":153,"order_intents_marked_stale":29,'
+            '"oldest_stale_signal_created_at":"2026-05-06T12:00:00+00:00",'
             '"signal_ids":["a","b","c"]},'
             '"reconcile":{"orders_seen":63,"orders_updated":63,"fills_seen":57,'
+            '"fill_pages_fetched":2,"fill_page_size_used":100,'
+            '"fill_pagination_stop_reason":"short_page_no_next_page",'
             '"positions_seen":4},'
             '"news":{"risk_assessment":{"market_risk_level":"high",'
             '"should_block_new_entries":true,'
@@ -65,8 +69,22 @@ class RenderJobRunnerTests(unittest.TestCase):
 
         self.assertIn("job=pre_market_maintenance", summary)
         self.assertIn("cleanup.signals_marked_stale=153", summary)
+        self.assertIn("cleanup.oldest_stale_signal_created_at=2026-05-06T12:00:00+00:00", summary)
+        self.assertIn("reconcile.fill_pages_fetched=2", summary)
+        self.assertIn("reconcile.fill_page_size_used=100", summary)
         self.assertIn("news.market_risk_level=high", summary)
         self.assertNotIn("signal_ids", summary)
+
+    def test_deterministic_error_body_classifier(self) -> None:
+        self.assertTrue(
+            is_deterministic_error_body(
+                502,
+                '{"detail":"tried to set the page size to 500, but the maximum is 100"}',
+            )
+        )
+        self.assertTrue(is_deterministic_error_body(502, "validation failed"))
+        self.assertTrue(is_deterministic_error_body(422, "bad request"))
+        self.assertFalse(is_deterministic_error_body(502, "upstream timeout"))
 
     def test_disabled_job_exits_successfully_without_required_secrets(self) -> None:
         with patch.dict(os.environ, {"SCHEDULED_JOBS_ENABLED": "false"}, clear=True), patch(
@@ -208,6 +226,44 @@ class RenderJobRunnerTests(unittest.TestCase):
         ), patch(
             "scripts.run_render_job.urlopen",
             side_effect=non_retryable_error,
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 1)
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_job_does_not_retry_deterministic_legacy_502_body(self) -> None:
+        deterministic_error = HTTPError(
+            "https://example.test/api/v1/jobs/market-maintenance",
+            502,
+            "Bad Gateway",
+            hdrs=None,
+            fp=BytesIO(
+                b'{"detail":"tried to set the page size to 500, but the maximum is 100"}'
+            ),
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-maintenance",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=deterministic_error,
         ) as urlopen, patch(
             "scripts.run_render_job.time.sleep",
         ) as sleep, patch(

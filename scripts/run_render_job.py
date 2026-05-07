@@ -16,6 +16,11 @@ from urllib.request import Request, urlopen
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
 DEFAULT_RETRY_DELAYS_SECONDS = (10, 30)
+DETERMINISTIC_ERROR_MARKERS = (
+    "page size",
+    "maximum is 100",
+    "validation",
+)
 
 
 def is_enabled(value: str | None) -> bool:
@@ -96,6 +101,12 @@ def _post_job(request: Request, url: str, timeout_seconds: int) -> tuple[int, in
         print(f"Job POST {url} failed with HTTP {exc.code}", file=sys.stderr)
         if body:
             print(body, file=sys.stderr)
+        if is_deterministic_error_body(exc.code, body):
+            print(
+                f"Job POST {url} failed with deterministic validation error; not retrying.",
+                file=sys.stderr,
+            )
+            return 422, None
         return exc.code, _retry_after_seconds(exc)
     except URLError as exc:
         print(f"Job POST {url} failed: {exc}", file=sys.stderr)
@@ -151,7 +162,12 @@ def _response_summary(payload: dict[str, object]) -> list[str]:
             _compact_mapping(
                 "cleanup",
                 cleanup,
-                ("signals_marked_stale", "order_intents_marked_stale"),
+                (
+                    "signals_marked_stale",
+                    "order_intents_marked_stale",
+                    "oldest_stale_signal_created_at",
+                    "oldest_stale_order_intent_created_at",
+                ),
             )
         )
 
@@ -161,7 +177,15 @@ def _response_summary(payload: dict[str, object]) -> list[str]:
             _compact_mapping(
                 "reconcile",
                 reconcile,
-                ("orders_seen", "orders_updated", "fills_seen", "positions_seen"),
+                (
+                    "orders_seen",
+                    "orders_updated",
+                    "fills_seen",
+                    "fill_pages_fetched",
+                    "fill_page_size_used",
+                    "fill_pagination_stop_reason",
+                    "positions_seen",
+                ),
             )
         )
 
@@ -241,6 +265,15 @@ def _truncate_body(body: str, *, limit: int = 1000) -> str:
     if len(body) <= limit:
         return body
     return body[:limit] + "...[truncated]"
+
+
+def is_deterministic_error_body(status_code: int, body: str) -> bool:
+    if status_code in {400, 422}:
+        return True
+    if status_code != 502:
+        return False
+    clean_body = body.lower()
+    return any(marker in clean_body for marker in DETERMINISTIC_ERROR_MARKERS)
 
 
 def _required_env(name: str) -> str:

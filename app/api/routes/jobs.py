@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
+from app.api.alpaca_errors import alpaca_error_status_code
 from app.core.security import require_admin
 from app.db.models import JobRun
 from app.db.session import get_db
 from app.integrations.alpaca import (
+    ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
     AlpacaTradingConfigurationError,
     AlpacaTradingError,
 )
@@ -58,7 +60,7 @@ public_router = APIRouter(prefix="/jobs", tags=["jobs"])
 def reconcile_broker_route(
     db: Annotated[Session, Depends(get_db)],
     order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
 ) -> BrokerReconciliationRead:
     try:
         result = reconcile_broker_state(
@@ -73,7 +75,7 @@ def reconcile_broker_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -84,6 +86,11 @@ def reconcile_broker_route(
         orders_updated=result.orders_updated,
         fills_seen=result.fills_seen,
         fills_created=result.fills_created,
+        fill_page_size_requested=result.fill_page_size_requested,
+        fill_page_size_used=result.fill_page_size_used,
+        fill_pages_fetched=result.fill_pages_fetched,
+        fill_pagination_complete=result.fill_pagination_complete,
+        fill_pagination_stop_reason=result.fill_pagination_stop_reason,
         positions_seen=result.positions_seen,
         position_snapshots_created=result.position_snapshots_created,
     )
@@ -129,7 +136,7 @@ def evaluate_exits_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -164,7 +171,7 @@ def preview_unmanaged_exits_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -222,7 +229,7 @@ def market_cycle_route(
     db: Annotated[Session, Depends(get_db)],
     scan_limit: Annotated[int, Query(ge=1, le=500)] = 100,
     order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
     phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
 ) -> MarketCycleRead:
     try:
@@ -244,7 +251,7 @@ def market_cycle_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -277,7 +284,7 @@ def market_cycle_exits_route(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
     submit_enabled: bool | None = None,
     phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
 ) -> MarketCycleRead:
@@ -305,7 +312,7 @@ def market_cycle_exits_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -338,7 +345,7 @@ def market_cycle_stress_route(
     db: Annotated[Session, Depends(get_db)],
     scan_limit: Annotated[int, Query(ge=1, le=500)] = 130,
     order_limit: Annotated[int, Query(ge=1, le=500)] = 25,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 25,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = 25,
     preview_enabled: bool = True,
     reconcile_enabled: bool = True,
     phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
@@ -366,7 +373,7 @@ def market_cycle_stress_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -399,7 +406,7 @@ def market_maintenance_route(
     db: Annotated[Session, Depends(get_db)],
     phase: Annotated[Literal["auto", "pre_market", "post_market"], Query()] = "auto",
     order_limit: Annotated[int | None, Query(ge=1, le=500)] = None,
-    fill_page_size: Annotated[int | None, Query(ge=1, le=500)] = None,
+    fill_page_size: Annotated[int | None, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = None,
     stale_after_hours: Annotated[int | None, Query(ge=0, le=72)] = None,
     news_enabled: bool = True,
 ) -> MarketMaintenanceRead:
@@ -424,7 +431,7 @@ def market_maintenance_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -449,7 +456,7 @@ def market_maintenance_route(
 def pre_market_maintenance_route(
     db: Annotated[Session, Depends(get_db)],
     order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    fill_page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
     stale_after_hours: Annotated[int, Query(ge=0, le=72)] = 12,
     news_enabled: bool = True,
 ) -> MarketMaintenanceRead:
@@ -473,7 +480,7 @@ def pre_market_maintenance_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -498,7 +505,7 @@ def pre_market_maintenance_route(
 def post_market_maintenance_route(
     db: Annotated[Session, Depends(get_db)],
     order_limit: Annotated[int, Query(ge=1, le=500)] = 500,
-    fill_page_size: Annotated[int, Query(ge=1, le=100)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
     stale_after_hours: Annotated[int, Query(ge=0, le=72)] = 0,
 ) -> MarketMaintenanceRead:
     try:
@@ -515,7 +522,7 @@ def post_market_maintenance_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 

@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.db.models import OrderIntent
 
 DATETIME_ADAPTER = TypeAdapter(datetime)
+ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE = 100
 
 
 class AlpacaTradingConfigurationError(RuntimeError):

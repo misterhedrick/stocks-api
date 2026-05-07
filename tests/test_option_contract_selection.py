@@ -488,6 +488,21 @@ class OptionContractSelectionTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 502)
 
+    def test_select_option_contract_route_maps_alpaca_validation_error(self) -> None:
+        with self.assertRaises(HTTPException) as context:
+            with patch(
+                "app.api.routes.options.select_option_contract",
+                side_effect=AlpacaTradingError("validation failed", status_code=422),
+            ):
+                select_option_contract_route(
+                    OptionContractSelectionCreate(
+                        underlying_symbol="SPY",
+                        option_type="call",
+                    )
+                )
+
+        self.assertEqual(context.exception.status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()

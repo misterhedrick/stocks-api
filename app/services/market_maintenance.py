@@ -240,9 +240,33 @@ def cleanup_stale_trading_state(
         "stale_before": stale_before.isoformat(),
         "signals_marked_stale": len(stale_signals),
         "order_intents_marked_stale": len(stale_order_intents),
+        "oldest_stale_signal_created_at": _oldest_created_at(stale_signals),
+        "oldest_stale_order_intent_created_at": _oldest_created_at(stale_order_intents),
+        "signals_by_strategy_id": _counts_by_strategy_id(stale_signals),
+        "order_intents_by_strategy_id": _counts_by_strategy_id(stale_order_intents),
         "signal_ids": [str(signal.id) for signal in stale_signals],
         "order_intent_ids": [str(order_intent.id) for order_intent in stale_order_intents],
     }
+
+
+def _oldest_created_at(rows: list[object]) -> str | None:
+    timestamps = [
+        getattr(row, "created_at", None)
+        for row in rows
+        if getattr(row, "created_at", None) is not None
+    ]
+    if not timestamps:
+        return None
+    return min(timestamps).isoformat()
+
+
+def _counts_by_strategy_id(rows: list[object]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        strategy_id = getattr(row, "strategy_id", None)
+        key = str(strategy_id) if strategy_id is not None else "none"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _populate_trade_cases_safely(db: Session, *, limit: int) -> dict[str, Any]:
@@ -372,6 +396,11 @@ def _reconciliation_summary(result: object) -> dict[str, Any]:
         "orders_updated": result.orders_updated,
         "fills_seen": result.fills_seen,
         "fills_created": result.fills_created,
+        "fill_page_size_requested": result.fill_page_size_requested,
+        "fill_page_size_used": result.fill_page_size_used,
+        "fill_pages_fetched": result.fill_pages_fetched,
+        "fill_pagination_complete": result.fill_pagination_complete,
+        "fill_pagination_stop_reason": result.fill_pagination_stop_reason,
         "positions_seen": result.positions_seen,
         "position_snapshots_created": result.position_snapshots_created,
     }

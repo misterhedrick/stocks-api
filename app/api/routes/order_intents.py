@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.alpaca_errors import alpaca_error_status_code
 from app.core.security import require_admin
 from app.db.models import OrderIntent, Signal, Strategy
 from app.db.session import get_db
@@ -112,7 +113,7 @@ def preview_order_intent(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -164,7 +165,7 @@ def submit_order_intent_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 
@@ -207,7 +208,7 @@ def cancel_order_intent_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
 

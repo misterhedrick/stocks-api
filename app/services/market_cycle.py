@@ -404,6 +404,11 @@ def _reconcile_step(
         "orders_updated": reconciliation_result.orders_updated,
         "fills_seen": reconciliation_result.fills_seen,
         "fills_created": reconciliation_result.fills_created,
+        "fill_page_size_requested": reconciliation_result.fill_page_size_requested,
+        "fill_page_size_used": reconciliation_result.fill_page_size_used,
+        "fill_pages_fetched": reconciliation_result.fill_pages_fetched,
+        "fill_pagination_complete": reconciliation_result.fill_pagination_complete,
+        "fill_pagination_stop_reason": reconciliation_result.fill_pagination_stop_reason,
         "positions_seen": reconciliation_result.positions_seen,
         "position_snapshots_created": reconciliation_result.position_snapshots_created,
     }

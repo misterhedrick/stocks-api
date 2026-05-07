@@ -369,7 +369,27 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["orders_seen"], 2)
         self.assertEqual(response.json()["fills_created"], 1)
+        self.assertEqual(response.json()["fill_page_size_used"], 100)
+        self.assertEqual(response.json()["fill_pages_fetched"], 1)
+        self.assertEqual(response.json()["fill_pagination_stop_reason"], "short_page_no_next_page")
         reconcile.assert_called_once_with(db, order_limit=25, fill_page_size=50)
+
+    def test_reconciliation_routes_reject_fill_page_size_above_alpaca_max(self) -> None:
+        client = TestClient(app)
+        paths = [
+            "/api/v1/jobs/reconcile-broker?fill_page_size=101",
+            "/api/v1/jobs/market-cycle?fill_page_size=101",
+            "/api/v1/jobs/market-cycle-exits?fill_page_size=101",
+            "/api/v1/jobs/market-cycle-stress?fill_page_size=101",
+            "/api/v1/jobs/market-maintenance?fill_page_size=101",
+            "/api/v1/jobs/pre-market-maintenance?fill_page_size=101",
+            "/api/v1/jobs/post-market-maintenance?fill_page_size=101",
+        ]
+
+        for path in paths:
+            with self.subTest(path=path):
+                response = client.post(path, headers=_AUTH)
+                self.assertEqual(response.status_code, 422)
 
     def test_reconcile_broker_route_maps_configuration_error(self) -> None:
         def override_db() -> Iterator[FakeRouteSession]:
@@ -410,6 +430,28 @@ class RouteBehaviorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.json()["detail"], "Alpaca is unavailable")
+
+    def test_reconcile_broker_route_maps_alpaca_validation_error(self) -> None:
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield FakeRouteSession()
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        with patch(
+            "app.api.routes.jobs.reconcile_broker_state",
+            side_effect=AlpacaTradingError(
+                "tried to set the page size to 500, but the maximum is 100",
+                status_code=422,
+            ),
+        ):
+            response = client.post(
+                "/api/v1/jobs/reconcile-broker",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("maximum is 100", response.json()["detail"])
 
     def test_scan_signals_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
@@ -976,6 +1018,11 @@ def build_reconciliation_result() -> BrokerReconciliationResult:
         fills_created=1,
         positions_seen=1,
         position_snapshots_created=1,
+        fill_page_size_requested=100,
+        fill_page_size_used=100,
+        fill_pages_fetched=1,
+        fill_pagination_complete=True,
+        fill_pagination_stop_reason="short_page_no_next_page",
     )
 
 

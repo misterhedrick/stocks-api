@@ -272,7 +272,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-maintenance?phase=auto&news_enabled=false
+        value: /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false
       - key: JOB_TIMEOUT_SECONDS
         value: 600
       - key: JOB_RETRY_DELAYS_SECONDS

@@ -118,6 +118,7 @@ Render cron runner env:
 - JOB_TIMEOUT_SECONDS controls request timeout.
 - JOB_RETRY_DELAYS_SECONDS controls retry backoff.
 - JOB_SKIP_HTTP_STATUS_CODES lists non-fatal HTTP statuses, currently useful for 429 rate limits.
+- Deterministic validation failures are non-retryable. Alpaca FILL page-size errors and other 400/422-style validation problems should not be treated as transient 502s.
 
 === CURRENT DATABASE / STRATEGY STATE ===
 
@@ -373,7 +374,7 @@ Rule:
 
 - Full evaluator-backed strategy set needs paper-volume tuning and production observation.
 - Option contract selection is first-pass and lacks robust delta/Greeks/moneyness/liquidity scoring.
-- Broker reconciliation lacks pagination loop.
+- Broker reconciliation paginates Alpaca FILL account activities with page_token and caps fill_page_size at Alpaca's max of 100.
 - No real DB integration test suite yet.
 - No local Docker Compose/Postgres helper yet.
 - News scanning is lightweight RSS/headline gating only.

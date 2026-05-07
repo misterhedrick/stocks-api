@@ -93,7 +93,9 @@ strategy config
 
 All execution flows through previewed `order_intents` before orders are submitted.
 
-Broker reconciliation imports Alpaca orders, FILL account activities, and positions. Alpaca's `/v2/account/activities/FILL` endpoint has a `page_size` maximum of **100** when no explicit date filter is used, so the app keeps `fill_page_size` at 100 and paginates with Alpaca `page_token` values instead of requesting larger pages. Reconciliation continues through FILL pages until no next page is available, and fill inserts remain idempotent through the unique Alpaca fill id.
+Broker reconciliation imports Alpaca orders, FILL account activities, and positions. Alpaca's `/v2/account/activities/FILL` endpoint has a `page_size` maximum of **100** when no explicit date filter is used, so API routes cap `fill_page_size` at 100 and reconciliation paginates with Alpaca `page_token` values instead of requesting larger pages. Reconciliation continues through FILL pages until no next page is available, records pagination metadata in job summaries, and fill inserts remain idempotent through the unique Alpaca fill id.
+
+Deterministic Alpaca validation errors such as 400/422 responses are mapped as client/configuration errors instead of transient 502s. Render job retries remain enabled for transient 429/500/502/503/504 responses, but known validation-style failure bodies such as page-size-limit errors are treated as non-retryable.
 
 When option contract selection fails before an `order_intent` can be previewed, the app does not create a fake order intent. It emits structured selection-failure logs and stores an `option_selection_diagnostics` row grouped by signal, strategy, underlying symbol, scanner type, and preview profile. These diagnostics include candidate rejection reason counts such as missing/low open interest, notional cap, wide spread, missing quote, no usable two-sided quote, unavailable quote, no expiration/strike match, and not-tradable contracts.
 
@@ -105,7 +107,7 @@ Render cron schedules are UTC and are not DST-aware.
 |---|---|---|---|
 | `stocks-api-market-cycle` | Entry cycle: scan -> reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100` | `*/5 14-19 * * 1-5` |
 | `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
-| `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&news_enabled=false` | `30 12,21 * * 1-5` |
+| `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 

@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.alpaca_errors import alpaca_error_status_code
 from app.core.security import require_admin
 from app.integrations.alpaca import (
     AlpacaTradingConfigurationError,
@@ -51,6 +52,6 @@ def select_option_contract_route(
         ) from exc
     except AlpacaTradingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=alpaca_error_status_code(exc),
             detail=exc.detail,
         ) from exc
