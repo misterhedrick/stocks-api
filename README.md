@@ -215,8 +215,6 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-> **TODO (remove when done):** Re-run `python scripts/seed_paper_trade_universe.py --min-days-to-expiration 7` so existing DB strategies use the new `OPTIONS_MIN_DTE=7` floor. Strategies seeded with the old default (`min_days_to_expiration=2`) bypass the global DTE window and can still select ultra-near-term contracts.
-
 `seed_paper_trade_universe.py` seeds the paper trading strategy universe — it creates call and put strategies for each ticker across all scanner types, stores them in the `strategies` table, and sets their `scanner.preview` config (DTE range, spread, notional, and OI limits). It defaults to five core liquid symbols:
 
 ```text
@@ -268,7 +266,7 @@ Each strategy now has its own folder with `description.md`, `deep-dive.md`, and 
 
 The docs describe purpose, inputs, formulas, bullish/bearish rules, rejection rules, confidence scoring, feature payloads, pseudocode, tests, and human/AI-friendly tuning guidance.
 
-> **TODO (remove when done):** `docs/signal-strategies/shared/option-selection.md` was added alongside the global option selection improvements but its content is covered by the per-strategy `tuning.md` cross-references. Either move the detail into each tuning file or confirm it is useful as a standalone reference, then remove this note. The cross-reference lines added to all 9 `tuning.md` files should be removed at the same time if the shared doc is dropped.
+Shared references, including global option selection settings and diagnostics, live under `docs/signal-strategies/shared/` and are linked from the per-strategy tuning guides.
 
 ## Signal evaluator foundation
 
