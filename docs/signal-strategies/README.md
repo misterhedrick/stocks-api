@@ -52,7 +52,7 @@ Strategy folders:
 | `support-resistance/` | `support_resistance` | Includes implementation note |
 | `volume-confirmed-breakout/` | `volume_confirmed_breakout` | Includes implementation note |
 | `volatility-squeeze/` | `volatility_squeeze` | Includes implementation note |
-| `shared/` | shared | Shared indicator engine notes |
+| `shared/` | shared | Shared indicator engine and option selection notes |
 
 Use `tuning.md` when making human-reviewed or AI-assisted strategy adjustments. The tuning files are written to support small, evidence-driven changes and include AI adjustment contracts that can be reviewed before applying any config change.
 

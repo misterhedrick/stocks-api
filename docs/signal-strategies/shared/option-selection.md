@@ -1,0 +1,117 @@
+# Option Contract Selection — Global Settings
+
+These settings apply to every strategy regardless of scanner type or preview profile. They sit above the per-profile limits and control which contracts are even considered before profile-level spread/notional/OI caps are applied.
+
+## DTE Window
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `OPTIONS_MIN_DTE` | `7` | Minimum days to expiration sent to Alpaca. Contracts expiring in fewer days are filtered out at the API request level. |
+| `OPTIONS_TARGET_DTE` | `14` | Preferred DTE. Candidates are scored by distance from this target, so a 14-DTE contract ranks above a 45-DTE contract when all else is equal. |
+| `OPTIONS_MAX_DTE` | `45` | Maximum DTE sent to Alpaca. Avoids selecting long-dated illiquid contracts. |
+
+These defaults apply **only when the strategy's `scanner.preview` config does not set an explicit `min_days_to_expiration` / `max_days_to_expiration`**. If a strategy has explicit DTE filters in its scanner config those values override the global window entirely.
+
+**If you want the global window to enforce a 7-day floor for all strategies, remove or set `min_days_to_expiration` to `null` in the strategy config.** Strategies seeded before this setting was added carry `min_days_to_expiration=2` and will continue using that value until re-seeded.
+
+Tuning guidance:
+
+- `OPTIONS_MIN_DTE=7` avoids ultra-near-term contracts that have poor quote quality on paper feeds.
+- `OPTIONS_TARGET_DTE=14` is a good starting point for short-term directional plays. Raise to `21`–`30` if you want more time decay buffer.
+- `OPTIONS_MAX_DTE=45` can be raised to `60` for strategies that want more time, but very long-dated contracts have wider spreads on paper feeds.
+
+## Spread Filter — OR Logic
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `OPTIONS_MAX_SPREAD_PCT` | `0.15` | Maximum relative spread as a fraction (e.g. `0.15` = 15%). |
+
+The absolute spread cap (`PAPER_STRATEGY_MAX_SPREAD` or the per-profile `MAX_SPREAD`) still applies. A candidate **passes** the spread check if:
+
+```
+spread ≤ absolute_cap   OR   spread / mid ≤ OPTIONS_MAX_SPREAD_PCT
+```
+
+Both thresholds must be exceeded to reject a candidate. This means a more expensive option (e.g. $3.20 mid) with a $0.40 spread (12.5%) passes even though $0.40 exceeds the $0.35 absolute cap, because the relative spread is within 15%.
+
+Tuning guidance:
+
+- `OPTIONS_MAX_SPREAD_PCT=0.15` (15%) is a reasonable default for paper trading.
+- Lower to `0.10` if you want tighter fills at the cost of fewer accepted contracts.
+- Raise to `0.20`–`0.25` only if you are deliberately collecting wide-spread outcomes for diagnostics. Not recommended for performance measurement.
+- The effective relative threshold used is `min(OPTIONS_MAX_SPREAD_PCT, per_profile_MAX_SPREAD_PERCENT / 100)` when a profile also sets `MAX_SPREAD_PERCENT`.
+
+## Missing Open Interest Allowlist
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Comma-separated list of symbols that may skip the missing open interest rejection if quote quality passes. |
+
+SPY and QQQ often have `null` open interest on the Alpaca paper data feed even when the contract is actively quoted. Allowlisting them prevents unnecessary rejections. The allowlist only bypasses the *missing* OI check — if OI is present and below `MIN_OPEN_INTEREST` the candidate is still rejected.
+
+Allowlisted symbols must still pass:
+
+- A usable two-sided bid/ask quote.
+- The absolute or relative spread filter.
+
+Single-name stocks like AAPL, MSFT, and NVDA are **not** in the allowlist by default. Add them only if confirmed that OI data is structurally absent on your feed.
+
+## Candidate Scoring and Breadth
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `OPTIONS_MAX_CANDIDATES` | `25` | Maximum number of candidates scored per selection attempt. |
+
+After Alpaca returns contracts, they are sorted by `(DTE distance from OPTIONS_TARGET_DTE, strike distance from target price)` and capped at `OPTIONS_MAX_CANDIDATES` before quote checks. Among candidates that pass all constraints, the one with the lowest spread percentage wins.
+
+Raising `OPTIONS_MAX_CANDIDATES` increases the chance of finding a passing contract in wide markets at the cost of more Alpaca quote API calls per cycle.
+
+## Interaction with Per-Profile Settings
+
+The global settings and per-profile settings work at different layers:
+
+```
+1. Alpaca API request:  filtered by DTE window (global) + expiration_date from strategy config
+2. Candidate sort/cap:  sorted by DTE score + strike distance; capped at OPTIONS_MAX_CANDIDATES
+3. Quote check per candidate:
+   a. OI check:         MIN_OPEN_INTEREST (profile) + missing-OI allowlist (global)
+   b. Quote check:      bid/ask must exist and be positive
+   c. Notional check:   MAX_ESTIMATED_NOTIONAL (profile)
+   d. Spread check:     OR(abs ≤ MAX_SPREAD (profile), pct ≤ OPTIONS_MAX_SPREAD_PCT (global))
+4. Best accepted:       lowest spread_pct wins among all accepted candidates
+```
+
+Profile env vars (`PAPER_PREVIEW_PROFILE_<X>_MAX_SPREAD`, `MIN_OPEN_INTEREST`, etc.) remain the primary levers for per-strategy liquidity tuning. The global settings fill in defaults and add logic that was previously missing (DTE window, relative spread, OI allowlist).
+
+## Diagnosing Rejections
+
+When no contract passes, `option_selection_diagnostics` records a structured rejection summary grouped by reason:
+
+```text
+missing_open_interest    — OI field is null; not in allowlist
+low_open_interest        — OI present but below MIN_OPEN_INTEREST
+no_usable_two_sided_quote — bid or ask is zero or missing
+missing_quote            — no quote returned at all
+quote_unavailable        — Alpaca API error fetching quote
+estimated_notional_above_max — ask × 100 × qty > MAX_ESTIMATED_NOTIONAL
+spread_too_wide          — both absolute and relative spread thresholds exceeded
+quote_size_too_low       — bid/ask size below MIN_QUOTE_SIZE
+not_tradable             — contract status != active or tradable = false
+no_expiration_strike_match — no contracts returned for the requested filters
+```
+
+Query for recent failures:
+
+```sql
+SELECT underlying_symbol, reason_counts, candidate_count, created_at
+FROM option_selection_diagnostics
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+Compact rejection summaries also appear in application logs at INFO level:
+
+```text
+Option contract selection failed: SPY call — 12 candidate(s) checked,
+rejections: [missing_open_interest×3, spread_too_wide×9]
+```

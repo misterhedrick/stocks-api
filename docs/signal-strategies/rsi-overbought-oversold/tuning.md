@@ -29,6 +29,7 @@ Default seeded posture: `5Min`, RSI 14, oversold 35, overbought 65, cross-back-i
 - Use `scanner.preview.preview_profile = rsi_reversal`.
 - Reversal trades can fail hard in trends; keep premium caps and position caps conservative.
 - If entries are early but thesis later works, tune confirmation before widening stop loss.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 
