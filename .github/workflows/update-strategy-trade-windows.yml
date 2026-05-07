@@ -1,0 +1,80 @@
+name: Update Strategy Trade Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Show changes without writing to the database"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      force:
+        description: "Replace any existing strategy trade windows with 10:00-16:00 ET"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      include_inactive:
+        description: "Include inactive strategies"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  update-strategy-trade-windows:
+    name: Update strategy trade windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      APP_ENV: production
+      APP_DEBUG: "false"
+
+    steps:
+      - name: Check DATABASE_URL secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL repository secret is missing. Add the Render external Postgres DATABASE_URL as a GitHub Actions secret."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build script flags
+        id: flags
+        shell: bash
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          if [ "${{ inputs.force }}" = "true" ]; then
+            FLAGS="$FLAGS --force"
+          fi
+          if [ "${{ inputs.include_inactive }}" = "true" ]; then
+            FLAGS="$FLAGS --all"
+          fi
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+          echo "Running: python scripts/update_strategy_trade_windows.py$FLAGS"
+
+      - name: Update strategy trade windows
+        run: python scripts/update_strategy_trade_windows.py${{ steps.flags.outputs.flags }}
