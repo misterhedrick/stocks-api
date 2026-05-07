@@ -29,6 +29,7 @@ Default seeded posture is selective: `5/20`, `5Min`, `bullish_cross`, slope and 
 
 - Use `scanner.preview.preview_profile = moving_average`.
 - If many good signals are rejected, consider profile env changes such as `PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL`, `MIN_OPEN_INTEREST`, or `MAX_SPREAD_PERCENT`.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 - Keep `scanner.submit.max_contracts_per_order = 1` while tuning.
 - Tune exits before changing entries if signals look good but round trips lose after entry.
 

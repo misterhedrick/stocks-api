@@ -28,6 +28,7 @@ Default seeded posture: `5Min`, 20-candle range, 20-candle volume lookback, `1.2
 - Use `scanner.preview.preview_profile = volume_confirmed_breakout`.
 - High volume can widen option spreads; monitor rejection and fill slippage.
 - Keep `max_spread_percent` honest. A high-volume breakout with an ugly option chain is still a bad paper data point.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 

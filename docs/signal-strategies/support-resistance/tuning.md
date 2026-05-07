@@ -30,6 +30,7 @@ Default seeded posture: `5Min`, 60 candles, swing window 3, min touches 2, toler
 - Use `scanner.preview.preview_profile = support_resistance`.
 - Manual levels should be refreshed when the market structure changes.
 - Keep position caps tight if testing both bounce/rejection and breakout modes at once.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 

@@ -27,6 +27,7 @@ Default seeded posture: `1Min`, 30-minute lookback, about `0.175%` move threshol
 - Use `scanner.preview.preview_profile = momentum_rate_of_change`.
 - Momentum entries may need tighter `max_spread_percent` because timing matters.
 - Keep DTE short enough for responsiveness but avoid contracts with poor liquidity.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 - If fills are consistently poor, tune option selection before loosening scanner thresholds.
 
 ## Human Tuning Rules

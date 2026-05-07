@@ -30,6 +30,7 @@ Default seeded posture: `5Min`, Bollinger `20/2.0`, 20-candle squeeze and range,
 - Use `scanner.preview.preview_profile = volatility_squeeze`.
 - Watch premium expansion after the breakout; notional caps are especially important here.
 - If signal quality is good but entries are expensive, tune option selection before loosening squeeze detection.
+- Global option selection settings (`OPTIONS_MIN_DTE`, `OPTIONS_TARGET_DTE`, `OPTIONS_MAX_DTE`, `OPTIONS_MAX_SPREAD_PCT`, `OPTIONS_ALLOW_MISSING_OI_SYMBOLS`) apply across all profiles and sit above profile-level limits. See `docs/signal-strategies/shared/option-selection.md`.
 
 ## Human Tuning Rules
 
