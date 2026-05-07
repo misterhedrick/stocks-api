@@ -1305,8 +1305,6 @@ class MarketCycleRuntimeBudgetTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.settings.market_cycle_reconcile_enabled", True
         ), patch(
-            "app.services.market_cycle.settings.market_cycle_max_runtime_seconds", 0
-        ), patch(
             "app.services.market_cycle.settings.market_cycle_phase_timeout_seconds", 0
         ), patch(
             "app.services.market_cycle.scan_signals",
@@ -1330,8 +1328,6 @@ class MarketCycleRuntimeBudgetTests(unittest.TestCase):
             "app.services.market_cycle.settings.market_cycle_scan_enabled", True
         ), patch(
             "app.services.market_cycle.settings.market_cycle_reconcile_enabled", True
-        ), patch(
-            "app.services.market_cycle.settings.market_cycle_max_runtime_seconds", 0
         ), patch(
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),

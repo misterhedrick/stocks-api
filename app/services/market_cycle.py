@@ -147,15 +147,11 @@ def run_market_cycle(
         submit_enabled_override,
     )
 
-    # Apply hard runtime cap: MARKET_CYCLE_MAX_RUNTIME_SECONDS is the outer bound.
-    # The per-invocation phase_timeout_seconds parameter can lower it further
-    # (e.g., the exits route uses 45s), but never exceed the hard cap.
-    max_runtime = settings.market_cycle_max_runtime_seconds
-    if phase_timeout_seconds is not None:
-        phase_timeout = phase_timeout_seconds if max_runtime <= 0 else min(phase_timeout_seconds, max_runtime)
-    else:
-        base_timeout = settings.market_cycle_phase_timeout_seconds
-        phase_timeout = base_timeout if max_runtime <= 0 else min(base_timeout, max_runtime)
+    phase_timeout = (
+        settings.market_cycle_phase_timeout_seconds
+        if phase_timeout_seconds is None
+        else phase_timeout_seconds
+    )
 
     logger.info(
         "market_cycle starting: scan_limit=%d order_limit=%d fill_page_size=%d phase_timeout=%ds",

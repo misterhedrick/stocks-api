@@ -138,7 +138,7 @@ Restore to `scan_limit=100&order_limit=100&fill_page_size=100` only after timing
 - `market-cycle`: entry scans, previews, and submits. Runs every **10 minutes**. Has the advisory lock.
 - `market-exits`: exit evaluations only. Runs every **1 minute**. Time-sensitive; shorter interval is intentional.
 
-**Runtime budget:** `MARKET_CYCLE_MAX_RUNTIME_SECONDS=120` (env var on the web service). The cycle aborts gracefully after this many seconds and returns `status: partial`. Completed phases are preserved. Increase this setting only if timing logs show consistently slow but necessary work.
+**Runtime budget:** `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS=120` (env var on the web service). The cycle aborts gracefully after this many seconds and returns `status: partial`. Completed phases are preserved. Increase this setting only if timing logs show consistently slow but necessary work.
 
 **Runner retries:** `JOB_RETRY_DELAYS_SECONDS` is intentionally empty for `market-cycle`. Render will invoke the job again in 10 minutes anyway; retrying a timed-out cycle just piles on more overlapping load.
 
