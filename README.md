@@ -215,7 +215,9 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-`seed_paper_trade_universe.py` defaults to five core liquid symbols:
+> **TODO (remove when done):** Re-run `python scripts/seed_paper_trade_universe.py --min-days-to-expiration 7` so existing DB strategies use the new `OPTIONS_MIN_DTE=7` floor. Strategies seeded with the old default (`min_days_to_expiration=2`) bypass the global DTE window and can still select ultra-near-term contracts.
+
+`seed_paper_trade_universe.py` seeds the paper trading strategy universe — it creates call and put strategies for each ticker across all scanner types, stores them in the `strategies` table, and sets their `scanner.preview` config (DTE range, spread, notional, and OI limits). It defaults to five core liquid symbols:
 
 ```text
 SPY, QQQ, NVDA, AAPL, MSFT
