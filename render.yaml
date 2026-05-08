@@ -93,9 +93,9 @@ services:
       - key: OPTIONS_PREVIEW_MAX_ATTEMPTS
         value: 3
       - key: OPTIONS_CANDIDATE_LIMIT
-        value: 25
+        value: 100
       - key: OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT
-        value: 5
+        value: 10
       - key: PAPER_PREVIEW_PROFILE_PRICE_THRESHOLD_MIN_OPEN_INTEREST
         value: 25
       - key: PAPER_PREVIEW_PROFILE_PRICE_THRESHOLD_MAX_ESTIMATED_NOTIONAL

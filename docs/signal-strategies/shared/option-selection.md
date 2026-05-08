@@ -62,14 +62,14 @@ Single-name stocks like AAPL, MSFT, and NVDA are **not** in the allowlist by def
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `OPTIONS_CANDIDATE_LIMIT` | `25` | Maximum number of candidates scored per selection attempt. `OPTIONS_MAX_CANDIDATES` is still accepted for backward compatibility. |
-| `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` | `5` | Maximum number of rejected candidate detail records attached to diagnostics/logs. |
+| `OPTIONS_CANDIDATE_LIMIT` | `100` | Maximum number of option contracts requested, ranked, and quote-checked per selection attempt. `OPTIONS_MAX_CANDIDATES` is still accepted for backward compatibility. |
+| `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` | `10` | Maximum number of rejected candidate detail records attached to diagnostics/logs. |
 
 After Alpaca returns contracts, they are ranked before the candidate cap. Ranking prefers contracts with usable/open-interest data first, then strikes nearest the target or underlying price, then the preferred DTE window, higher open interest, and stable symbol ordering. The selector still rejects any candidate that fails hard quote, liquidity, spread, or notional filters. Among candidates that pass all constraints, the best quote wins by lower spread percentage, lower spread, lower estimated notional, better quote size, and higher open interest.
 
-Raising `OPTIONS_CANDIDATE_LIMIT` increases the chance of finding a passing contract in wide markets at the cost of more Alpaca quote API calls per cycle.
+Raising `OPTIONS_CANDIDATE_LIMIT` increases the chance of finding a passing contract in wide markets at the cost of more Alpaca quote API calls per preview cycle. It should be the first tuning step before loosening `OPTIONS_MIN_OPEN_INTEREST`, `OPTIONS_MAX_SPREAD_PCT`, or `OPTIONS_MAX_CONTRACT_NOTIONAL`.
 
-Detailed rejected-candidate diagnostics are intentionally capped. Use `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` to increase the sample only when you need a short-term investigation; keeping it low avoids giant Render logs.
+Detailed rejected-candidate diagnostics are intentionally capped. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only controls how many rejected candidates are logged/stored for debugging; it does not change how many candidates are evaluated. Use it to increase the sample only when you need a short-term investigation; keeping it low avoids giant Render logs.
 
 ## Preview Attempts
 
@@ -85,7 +85,7 @@ The global settings and per-profile settings work at different layers:
 
 ```
 1. Alpaca API request:  filtered by DTE window (global) + expiration_date from strategy config
-2. Candidate sort/cap:  ranked by OI availability, strike proximity, DTE score, and liquidity; capped at OPTIONS_CANDIDATE_LIMIT
+2. Candidate query/sort/cap:  request up to OPTIONS_CANDIDATE_LIMIT contracts, rank by OI availability, strike proximity, DTE score, and liquidity, then quote-check up to that same limit
 3. Quote check per candidate:
    a. OI check:         MIN_OPEN_INTEREST (profile) + missing-OI allowlist (global)
    b. Quote check:      bid/ask must exist and be positive

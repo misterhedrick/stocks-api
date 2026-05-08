@@ -517,6 +517,19 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIn("scanner.preview config is required", result.preview["errors"][0])
         preview.assert_not_called()
 
+    def test_preview_payload_uses_global_candidate_limit(self) -> None:
+        from app.services.market_cycle import _preview_payload_for_signal
+
+        strategy = build_strategy()
+        strategy.config["scanner"]["preview"]["limit"] = 20
+        signal = build_signal(strategy)
+
+        with patch("app.services.market_cycle.settings.options_max_candidates", 100):
+            payload = _preview_payload_for_signal(signal, strategy)
+
+        self.assertIsNotNone(payload.contract_selection)
+        self.assertEqual(payload.contract_selection.limit, 100)
+
     def test_run_market_cycle_delays_entry_preview_outside_submit_window(self) -> None:
         strategy = build_strategy()
         signal = build_signal(strategy)

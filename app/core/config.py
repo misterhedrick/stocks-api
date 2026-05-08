@@ -68,12 +68,12 @@ class Settings(BaseSettings):
     options_min_open_interest: int = 25
     options_max_contract_notional: Decimal = Decimal("5000")
     options_max_candidates: int = Field(
-        default=25,
+        default=100,
         validation_alias=AliasChoices("OPTIONS_CANDIDATE_LIMIT", "OPTIONS_MAX_CANDIDATES"),
     )
     options_max_spread_pct: Decimal = Decimal("0.15")
     options_preview_max_attempts: int = 3
-    options_diagnostic_candidate_limit: int = 5
+    options_diagnostic_candidate_limit: int = 10
     options_allow_missing_oi_symbols: str = "SPY,QQQ"
     signal_evaluators_enabled: bool = True
     momentum_evaluator_enabled: bool = True
