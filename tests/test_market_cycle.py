@@ -492,11 +492,143 @@ class MarketCycleTests(unittest.TestCase):
             result = run_market_cycle(db)
 
         self.assertTrue(result.submit_enabled)
+        self.assertEqual(result.submit["candidates_seen"], 1)
         self.assertEqual(result.submit["order_intents_seen"], 1)
         self.assertEqual(result.submit["submitted"], 1)
         self.assertEqual(result.submit["skipped"], 0)
+        self.assertEqual(result.submit["skipped_reasons"], {})
+        self.assertEqual(result.submit["submitted_order_intent_ids"], [str(order_intent.id)])
         self.assertEqual(result.submit["broker_order_ids"], [str(broker_order.id)])
         submit.assert_called_once_with(db, order_intent.id)
+
+    def test_run_market_cycle_reports_global_submit_disabled_with_candidates(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            False,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertFalse(result.submit_enabled)
+        self.assertEqual(result.submit["status"], "disabled")
+        self.assertEqual(result.submit["reason"], "submit disabled by global config")
+        self.assertEqual(result.submit["candidates_seen"], 1)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertEqual(
+            result.submit["skipped_reasons"],
+            {"submit disabled by global config": 1},
+        )
+        submit.assert_not_called()
+
+    def test_run_market_cycle_reports_ineligible_status_submit_skip(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        order_intent.status = "stale"
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+        ) as guard, patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["candidates_seen"], 1)
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertEqual(result.submit["skipped_reasons"], {"ineligible_status": 1})
+        self.assertIn("ineligible_status status=stale", result.submit["errors"][0])
+        guard.assert_not_called()
+        submit.assert_not_called()
+
+    def test_run_market_cycle_reports_submit_runtime_budget_skip_with_candidates(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.settings.market_cycle_preview_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle.settings.market_cycle_submit_enabled",
+            True,
+        ), patch(
+            "app.services.market_cycle._phase_budget_exceeded",
+            side_effect=[False, False, True, True],
+        ), patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=build_signal_scan_result(signal.id),
+        ), patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            return_value=order_intent,
+        ), patch(
+            "app.services.market_cycle._entry_preview_delay_reason",
+            return_value=None,
+        ), patch(
+            "app.services.market_cycle.submit_order_intent",
+        ) as submit:
+            result = run_market_cycle(db)
+
+        self.assertEqual(result.submit["status"], "skipped")
+        self.assertEqual(result.submit["candidates_seen"], 1)
+        self.assertEqual(result.submit["submitted"], 0)
+        self.assertEqual(result.submit["skipped"], 1)
+        self.assertEqual(result.submit["skipped_reasons"], {"runtime_budget_exceeded": 1})
+        self.assertIn("runtime budget exceeded", result.submit["errors"][0])
+        submit.assert_not_called()
 
     def test_run_market_cycle_evaluates_exits_when_enabled(self) -> None:
         db = FakeMarketCycleSession()
@@ -908,6 +1040,7 @@ class MarketCycleTests(unittest.TestCase):
 
         self.assertEqual(result.submit["submitted"], 0)
         self.assertEqual(result.submit["skipped"], 1)
+        self.assertEqual(result.submit["skipped_reasons"], {"outside_trade_window": 1})
         self.assertIn("outside scanner.submit.trade_windows", result.submit["errors"][0])
         submit.assert_not_called()
 
