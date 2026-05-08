@@ -8,19 +8,27 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AiTradeReview,
     AuditLog,
     BrokerOrder,
     Fill,
     JobRun,
+    OptionSelectionDiagnostic,
     OrderIntent,
     PositionSnapshot,
     Signal,
+    StrategyChangeSuggestion,
+    TradeCase,
 )
 from app.services.audit_logs import record_audit_log
 
 
 RESET_TRADING_DATA_CONFIRMATION = "RESET_TRADING_DATA"
 RUNTIME_TABLES = (
+    (StrategyChangeSuggestion, "strategy_change_suggestions"),
+    (AiTradeReview, "ai_trade_reviews"),
+    (TradeCase, "trade_cases"),
+    (OptionSelectionDiagnostic, "option_selection_diagnostics"),
     (Fill, "fills"),
     (BrokerOrder, "broker_orders"),
     (OrderIntent, "order_intents"),
