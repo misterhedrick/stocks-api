@@ -1441,8 +1441,15 @@ def _contract_selection_for_signal(
         min_open_interest=preview_config.get("min_open_interest"),
         min_quote_size=preview_config.get("min_quote_size"),
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
-        limit=_int_config(preview_config, "limit", default=20),
+        limit=_options_candidate_limit(),
     )
+
+
+def _options_candidate_limit() -> int:
+    try:
+        return max(int(settings.options_max_candidates), 1)
+    except (TypeError, ValueError):
+        return 100
 
 
 def _string_config(

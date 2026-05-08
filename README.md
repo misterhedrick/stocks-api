@@ -101,6 +101,8 @@ When option contract selection fails before an `order_intent` can be previewed, 
 
 Market-cycle may create signals but no orders when no option contract passes quote, liquidity, spread, or notional filters. Failed auto-preview attempts are tracked on the signal. After `OPTIONS_PREVIEW_MAX_ATTEMPTS` failures, the signal is marked `preview_rejected` and skipped by future preview cycles; this is expected behavior and preserves duplicate signal suppression without retrying the same impossible signal forever.
 
+`OPTIONS_CANDIDATE_LIMIT` controls how many option contracts are requested and quote-checked before giving up. Increase this search width before loosening open-interest, spread, or notional safety filters. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only caps the number of rejected candidate samples stored/logged for debugging.
+
 ## Current Render cron topology
 
 Render cron schedules are UTC and are not DST-aware.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import date
 import unittest
 from decimal import Decimal
@@ -7,6 +8,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
+from app.core.config import Settings
 from app.api.routes.options import select_option_contract_route
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
@@ -105,6 +107,18 @@ def build_contract(
 
 
 class OptionContractSelectionTests(unittest.TestCase):
+    def test_option_candidate_limit_defaults_to_100(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=None)
+
+        self.assertEqual(settings.options_max_candidates, 100)
+
+    def test_diagnostic_candidate_limit_defaults_to_10(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings(_env_file=None)
+
+        self.assertEqual(settings.options_diagnostic_candidate_limit, 10)
+
     def test_select_option_contract_picks_by_open_interest_then_strike_then_dte(self) -> None:
         # With equal OI, strike distance wins before DTE distance.
         result = select_option_contract(
@@ -417,6 +431,66 @@ class OptionContractSelectionTests(unittest.TestCase):
             diagnostics["top_rejected_candidates"][0]["rejection_reasons"],
             ["low_open_interest"],
         )
+
+    def test_candidate_limit_controls_query_and_evaluates_more_than_25_candidates(self) -> None:
+        contracts = [
+            build_contract(
+                f"AAPL260521C002{i:02d}000",
+                expiration_date="2026-05-21",
+                strike_price=f"2{i:02d}",
+                underlying_symbol="AAPL",
+                open_interest="1",
+            )
+            for i in range(30)
+        ]
+        trading_client = FakeTradingClient(contracts)
+
+        with patch("app.services.option_contracts.settings.options_max_candidates", 30):
+            with self.assertRaises(OptionContractNotFoundError) as context:
+                select_option_contract(
+                    OptionContractSelectionCreate(
+                        underlying_symbol="AAPL",
+                        option_type="call",
+                        min_open_interest=Decimal("100"),
+                    ),
+                    trading_client=trading_client,
+                    market_data_client=FakeMarketDataClient(),
+                )
+
+        diagnostics = context.exception.diagnostics
+        self.assertEqual(trading_client.calls[-1]["limit"], 30)
+        self.assertEqual(diagnostics["candidate_limit"], 30)
+        self.assertEqual(diagnostics["candidates_evaluated"], 30)
+        self.assertEqual(diagnostics["reason_counts"]["low_open_interest"], 30)
+
+    def test_candidate_limit_setting_overrides_lower_payload_limit(self) -> None:
+        contracts = [
+            build_contract(
+                f"AAPL260521C002{i:02d}000",
+                expiration_date="2026-05-21",
+                strike_price=f"2{i:02d}",
+                underlying_symbol="AAPL",
+                open_interest="1",
+            )
+            for i in range(30)
+        ]
+        trading_client = FakeTradingClient(contracts)
+
+        with patch("app.services.option_contracts.settings.options_max_candidates", 30):
+            with self.assertRaises(OptionContractNotFoundError) as context:
+                select_option_contract(
+                    OptionContractSelectionCreate(
+                        underlying_symbol="AAPL",
+                        option_type="call",
+                        min_open_interest=Decimal("100"),
+                        limit=5,
+                    ),
+                    trading_client=trading_client,
+                    market_data_client=FakeMarketDataClient(),
+                )
+
+        self.assertEqual(trading_client.calls[-1]["limit"], 30)
+        self.assertEqual(context.exception.diagnostics["candidates_evaluated"], 30)
 
     def test_multiple_candidate_failures_are_aggregated_with_accurate_counts(self) -> None:
         with self.assertRaises(OptionContractNotFoundError) as context:

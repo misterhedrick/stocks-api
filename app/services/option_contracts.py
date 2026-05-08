@@ -55,13 +55,14 @@ def select_option_contract(
     trading = trading_client or AlpacaTradingClient.from_settings()
     today = datetime.now(ZoneInfo("America/New_York")).date()
     expiration_date_gte, expiration_date_lte = _expiration_range(payload, today=today)
+    candidate_limit = _option_candidate_limit(payload.limit)
     contracts_page = trading.list_option_contracts(
         underlying_symbol=payload.underlying_symbol,
         option_type=payload.option_type,
         expiration_date=payload.expiration_date,
         expiration_date_gte=expiration_date_gte,
         expiration_date_lte=expiration_date_lte,
-        limit=payload.limit,
+        limit=candidate_limit,
     )
     target_strike = payload.target_strike or payload.underlying_price
     prefiltered_rejections: list[CandidateRejection] = []
@@ -83,7 +84,7 @@ def select_option_contract(
             today=today,
         ),
     )
-    candidates = candidates[: settings.options_max_candidates]
+    candidates = candidates[:candidate_limit]
 
     if not candidates:
         reason = "no_expiration_strike_match" if not contracts_page.contracts else "not_tradable"
@@ -114,6 +115,8 @@ def select_option_contract(
         diagnostics = _selection_failure_diagnostics(
             payload,
             candidates_seen=len(contracts_page.contracts),
+            candidates_evaluated=0,
+            candidate_limit=candidate_limit,
             rejected=rejections,
         )
         _log_selection_failure(diagnostics)
@@ -149,6 +152,7 @@ def select_option_contract(
         initial_rejections=prefiltered_rejections,
         payload=payload,
         candidates_seen=len(contracts_page.contracts),
+        candidate_limit=candidate_limit,
         deadline=deadline,
     )
 
@@ -181,6 +185,7 @@ def _select_quoted_contract(
     initial_rejections: list[CandidateRejection],
     payload: OptionContractSelectionCreate,
     candidates_seen: int,
+    candidate_limit: int,
     deadline: float | None = None,
 ) -> tuple[AlpacaOptionContract, AlpacaLatestOptionQuote]:
     rejected: list[CandidateRejection] = list(initial_rejections)
@@ -255,6 +260,8 @@ def _select_quoted_contract(
     diagnostics = _selection_failure_diagnostics(
         payload,
         candidates_seen=candidates_seen,
+        candidates_evaluated=len(candidates),
+        candidate_limit=candidate_limit,
         rejected=rejected,
     )
     _log_selection_failure(diagnostics)
@@ -487,6 +494,8 @@ def _selection_failure_diagnostics(
     payload: OptionContractSelectionCreate,
     *,
     candidates_seen: int,
+    candidates_evaluated: int,
+    candidate_limit: int,
     rejected: list[CandidateRejection],
 ) -> dict[str, Any]:
     reason_counts = Counter(item.reason_code for item in rejected)
@@ -498,6 +507,8 @@ def _selection_failure_diagnostics(
         "scanner_type": None,
         "preview_profile": payload.preview_profile,
         "candidates_seen": candidates_seen,
+        "candidates_evaluated": candidates_evaluated,
+        "candidate_limit": candidate_limit,
         "reason_counts": dict(sorted(reason_counts.items())),
         "rejections": [
             {
@@ -530,14 +541,20 @@ def _log_selection_failure(diagnostics: dict[str, Any]) -> None:
     symbol = diagnostics.get("underlying_symbol", "?")
     option_type = diagnostics.get("option_type", "?")
     seen = diagnostics.get("candidates_seen", 0)
+    evaluated = diagnostics.get("candidates_evaluated", 0)
+    candidate_limit = diagnostics.get("candidate_limit", "?")
     reason_counts = diagnostics.get("reason_counts") or {}
     summary = ", ".join(f"{k}×{v}" for k, v in sorted(reason_counts.items()))
+    summary = (
+        f"candidates_evaluated={evaluated}, candidate_limit={candidate_limit}, "
+        + (summary or "none")
+    )
     logger.info(
         "Option contract selection failed: %s %s — %d candidate(s) checked, rejections: [%s]",
         symbol,
         option_type,
         seen,
-        summary or "none",
+        summary,
         extra={"option_selection_diagnostics": diagnostics},
     )
     top_candidates = diagnostics.get("top_rejected_candidates") or []
@@ -632,7 +649,14 @@ def _diagnostic_candidate_limit() -> int:
     try:
         return max(int(settings.options_diagnostic_candidate_limit), 0)
     except (TypeError, ValueError):
-        return 5
+        return 10
+
+
+def _option_candidate_limit(payload_limit: int | None = None) -> int:
+    try:
+        return max(int(settings.options_max_candidates), 1)
+    except (TypeError, ValueError):
+        return 100
 
 
 def _candidate_diagnostic(rejection: CandidateRejection) -> dict[str, Any]:
