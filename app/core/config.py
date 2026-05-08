@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     auto_submit_requires_paper: bool = True
     max_auto_orders_per_cycle: int = 1
     max_auto_orders_per_day: int = 3
+    max_auto_orders_per_symbol_per_day: int = 5
     max_open_positions: int = 3
     max_open_positions_per_symbol: int = 1
     max_contracts_per_order: int = 1

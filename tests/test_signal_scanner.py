@@ -212,6 +212,57 @@ class SignalScannerTests(unittest.TestCase):
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "signal_scan.succeeded")
 
+    def test_scan_signals_filters_static_specs_to_requested_symbol(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scan_signals": [
+                    {
+                        "symbol": "SPY",
+                        "underlying_symbol": "SPY",
+                        "signal_type": "manual_scan",
+                        "direction": "bullish",
+                        "rationale": "Scanner test",
+                    },
+                    {
+                        "symbol": "QQQ",
+                        "underlying_symbol": "QQQ",
+                        "signal_type": "manual_scan",
+                        "direction": "bullish",
+                        "rationale": "Scanner test",
+                    },
+                ]
+            }
+        )
+        db = FakeScannerSession([strategy])
+
+        result = scan_signals(db, symbol="QQQ")
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].underlying_symbol, "QQQ")
+        self.assertEqual(result.job_run.details["symbol"], "QQQ")
+
+    def test_scan_signals_filters_scanner_symbols_to_requested_symbol(self) -> None:
+        strategy = build_strategy(
+            config={
+                "scanner": {
+                    "type": "price_threshold",
+                    "symbols": ["SPY", "QQQ"],
+                    "price_above": "100",
+                }
+            }
+        )
+        db = FakeScannerSession([strategy])
+        market_data = FakeMarketDataClient(
+            quotes={"SPY": ("500", "501"), "QQQ": ("400", "401")}
+        )
+
+        result = scan_signals(db, symbol="SPY", market_data_client=market_data)
+
+        signals = [item for item in db.added if isinstance(item, Signal)]
+        self.assertEqual(result.signals_created, 1)
+        self.assertEqual(signals[-1].underlying_symbol, "SPY")
+
     def test_scan_signals_ignores_inactive_strategies(self) -> None:
         db = FakeScannerSession(
             [

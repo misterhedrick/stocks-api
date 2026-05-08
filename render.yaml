@@ -70,6 +70,8 @@ services:
         value: 3
       - key: MAX_AUTO_ORDERS_PER_DAY
         value: 50
+      - key: MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY
+        value: 5
       - key: MAX_OPEN_POSITIONS
         value: 25
       - key: MAX_OPEN_POSITIONS_PER_SYMBOL
@@ -242,6 +244,140 @@ services:
         value: 120
       # No retries for market-cycle: Render will invoke it again in 10 minutes anyway.
       # Retrying a timed-out market-cycle just adds more overlapping load.
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: ""
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  # Symbol-specific entry crons use the same API and safety guards while keeping
+  # option candidate searches smaller per invocation. Disable stocks-api-market-cycle
+  # in Render after these have deployed cleanly if you want entries to come only
+  # from the split jobs; keep exits and maintenance global.
+  - type: cron
+    name: stocks-api-market-entry-spy
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "0-59/5 14-19 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=25&order_limit=25&fill_page_size=50
+      - key: JOB_TIMEOUT_SECONDS
+        value: 120
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: ""
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-entry-qqq
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "1-59/5 14-19 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=25&order_limit=25&fill_page_size=50
+      - key: JOB_TIMEOUT_SECONDS
+        value: 120
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: ""
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-entry-aapl
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "2-59/5 14-19 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=25&order_limit=25&fill_page_size=50
+      - key: JOB_TIMEOUT_SECONDS
+        value: 120
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: ""
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-entry-msft
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "3-59/5 14-19 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=25&order_limit=25&fill_page_size=50
+      - key: JOB_TIMEOUT_SECONDS
+        value: 120
+      - key: JOB_RETRY_DELAYS_SECONDS
+        value: ""
+      - key: JOB_SKIP_HTTP_STATUS_CODES
+        value: 429
+      - key: ADMIN_API_TOKEN
+        sync: false
+  - type: cron
+    name: stocks-api-market-entry-nvda
+    env: python
+    region: virginia
+    plan: starter
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/run_render_job.py
+    schedule: "4-59/5 14-19 * * 1-5"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: SCHEDULED_JOBS_ENABLED
+        value: true
+      - key: STOCKS_API_BASE_URL
+        value: https://stocks-api-z11i.onrender.com
+      - key: JOB_PATH
+        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=25&order_limit=25&fill_page_size=50
+      - key: JOB_TIMEOUT_SECONDS
+        value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES

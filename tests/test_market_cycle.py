@@ -9,7 +9,12 @@ from unittest.mock import ANY, patch
 from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, Strategy
 from app.services.automation_guard import AutomationDecision
 from app.services.broker_reconciliation import BrokerReconciliationResult
-from app.services.market_cycle import run_market_cycle
+from app.services.market_cycle import (
+    _preview_created_signals,
+    _submit_previewed_order_intents,
+    run_market_cycle,
+    run_market_entry_cycle,
+)
 from app.services.option_contracts import OptionContractNotFoundError
 from app.services.news_scanner import NewsScanResult
 from app.services.position_exits import ExitEvaluationResult
@@ -331,6 +336,129 @@ class MarketCycleTests(unittest.TestCase):
         reconcile.assert_called_once_with(db, order_limit=50, fill_page_size=75, deadline=ANY)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         self.assertEqual(audit_logs[-1].event_type, "market_cycle.succeeded")
+
+    def test_run_market_entry_cycle_scans_requested_symbol_and_skips_exits(self) -> None:
+        db = FakeMarketCycleSession()
+
+        with patch(
+            "app.services.market_cycle.scan_signals",
+            return_value=SignalScanResult(
+                job_run=build_job_run("scan_signals"),
+                strategies_seen=1,
+                strategies_scanned=0,
+                signals_created=0,
+                signals_skipped=0,
+                errors=[],
+                no_signal_reasons=[],
+                created_signal_ids=[],
+            ),
+        ) as scanner, patch(
+            "app.services.market_cycle.reconcile_broker_state",
+            return_value=build_reconciliation_result(),
+        ) as reconcile, patch("app.services.market_cycle.evaluate_position_exits") as exits:
+            result = run_market_entry_cycle(
+                db,
+                symbol="spy",
+                scan_limit=25,
+                order_limit=25,
+                fill_page_size=50,
+            )
+
+        scanner.assert_called_once_with(db, limit=25, symbol="SPY")
+        reconcile.assert_not_called()
+        exits.assert_not_called()
+        self.assertEqual(result.job_run.job_name, "market_entry_cycle")
+        self.assertEqual(result.symbol, "SPY")
+        self.assertEqual(result.diagnostics["symbol"], "SPY")
+        self.assertFalse(result.exit_enabled)
+        self.assertFalse(result.news_enabled)
+        self.assertFalse(result.reconcile_enabled)
+        self.assertEqual(result.reconcile["status"], "disabled")
+        self.assertEqual(result.exits["status"], "disabled")
+        self.assertEqual(result.news["status"], "disabled")
+
+    def test_preview_created_signals_skips_other_symbols(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        signal.symbol = "QQQ"
+        signal.underlying_symbol = "QQQ"
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch("app.services.market_cycle.preview_order_intent_from_signal") as preview:
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=0,
+                phase_timeout=0,
+                symbol="SPY",
+            )
+
+        preview.assert_not_called()
+        self.assertEqual(result["symbol"], "SPY")
+        self.assertEqual(result["previews_created"], 0)
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(result["skipped_reasons"], {"symbol_mismatch": 1})
+
+    def test_submit_previewed_order_intents_skips_other_symbols(self) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        order_intent.underlying_symbol = "QQQ"
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch("app.services.market_cycle.submit_order_intent") as submit:
+            result = _submit_previewed_order_intents(
+                db,
+                [order_intent.id],
+                cycle_id=str(uuid.uuid4()),
+                cycle_started=0,
+                phase_timeout=0,
+                symbol="SPY",
+            )
+
+        submit.assert_not_called()
+        self.assertEqual(result["symbol"], "SPY")
+        self.assertEqual(result["submitted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["skipped_reasons"], {"symbol_mismatch": 1})
+
+    def test_submit_previewed_order_intents_keeps_global_guard_for_symbol_entry(
+        self,
+    ) -> None:
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        order_intent = build_order_intent(signal)
+        db = FakeMarketCycleSession(
+            signal=signal,
+            strategy=strategy,
+            order_intent=order_intent,
+        )
+
+        with patch(
+            "app.services.market_cycle.can_auto_submit_order_intent",
+            return_value=AutomationDecision(
+                allowed=False,
+                reasons=["MAX_AUTO_ORDERS_PER_DAY reached"],
+                limits_snapshot={},
+            ),
+        ), patch("app.services.market_cycle.submit_order_intent") as submit:
+            result = _submit_previewed_order_intents(
+                db,
+                [order_intent.id],
+                cycle_id=str(uuid.uuid4()),
+                cycle_started=0,
+                phase_timeout=0,
+                symbol="SPY",
+            )
+
+        submit.assert_not_called()
+        self.assertEqual(result["submitted"], 0)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["skipped_reasons"], {"max_auto_orders_per_day": 1})
 
     def test_run_market_cycle_auto_previews_scanner_created_signals_when_enabled(self) -> None:
         strategy = build_strategy()

@@ -41,6 +41,7 @@ class AutomationStatusRead(BaseModel):
     paper_mode: bool
     max_auto_orders_per_cycle: int
     max_auto_orders_per_day: int
+    max_auto_orders_per_symbol_per_day: int
     max_open_positions: int
     max_open_positions_per_symbol: int
     max_contracts_per_order: int

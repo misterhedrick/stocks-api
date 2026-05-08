@@ -49,6 +49,10 @@ def can_auto_submit_order_intent(
         else None
     )
     submitted_today = _submitted_orders_today(db)
+    submitted_today_for_symbol = _submitted_orders_today(
+        db,
+        underlying_symbol=order_intent.underlying_symbol,
+    )
     submitted_this_cycle = _submitted_orders_for_cycle(db, cycle_id=cycle_id)
     open_positions = _open_positions_count(db)
     open_positions_for_symbol = _open_positions_count(
@@ -64,6 +68,7 @@ def can_auto_submit_order_intent(
         "paper_mode": settings.alpaca_paper,
         "max_auto_orders_per_cycle": settings.max_auto_orders_per_cycle,
         "max_auto_orders_per_day": settings.max_auto_orders_per_day,
+        "max_auto_orders_per_symbol_per_day": settings.max_auto_orders_per_symbol_per_day,
         "max_open_positions": settings.max_open_positions,
         "max_open_positions_per_symbol": settings.max_open_positions_per_symbol,
         "max_contracts_per_order": settings.max_contracts_per_order,
@@ -72,6 +77,7 @@ def can_auto_submit_order_intent(
         ),
         "cycle_id": cycle_id,
         "submitted_auto_orders_today": submitted_today,
+        "submitted_auto_orders_today_for_symbol": submitted_today_for_symbol,
         "submitted_auto_orders_this_cycle": submitted_this_cycle,
         "open_positions": open_positions,
         "open_positions_for_symbol": open_positions_for_symbol,
@@ -106,6 +112,8 @@ def can_auto_submit_order_intent(
         )
     if submitted_today >= settings.max_auto_orders_per_day:
         reasons.append("MAX_AUTO_ORDERS_PER_DAY reached")
+    if submitted_today_for_symbol >= settings.max_auto_orders_per_symbol_per_day:
+        reasons.append("MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY reached")
     if submitted_this_cycle >= settings.max_auto_orders_per_cycle:
         reasons.append("MAX_AUTO_ORDERS_PER_CYCLE reached")
     if open_positions >= settings.max_open_positions:
@@ -131,7 +139,11 @@ def _has_broker_order(db: Session, order_intent: OrderIntent) -> bool:
     return _int_scalar(db, statement) > 0
 
 
-def _submitted_orders_today(db: Session) -> int:
+def _submitted_orders_today(
+    db: Session,
+    *,
+    underlying_symbol: str | None = None,
+) -> int:
     trading_tz = ZoneInfo("America/New_York")
     local_now = datetime.now(timezone.utc).astimezone(trading_tz)
     day_start = datetime.combine(local_now.date(), time.min, tzinfo=trading_tz).astimezone(timezone.utc)
@@ -142,6 +154,14 @@ def _submitted_orders_today(db: Session) -> int:
         .where(BrokerOrder.submitted_at >= day_start)
         .where(BrokerOrder.submitted_at <= day_end)
     )
+    if underlying_symbol is not None:
+        normalized = underlying_symbol.strip().upper()
+        if not normalized:
+            return 0
+        statement = (
+            statement.join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
+            .where(func.upper(OrderIntent.underlying_symbol) == normalized)
+        )
     return _int_scalar(db, statement)
 
 
