@@ -45,14 +45,16 @@ def scan_signals(
     db: Session,
     *,
     limit: int = 100,
+    symbol: str | None = None,
     market_data_client: AlpacaMarketDataClient | None = None,
 ) -> SignalScanResult:
     started_at = datetime.now(timezone.utc)
+    symbol_filter = _normalize_symbol(symbol)
     job_run = JobRun(
         job_name="scan_signals",
         status="running",
         started_at=started_at,
-        details={},
+        details={"symbol": symbol_filter} if symbol_filter else {},
     )
     db.add(job_run)
     db.flush()
@@ -76,10 +78,12 @@ def scan_signals(
 
         for strategy in strategies:
             signal_specs = _signal_specs_from_strategy(strategy)
+            signal_specs = _filter_signal_specs_for_symbol(signal_specs, symbol_filter)
             try:
                 signal_specs.extend(
                     _signal_specs_from_scanner(
                         strategy,
+                        symbol_filter=symbol_filter,
                         market_data_client=market_data_client,
                         no_signal_reasons=no_signal_reasons,
                     )
@@ -147,6 +151,7 @@ def scan_signals(
                 created_signal_ids.append(signal.id)
 
         details = {
+            "symbol": symbol_filter,
             "strategies_seen": len(strategies),
             "strategies_scanned": strategies_scanned,
             "signals_created": signals_created,
@@ -211,6 +216,7 @@ def _signal_specs_from_strategy(strategy: Strategy) -> list[dict[str, Any]]:
 def _signal_specs_from_scanner(
     strategy: Strategy,
     *,
+    symbol_filter: str | None = None,
     market_data_client: AlpacaMarketDataClient | None,
     no_signal_reasons: list[str],
 ) -> list[dict[str, Any]]:
@@ -226,10 +232,17 @@ def _signal_specs_from_scanner(
         raise ValueError("scanner.symbols must be a non-empty list")
 
     clean_symbols = []
-    for symbol in symbols:
-        if not isinstance(symbol, str) or not symbol.strip():
+    for raw_symbol in symbols:
+        if not isinstance(raw_symbol, str) or not raw_symbol.strip():
             raise ValueError("scanner.symbols must contain only non-empty strings")
-        clean_symbols.append(symbol.strip().upper())
+        clean_symbols.append(raw_symbol.strip().upper())
+    if symbol_filter is not None:
+        if symbol_filter not in clean_symbols:
+            no_signal_reasons.append(
+                f"{strategy.name}: scanner does not include symbol {symbol_filter}"
+            )
+            return []
+        clean_symbols = [symbol_filter]
 
     if scanner_type == "price_threshold":
         return _price_threshold_signal_specs(
@@ -333,6 +346,27 @@ def _signal_specs_from_scanner(
         "mean_reversion, breakout_price_threshold, volume_confirmed_breakout, "
         "volatility_squeeze, or support_resistance"
     )
+
+
+def _normalize_symbol(symbol: str | None) -> str | None:
+    if symbol is None:
+        return None
+    normalized = symbol.strip().upper()
+    return normalized or None
+
+
+def _filter_signal_specs_for_symbol(
+    signal_specs: list[dict[str, Any]],
+    symbol: str | None,
+) -> list[dict[str, Any]]:
+    if symbol is None:
+        return signal_specs
+    filtered = []
+    for signal_spec in signal_specs:
+        spec_symbol = signal_spec.get("underlying_symbol") or signal_spec.get("symbol")
+        if isinstance(spec_symbol, str) and spec_symbol.strip().upper() == symbol:
+            filtered.append(signal_spec)
+    return filtered
 
 
 def _price_threshold_signal_specs(

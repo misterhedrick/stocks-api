@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import case, func, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -47,11 +47,14 @@ class MarketCycleResult:
     timings: dict[str, float] | None = None
     phase_timeout_seconds: int | None = None
     diagnostics: dict[str, Any] | None = None
+    symbol: str | None = None
 
 
 # Stable integer key for the PostgreSQL advisory lock that prevents concurrent
 # market_cycle runs. Must be unique across all jobs; chosen arbitrarily.
 _MARKET_CYCLE_LOCK_KEY = 4_096_001
+_MARKET_ENTRY_LOCK_BASE_KEY = 4_096_100
+SUPPORTED_MARKET_ENTRY_SYMBOLS = ("SPY", "QQQ", "AAPL", "MSFT", "NVDA")
 
 
 EXPOSURE_BROKER_ORDER_STATUSES = (
@@ -64,9 +67,57 @@ EXPOSURE_BROKER_ORDER_STATUSES = (
 )
 
 
+def run_market_entry_cycle(
+    db: Session,
+    *,
+    symbol: str,
+    scan_limit: int = 100,
+    order_limit: int = 100,
+    fill_page_size: int = 100,
+    phase_timeout_seconds: int | None = None,
+) -> MarketCycleResult:
+    normalized_symbol = normalize_market_entry_symbol(symbol)
+    return run_market_cycle(
+        db,
+        symbol=normalized_symbol,
+        scan_limit=scan_limit,
+        order_limit=order_limit,
+        fill_page_size=fill_page_size,
+        reconcile_enabled_override=False,
+        news_enabled_override=False,
+        exit_enabled_override=False,
+        phase_timeout_seconds=phase_timeout_seconds,
+        job_name="market_entry_cycle",
+        event_prefix="market_entry_cycle",
+        lock_key=_market_entry_lock_key(normalized_symbol),
+    )
+
+
+def normalize_market_entry_symbol(symbol: str) -> str:
+    normalized = _normalize_symbol(symbol)
+    if normalized is None:
+        raise ValueError("symbol is required")
+    if normalized not in SUPPORTED_MARKET_ENTRY_SYMBOLS:
+        supported = ", ".join(SUPPORTED_MARKET_ENTRY_SYMBOLS)
+        raise ValueError(f"unsupported symbol {normalized!r}; supported symbols: {supported}")
+    return normalized
+
+
+def _normalize_symbol(symbol: str | None) -> str | None:
+    if symbol is None:
+        return None
+    normalized = symbol.strip().upper()
+    return normalized or None
+
+
+def _market_entry_lock_key(symbol: str) -> int:
+    return _MARKET_ENTRY_LOCK_BASE_KEY + SUPPORTED_MARKET_ENTRY_SYMBOLS.index(symbol)
+
+
 def run_market_cycle(
     db: Session,
     *,
+    symbol: str | None = None,
     scan_limit: int = 100,
     order_limit: int = 100,
     fill_page_size: int = 100,
@@ -78,24 +129,33 @@ def run_market_cycle(
     submit_enabled_override: bool | None = None,
     reconcile_before_exit: bool = False,
     phase_timeout_seconds: int | None = None,
+    job_name: str = "market_cycle",
+    event_prefix: str = "market_cycle",
+    lock_key: int = _MARKET_CYCLE_LOCK_KEY,
 ) -> MarketCycleResult:
+    symbol_filter = _normalize_symbol(symbol)
     # Non-blocking advisory lock: only one market_cycle may run at a time.
     # pg_try_advisory_xact_lock is transaction-scoped and releases on commit/rollback.
     lock_acquired = db.scalar(
-        text("SELECT pg_try_advisory_xact_lock(:key)").bindparams(key=_MARKET_CYCLE_LOCK_KEY)
+        text("SELECT pg_try_advisory_xact_lock(:key)").bindparams(key=lock_key)
     )
     if not lock_acquired:
         logger.info(
-            "market_cycle skipped: pg_try_advisory_xact_lock(%d) held by another running instance",
-            _MARKET_CYCLE_LOCK_KEY,
+            "%s skipped: pg_try_advisory_xact_lock(%d) held by another running instance",
+            event_prefix,
+            lock_key,
         )
         skipped_at = datetime.now(timezone.utc)
         job_run = JobRun(
-            job_name="market_cycle",
+            job_name=job_name,
             status="skipped",
             started_at=skipped_at,
             finished_at=skipped_at,
-            details={"reason": "already_running"},
+            details={
+                key: value
+                for key, value in {"reason": "already_running", "symbol": symbol_filter}.items()
+                if value is not None
+            },
             error=None,
         )
         db.add(job_run)
@@ -103,6 +163,7 @@ def run_market_cycle(
         db.refresh(job_run)
         return MarketCycleResult(
             job_run=job_run,
+            symbol=symbol_filter,
             scan_enabled=False,
             reconcile_enabled=False,
             preview_enabled=False,
@@ -117,17 +178,25 @@ def run_market_cycle(
             submit=None,
             timings={"total_seconds": 0.0},
             phase_timeout_seconds=None,
-            diagnostics={"status": "skipped", "reason": "already_running"},
+            diagnostics={
+                key: value
+                for key, value in {
+                    "status": "skipped",
+                    "reason": "already_running",
+                    "symbol": symbol_filter,
+                }.items()
+                if value is not None
+            },
         )
 
     started_at = datetime.now(timezone.utc)
     cycle_started = perf_counter()
     timings: dict[str, float] = {}
     job_run = JobRun(
-        job_name="market_cycle",
+        job_name=job_name,
         status="running",
         started_at=started_at,
-        details={},
+        details={"symbol": symbol_filter} if symbol_filter else {},
     )
     db.add(job_run)
     db.flush()
@@ -155,15 +224,18 @@ def run_market_cycle(
     )
 
     logger.info(
-        "market_cycle starting: scan_limit=%d order_limit=%d fill_page_size=%d phase_timeout=%ds",
+        "%s starting: symbol=%s scan_limit=%d order_limit=%d fill_page_size=%d phase_timeout=%ds",
+        event_prefix,
+        symbol_filter,
         scan_limit,
         order_limit,
         fill_page_size,
         phase_timeout,
     )
     logger.info(
-        "market_cycle config: preview_enabled=%s submit_enabled=%s global_market_cycle_submit_enabled=%s "
+        "%s config: preview_enabled=%s submit_enabled=%s global_market_cycle_submit_enabled=%s "
         "trading_automation_enabled=%s auto_submit_requires_paper=%s alpaca_paper=%s",
+        event_prefix,
         preview_enabled,
         submit_enabled,
         settings.market_cycle_submit_enabled,
@@ -186,11 +258,13 @@ def run_market_cycle(
         if scan_enabled and not _phase_budget_exceeded(cycle_started, phase_timeout):
             step_started = perf_counter()
             logger.info("market_cycle phase=scan starting (scan_limit=%d)", scan_limit)
-            scan_result = scan_signals(db, limit=scan_limit)
+            scan_kwargs = {"symbol": symbol_filter} if symbol_filter is not None else {}
+            scan_result = scan_signals(db, limit=scan_limit, **scan_kwargs)
             elapsed = _elapsed_seconds(step_started)
             timings["scan_seconds"] = elapsed
             created_signal_ids = scan_result.created_signal_ids
             scan = {
+                "symbol": symbol_filter,
                 "job_run_id": str(scan_result.job_run.id),
                 "strategies_seen": scan_result.strategies_seen,
                 "strategies_scanned": scan_result.strategies_scanned,
@@ -266,6 +340,7 @@ def run_market_cycle(
                 db,
                 created_signal_ids,
                 limit=scan_limit,
+                symbol=symbol_filter,
             )
             logger.info(
                 "market_cycle phase=preview starting: signals_for_preview=%d",
@@ -303,6 +378,7 @@ def run_market_cycle(
                     signal_ids_for_preview,
                     cycle_started=cycle_started,
                     phase_timeout=phase_timeout,
+                    symbol=symbol_filter,
                 )
             submittable_order_intent_ids.extend(_order_intent_ids_from_preview(preview))
             logger.info(
@@ -426,6 +502,7 @@ def run_market_cycle(
                 cycle_id=str(job_run.id),
                 cycle_started=cycle_started,
                 phase_timeout=phase_timeout,
+                symbol=symbol_filter,
             )
             elapsed = _elapsed_seconds(step_started)
             timings["submit_seconds"] = elapsed
@@ -545,6 +622,8 @@ def run_market_cycle(
             news=news,
             reconcile=reconcile,
         )
+        if symbol_filter is not None:
+            diagnostics["symbol"] = symbol_filter
 
         # Mark as partial when the runtime budget cut short one or more phases.
         budget_exceeded = bool(diagnostics.get("skipped_steps"))
@@ -563,6 +642,7 @@ def run_market_cycle(
             )
 
         details = {
+            "symbol": symbol_filter,
             "scan_enabled": scan_enabled,
             "reconcile_enabled": reconcile_enabled,
             "preview_enabled": preview_enabled,
@@ -596,10 +676,10 @@ def run_market_cycle(
             )
         record_audit_log(
             db,
-            event_type=f"market_cycle.{final_status}",
+            event_type=f"{event_prefix}.{final_status}",
             entity_type="job_run",
             entity_id=job_run.id,
-            message=f"Market cycle {final_status}",
+            message=f"{event_prefix.replace('_', ' ').title()} {final_status}",
             payload=details,
         )
         db.commit()
@@ -630,10 +710,10 @@ def run_market_cycle(
         )
         record_audit_log(
             db,
-            event_type="market_cycle.failed",
+            event_type=f"{event_prefix}.failed",
             entity_type="job_run",
             entity_id=job_run.id,
-            message="Market cycle failed",
+            message=f"{event_prefix.replace('_', ' ').title()} failed",
             payload={"error": job_run.error},
         )
         db.commit()
@@ -807,7 +887,9 @@ def _preview_created_signals(
     *,
     cycle_started: float,
     phase_timeout: int,
+    symbol: str | None = None,
 ) -> dict[str, Any]:
+    symbol_filter = _normalize_symbol(symbol)
     deadline = cycle_started + phase_timeout if phase_timeout > 0 else None
     previews_created = 0
     previews_skipped = 0
@@ -834,6 +916,13 @@ def _preview_created_signals(
             previews_skipped += 1
             skipped_reasons["not_found"] += 1
             errors.append(f"Signal '{signal_id}' was not found")
+            continue
+        if symbol_filter is not None and not _signal_matches_symbol(signal, symbol_filter):
+            previews_skipped += 1
+            skipped_reasons["symbol_mismatch"] += 1
+            errors.append(
+                f"Signal '{signal_id}' skipped: symbol does not match {symbol_filter}"
+            )
             continue
 
         if _signal_preview_attempts_exhausted(signal):
@@ -889,6 +978,7 @@ def _preview_created_signals(
 
     return {
         "status": "completed",
+        "symbol": symbol_filter,
         "signals_seen": len(signal_ids),
         "previews_created": previews_created,
         "previews_skipped": previews_skipped,
@@ -983,7 +1073,9 @@ def _signal_ids_for_preview(
     created_signal_ids: list[uuid.UUID],
     *,
     limit: int,
+    symbol: str | None = None,
 ) -> list[uuid.UUID]:
+    symbol_filter = _normalize_symbol(symbol)
     signal_ids = list(created_signal_ids)
     seen = set(signal_ids)
     pending_limit = max(limit - len(signal_ids), 0)
@@ -995,7 +1087,7 @@ def _signal_ids_for_preview(
         .where(OrderIntent.signal_id == Signal.id)
         .exists()
     )
-    pending_signal_ids = db.scalars(
+    pending_statement = (
         select(Signal.id)
         .where(Signal.status == "new")
         .where(Signal.preview_attempts < _options_preview_max_attempts())
@@ -1004,11 +1096,34 @@ def _signal_ids_for_preview(
         .order_by(Signal.created_at.asc())
         .limit(pending_limit)
     )
+    if symbol_filter is not None:
+        pending_statement = pending_statement.where(_signal_symbol_clause(symbol_filter))
+    pending_signal_ids = db.scalars(pending_statement)
     for signal_id in pending_signal_ids:
         if signal_id not in seen:
             signal_ids.append(signal_id)
             seen.add(signal_id)
     return signal_ids
+
+
+def _signal_symbol_clause(symbol: str):
+    return or_(
+        func.upper(Signal.symbol) == symbol,
+        func.upper(Signal.underlying_symbol) == symbol,
+    )
+
+
+def _signal_matches_symbol(signal: Signal, symbol: str) -> bool:
+    return any(
+        isinstance(value, str) and value.strip().upper() == symbol
+        for value in (signal.symbol, signal.underlying_symbol)
+    )
+
+
+def _order_intent_matches_symbol(order_intent: OrderIntent, symbol: str) -> bool:
+    return isinstance(order_intent.underlying_symbol, str) and (
+        order_intent.underlying_symbol.strip().upper() == symbol
+    )
 
 
 def _submit_previewed_order_intents(
@@ -1018,7 +1133,9 @@ def _submit_previewed_order_intents(
     cycle_id: str | None = None,
     cycle_started: float,
     phase_timeout: int,
+    symbol: str | None = None,
 ) -> dict[str, Any]:
+    symbol_filter = _normalize_symbol(symbol)
     deadline = cycle_started + phase_timeout if phase_timeout > 0 else None
     submitted = 0
     rejected = 0
@@ -1054,6 +1171,22 @@ def _submit_previewed_order_intents(
             logger.warning(
                 "market_cycle submit_candidate_skipped reason=not_found id=%s",
                 order_intent_id,
+            )
+            continue
+        if symbol_filter is not None and not _order_intent_matches_symbol(
+            order_intent,
+            symbol_filter,
+        ):
+            skipped += 1
+            skipped_reasons["symbol_mismatch"] += 1
+            errors.append(
+                f"Order intent '{order_intent_id}' skipped: symbol does not match {symbol_filter}"
+            )
+            logger.warning(
+                "market_cycle submit_candidate_skipped reason=symbol_mismatch id=%s symbol=%s underlying_symbol=%s",
+                order_intent_id,
+                symbol_filter,
+                order_intent.underlying_symbol,
             )
             continue
 
@@ -1223,6 +1356,7 @@ def _submit_previewed_order_intents(
 
     return {
         "status": "completed",
+        "symbol": symbol_filter,
         "candidates_seen": len(order_intent_ids),
         "order_intents_seen": len(order_intent_ids),
         "submitted": submitted,
@@ -1285,6 +1419,8 @@ def _skip_reason_key(reasons: list[str]) -> str:
         return "already_has_broker_order"
     if "max_auto_orders_per_day" in text:
         return "max_auto_orders_per_day"
+    if "max_auto_orders_per_symbol_per_day" in text:
+        return "max_auto_orders_per_symbol_per_day"
     if "max_auto_orders_per_cycle" in text:
         return "max_auto_orders_per_cycle"
     if "max_open_positions_per_symbol" in text:

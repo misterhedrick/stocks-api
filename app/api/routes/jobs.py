@@ -26,7 +26,11 @@ from app.schemas.jobs import (
     TradingDataResetRead,
 )
 from app.services.broker_reconciliation import reconcile_broker_state
-from app.services.market_cycle import run_market_cycle
+from app.services.market_cycle import (
+    normalize_market_entry_symbol,
+    run_market_cycle,
+    run_market_entry_cycle,
+)
 from app.services.market_maintenance import (
     patch_strategy_dte,
     run_market_maintenance,
@@ -242,6 +246,70 @@ def market_cycle_route(
             order_limit=order_limit,
             fill_page_size=fill_page_size,
             exit_enabled_override=False,
+            **cycle_kwargs,
+        )
+    except AlpacaTradingConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except AlpacaTradingError as exc:
+        raise HTTPException(
+            status_code=alpaca_error_status_code(exc),
+            detail=exc.detail,
+        ) from exc
+
+    return MarketCycleRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        scan_enabled=result.scan_enabled,
+        reconcile_enabled=result.reconcile_enabled,
+        preview_enabled=result.preview_enabled,
+        exit_enabled=result.exit_enabled,
+        news_enabled=result.news_enabled,
+        submit_enabled=result.submit_enabled,
+        scan=result.scan,
+        reconcile=result.reconcile,
+        preview=result.preview,
+        exits=result.exits,
+        news=result.news,
+        submit=result.submit,
+        timings=result.timings,
+        phase_timeout_seconds=result.phase_timeout_seconds,
+        diagnostics=result.diagnostics,
+    )
+
+
+@router.post(
+    "/market-entry-cycle",
+    response_model=MarketCycleRead,
+    status_code=status.HTTP_200_OK,
+)
+def market_entry_cycle_route(
+    db: Annotated[Session, Depends(get_db)],
+    symbol: Annotated[str, Query(min_length=1, max_length=16)],
+    scan_limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    order_limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    fill_page_size: Annotated[int, Query(ge=1, le=ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE)] = ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
+    phase_timeout_seconds: Annotated[int | None, Query(ge=0, le=600)] = None,
+) -> MarketCycleRead:
+    try:
+        normalized_symbol = normalize_market_entry_symbol(symbol)
+        cycle_kwargs = {}
+        if phase_timeout_seconds is not None:
+            cycle_kwargs["phase_timeout_seconds"] = phase_timeout_seconds
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        result = run_market_entry_cycle(
+            db,
+            symbol=normalized_symbol,
+            scan_limit=scan_limit,
+            order_limit=order_limit,
+            fill_page_size=fill_page_size,
             **cycle_kwargs,
         )
     except AlpacaTradingConfigurationError as exc:

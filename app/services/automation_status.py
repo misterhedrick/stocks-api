@@ -69,6 +69,7 @@ def get_automation_status(db: Session) -> AutomationStatusRead:
         paper_mode=settings.alpaca_paper,
         max_auto_orders_per_cycle=settings.max_auto_orders_per_cycle,
         max_auto_orders_per_day=settings.max_auto_orders_per_day,
+        max_auto_orders_per_symbol_per_day=settings.max_auto_orders_per_symbol_per_day,
         max_open_positions=settings.max_open_positions,
         max_open_positions_per_symbol=settings.max_open_positions_per_symbol,
         max_contracts_per_order=settings.max_contracts_per_order,

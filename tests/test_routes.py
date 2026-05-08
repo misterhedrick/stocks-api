@@ -508,6 +508,62 @@ class RouteBehaviorTests(unittest.TestCase):
             exit_enabled_override=False,
         )
 
+    def test_market_entry_cycle_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        result = build_market_cycle_result(symbol="SPY")
+
+        with patch(
+            "app.api.routes.jobs.run_market_entry_cycle",
+            return_value=result,
+        ) as market_entry_cycle:
+            response = client.post(
+                "/api/v1/jobs/market-entry-cycle?symbol=spy&scan_limit=25&order_limit=50&fill_page_size=75",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["diagnostics"]["symbol"], "SPY")
+        market_entry_cycle.assert_called_once_with(
+            db,
+            symbol="SPY",
+            scan_limit=25,
+            order_limit=50,
+            fill_page_size=75,
+        )
+
+    def test_market_entry_cycle_route_requires_symbol(self) -> None:
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/jobs/market-entry-cycle?scan_limit=25",
+            headers=_AUTH,
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_market_entry_cycle_route_rejects_unsupported_symbol(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/jobs/market-entry-cycle?symbol=TSLA",
+            headers=_AUTH,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unsupported symbol 'TSLA'", response.json()["detail"])
+
     def test_market_cycle_stress_route_forces_no_submit_overrides(self) -> None:
         db = FakeRouteSession()
 
@@ -799,6 +855,7 @@ class RouteBehaviorTests(unittest.TestCase):
             paper_mode=True,
             max_auto_orders_per_cycle=1,
             max_auto_orders_per_day=3,
+            max_auto_orders_per_symbol_per_day=5,
             max_open_positions=3,
             max_open_positions_per_symbol=1,
             max_contracts_per_order=1,
@@ -1051,7 +1108,7 @@ def build_signal_scan_result() -> SignalScanResult:
     )
 
 
-def build_market_cycle_result() -> MarketCycleResult:
+def build_market_cycle_result(symbol: str | None = None) -> MarketCycleResult:
     now = datetime.now(timezone.utc)
     job_run = JobRun(
         id=uuid.uuid4(),
@@ -1066,19 +1123,21 @@ def build_market_cycle_result() -> MarketCycleResult:
 
     return MarketCycleResult(
         job_run=job_run,
+        symbol=symbol,
         scan_enabled=True,
         reconcile_enabled=True,
         preview_enabled=False,
         exit_enabled=False,
         news_enabled=False,
         submit_enabled=False,
-        scan={"signals_created": 1},
+        scan={"signals_created": 1, "symbol": symbol},
         reconcile={"orders_seen": 2},
         preview={"status": "disabled"},
         exits={"status": "disabled"},
         news={"status": "disabled"},
         submit={"status": "disabled"},
         timings={"total_seconds": 1.23},
+        diagnostics={"symbol": symbol} if symbol else None,
     )
 
 

@@ -64,6 +64,7 @@ class AutomationGuardTests(unittest.TestCase):
             alpaca_paper=True,
             max_auto_orders_per_cycle=1,
             max_auto_orders_per_day=3,
+            max_auto_orders_per_symbol_per_day=5,
             max_open_positions=3,
             max_open_positions_per_symbol=1,
             max_contracts_per_order=1,
@@ -167,6 +168,17 @@ class AutomationGuardTests(unittest.TestCase):
 
         self.assertFalse(decision.allowed)
         self.assertIn("MAX_AUTO_ORDERS_PER_DAY reached", decision.reasons)
+
+    def test_blocks_when_max_daily_auto_orders_for_symbol_is_reached(self) -> None:
+        with self.allowed_settings():
+            decision = can_auto_submit_order_intent(
+                FakeAutomationGuardSession(scalar_results=[0, 5, 0, 0, 0]),
+                build_order_intent(),
+            )
+
+        self.assertFalse(decision.allowed)
+        self.assertIn("MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY reached", decision.reasons)
+        self.assertEqual(decision.limits_snapshot["submitted_auto_orders_today_for_symbol"], 5)
 
     def test_allows_when_all_gates_pass(self) -> None:
         with self.allowed_settings():
