@@ -13,7 +13,7 @@ services:
     name: stocks-api
     env: python
     region: virginia
-    plan: free
+    plan: starter
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: bash ./start.sh
