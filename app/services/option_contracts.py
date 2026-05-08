@@ -201,8 +201,11 @@ def _select_quoted_contract(
                         symbol=skipped_contract.symbol,
                         reason_code="budget_exceeded",
                         reason=f"{skipped_contract.symbol} skipped: runtime budget exceeded",
-                        details={},
-                    )
+                        details=_contract_diagnostic_fields(
+                            skipped_contract,
+                            payload=payload,
+                        ),
+                    ),
                 )
             break
         try:
@@ -216,7 +219,10 @@ def _select_quoted_contract(
                     symbol=contract.symbol,
                     reason_code="quote_unavailable",
                     reason=f"{contract.symbol} quote unavailable: {exc}",
-                    details={"error_type": exc.__class__.__name__},
+                    details={
+                        **_contract_diagnostic_fields(contract, payload=payload),
+                        "error_type": exc.__class__.__name__,
+                    },
                 )
             )
             continue
@@ -235,6 +241,7 @@ def _select_quoted_contract(
             min_open_interest=min_open_interest,
             min_quote_size=min_quote_size,
             allow_missing_oi_symbols=allow_missing_oi_symbols,
+            payload=payload,
         )
         if rejection_reason is None:
             accepted.append((index, contract, latest_quote, quote_context))
@@ -274,10 +281,9 @@ def _contract_availability_rejection(
             reason_code="not_tradable",
             reason=f"{contract.symbol} is not active/tradable",
             details={
+                **_contract_diagnostic_fields(contract),
                 "status": contract.status,
                 "tradable": contract.tradable,
-                "expiration_date": contract.expiration_date.isoformat(),
-                "strike_price": str(contract.strike_price),
             },
         )
     return None
@@ -338,6 +344,7 @@ def _quote_rejection_reason(
     min_open_interest: Decimal | None,
     min_quote_size: Decimal | None,
     allow_missing_oi_symbols: frozenset[str],
+    payload: OptionContractSelectionCreate | None = None,
 ) -> CandidateRejection | None:
     underlying = (contract.underlying_symbol or "").upper()
     allow_missing_oi = underlying in allow_missing_oi_symbols
@@ -348,7 +355,10 @@ def _quote_rejection_reason(
                 symbol=contract.symbol,
                 reason_code="missing_open_interest",
                 reason=f"{contract.symbol} missing open interest",
-                details={"min_open_interest": str(min_open_interest)},
+                details={
+                    **_contract_diagnostic_fields(contract, payload=payload),
+                    "min_open_interest": str(min_open_interest),
+                },
             )
         # Allowlisted symbol: skip missing-OI rejection; quote quality still checked below.
     elif min_open_interest is not None and contract.open_interest is not None:
@@ -361,6 +371,7 @@ def _quote_rejection_reason(
                     f"is below min {min_open_interest}"
                 ),
                 details={
+                    **_contract_diagnostic_fields(contract, payload=payload),
                     "open_interest": str(contract.open_interest),
                     "min_open_interest": str(min_open_interest),
                 },
@@ -375,7 +386,10 @@ def _quote_rejection_reason(
             symbol=contract.symbol,
             reason_code=reason_code,
             reason=f"{contract.symbol} had no usable two-sided quote",
-            details={"bid_price": str(bid_price), "ask_price": str(ask_price)},
+            details={
+                **_contract_diagnostic_fields(contract, payload=payload),
+                **_quote_diagnostic_fields(quote_context),
+            },
         )
 
     bid_size = _decimal_from_context(quote_context.get("bid_size"))
@@ -387,7 +401,12 @@ def _quote_rejection_reason(
                 symbol=contract.symbol,
                 reason_code="quote_size_too_low",
                 reason=f"{contract.symbol} quote size {side_size} is below min {min_quote_size}",
-                details={"quote_size": str(side_size), "min_quote_size": str(min_quote_size)},
+                details={
+                    **_contract_diagnostic_fields(contract, payload=payload),
+                    **_quote_diagnostic_fields(quote_context),
+                    "quote_size": str(side_size),
+                    "min_quote_size": str(min_quote_size),
+                },
             )
 
     estimated_notional = _decimal_from_context(quote_context.get("estimated_notional"))
@@ -407,6 +426,8 @@ def _quote_rejection_reason(
                 f"exceeds max {max_estimated_notional}"
             ),
             details={
+                **_contract_diagnostic_fields(contract, payload=payload),
+                **_quote_diagnostic_fields(quote_context),
                 "estimated_notional": str(estimated_notional),
                 "max_estimated_notional": str(max_estimated_notional),
             },
@@ -450,6 +471,8 @@ def _quote_rejection_reason(
                     f"abs max {max_spread} and pct max {effective_pct}"
                 ),
                 details={
+                    **_contract_diagnostic_fields(contract, payload=payload),
+                    **_quote_diagnostic_fields(quote_context),
                     "spread": str(spread),
                     "spread_pct": str(spread_pct) if spread_pct is not None else None,
                     "max_spread": str(max_spread) if max_spread is not None else None,
@@ -467,6 +490,7 @@ def _selection_failure_diagnostics(
     rejected: list[CandidateRejection],
 ) -> dict[str, Any]:
     reason_counts = Counter(item.reason_code for item in rejected)
+    diagnostic_limit = _diagnostic_candidate_limit()
     return {
         "underlying_symbol": payload.underlying_symbol,
         "option_type": payload.option_type,
@@ -484,6 +508,11 @@ def _selection_failure_diagnostics(
             }
             for item in rejected
         ],
+        "top_rejected_candidates": [
+            _candidate_diagnostic(item)
+            for item in rejected[:diagnostic_limit]
+        ],
+        "diagnostic_candidate_limit": diagnostic_limit,
         "limits": {
             "max_estimated_notional": str(payload.max_estimated_notional)
             if payload.max_estimated_notional is not None
@@ -511,6 +540,13 @@ def _log_selection_failure(diagnostics: dict[str, Any]) -> None:
         summary or "none",
         extra={"option_selection_diagnostics": diagnostics},
     )
+    top_candidates = diagnostics.get("top_rejected_candidates") or []
+    if top_candidates:
+        logger.info(
+            "Option contract selection top rejected candidates: %s",
+            top_candidates,
+            extra={"option_selection_rejected_candidates": top_candidates},
+        )
 
 
 def _quoted_contract_sort_key(
@@ -519,6 +555,10 @@ def _quoted_contract_sort_key(
     candidate_rank, contract, _, quote_context = item
     spread = _decimal_from_context(quote_context.get("spread")) or Decimal("999999")
     midpoint = _decimal_from_context(quote_context.get("midpoint")) or Decimal("0")
+    estimated_notional = (
+        _decimal_from_context(quote_context.get("estimated_notional"))
+        or Decimal("999999999")
+    )
     spread_percent = (
         (spread / midpoint) * Decimal("100") if midpoint > Decimal("0") else Decimal("999999")
     )
@@ -526,11 +566,12 @@ def _quoted_contract_sort_key(
     ask_size = _decimal_from_context(quote_context.get("ask_size")) or Decimal("0")
     open_interest = contract.open_interest or Decimal("0")
     return (
-        candidate_rank,
         spread_percent,
         spread,
+        estimated_notional,
         -(bid_size + ask_size),
         -open_interest,
+        candidate_rank,
         contract.expiration_date,
         contract.strike_price,
         contract.symbol,
@@ -550,12 +591,24 @@ def _contract_sort_key(
     else:
         dte_score = 0
 
+    open_interest = contract.open_interest
+    min_open_interest = Decimal(settings.options_min_open_interest)
+    oi_score = 0
+    if open_interest is None:
+        oi_score = 2
+    elif open_interest < min_open_interest:
+        oi_score = 1
+
+    open_interest_rank = -(open_interest or Decimal("0"))
+
     if target_strike is None:
-        return (dte_score, contract.strike_price, contract.symbol)
+        return (oi_score, dte_score, open_interest_rank, contract.strike_price, contract.symbol)
 
     return (
-        dte_score,
+        oi_score,
         abs(contract.strike_price - target_strike),
+        dte_score,
+        open_interest_rank,
         contract.strike_price,
         contract.symbol,
     )
@@ -573,6 +626,85 @@ def _selection_reason(
         "Selected the contract nearest to the target DTE with strike closest to "
         f"{target_strike}; selected {contract.strike_price}"
     )
+
+
+def _diagnostic_candidate_limit() -> int:
+    try:
+        return max(int(settings.options_diagnostic_candidate_limit), 0)
+    except (TypeError, ValueError):
+        return 5
+
+
+def _candidate_diagnostic(rejection: CandidateRejection) -> dict[str, Any]:
+    details = rejection.details or {}
+    return {
+        "signal_id": details.get("signal_id"),
+        "underlying_symbol": details.get("underlying_symbol"),
+        "strategy": details.get("strategy"),
+        "option_symbol": rejection.symbol,
+        "expiration": details.get("expiration"),
+        "strike": details.get("strike"),
+        "call_put": details.get("call_put"),
+        "bid": details.get("bid"),
+        "ask": details.get("ask"),
+        "mid": details.get("mid"),
+        "spread": details.get("spread"),
+        "spread_pct": details.get("spread_pct"),
+        "open_interest": details.get("open_interest"),
+        "volume": details.get("volume"),
+        "estimated_notional": details.get("estimated_notional"),
+        "underlying_price": details.get("underlying_price"),
+        "distance_from_underlying": details.get("distance_from_underlying"),
+        "moneyness": details.get("moneyness"),
+        "rejection_reasons": [rejection.reason_code],
+    }
+
+
+def _contract_diagnostic_fields(
+    contract: AlpacaOptionContract,
+    *,
+    payload: OptionContractSelectionCreate | None = None,
+) -> dict[str, Any]:
+    underlying_price = payload.underlying_price if payload is not None else None
+    distance = None
+    moneyness = None
+    if underlying_price is not None:
+        distance_value = contract.strike_price - underlying_price
+        distance = str(distance_value)
+        if underlying_price > Decimal("0"):
+            moneyness = str(distance_value / underlying_price)
+    return {
+        "underlying_symbol": contract.underlying_symbol,
+        "expiration": contract.expiration_date.isoformat(),
+        "strike": str(contract.strike_price),
+        "call_put": contract.type,
+        "open_interest": str(contract.open_interest) if contract.open_interest is not None else None,
+        "volume": str(getattr(contract, "volume", None))
+        if getattr(contract, "volume", None) is not None
+        else None,
+        "underlying_price": str(underlying_price) if underlying_price is not None else None,
+        "distance_from_underlying": distance,
+        "moneyness": moneyness,
+    }
+
+
+def _quote_diagnostic_fields(quote_context: dict[str, object]) -> dict[str, Any]:
+    return {
+        "bid": quote_context.get("bid_price"),
+        "ask": quote_context.get("ask_price"),
+        "mid": quote_context.get("midpoint"),
+        "spread": quote_context.get("spread"),
+        "spread_pct": _spread_pct_string(quote_context),
+        "estimated_notional": quote_context.get("estimated_notional"),
+    }
+
+
+def _spread_pct_string(quote_context: dict[str, object]) -> str | None:
+    spread = _decimal_from_context(quote_context.get("spread"))
+    midpoint = _decimal_from_context(quote_context.get("midpoint"))
+    if spread is None or midpoint is None or midpoint <= Decimal("0"):
+        return None
+    return str(spread / midpoint)
 
 
 def _contract_read(contract: AlpacaOptionContract) -> OptionContractRead:

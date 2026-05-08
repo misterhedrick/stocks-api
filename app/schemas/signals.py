@@ -17,6 +17,11 @@ class SignalCreate(BaseModel):
     market_context: dict[str, Any] = Field(default_factory=dict)
     status: str = Field(default="new", min_length=1, max_length=30)
     rejected_reason: str | None = None
+    preview_attempts: int = Field(default=0, ge=0)
+    last_previewed_at: datetime | None = None
+    last_preview_error: str | None = None
+    last_preview_error_code: str | None = None
+    preview_rejection_reasons: dict[str, Any] | None = None
 
 
 class SignalUpdate(BaseModel):
@@ -30,6 +35,11 @@ class SignalUpdate(BaseModel):
     market_context: dict[str, Any] | None = None
     status: str | None = Field(default=None, min_length=1, max_length=30)
     rejected_reason: str | None = None
+    preview_attempts: int | None = Field(default=None, ge=0)
+    last_previewed_at: datetime | None = None
+    last_preview_error: str | None = None
+    last_preview_error_code: str | None = None
+    preview_rejection_reasons: dict[str, Any] | None = None
 
 
 class SignalRead(BaseModel):
@@ -44,6 +54,11 @@ class SignalRead(BaseModel):
     market_context: dict[str, Any]
     status: str
     rejected_reason: str | None
+    preview_attempts: int
+    last_previewed_at: datetime | None
+    last_preview_error: str | None
+    last_preview_error_code: str | None
+    preview_rejection_reasons: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
 

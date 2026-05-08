@@ -25,6 +25,7 @@ Tuning guidance:
 | Env var | Default | Purpose |
 |---|---|---|
 | `OPTIONS_MAX_SPREAD_PCT` | `0.15` | Maximum relative spread as a fraction (e.g. `0.15` = 15%). |
+| `OPTIONS_MAX_CONTRACT_NOTIONAL` | `5000` | Default maximum estimated contract notional when a strategy/profile does not set a tighter value. |
 
 The absolute spread cap (`PAPER_STRATEGY_MAX_SPREAD` or the per-profile `MAX_SPREAD`) still applies. A candidate **passes** the spread check if:
 
@@ -45,6 +46,7 @@ Tuning guidance:
 
 | Env var | Default | Purpose |
 |---|---|---|
+| `OPTIONS_MIN_OPEN_INTEREST` | `25` | Default minimum open interest when a strategy/profile does not set a tighter value. |
 | `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Comma-separated list of symbols that may skip the missing open interest rejection if quote quality passes. |
 
 SPY and QQQ often have `null` open interest on the Alpaca paper data feed even when the contract is actively quoted. Allowlisting them prevents unnecessary rejections. The allowlist only bypasses the *missing* OI check — if OI is present and below `MIN_OPEN_INTEREST` the candidate is still rejected.
@@ -60,11 +62,22 @@ Single-name stocks like AAPL, MSFT, and NVDA are **not** in the allowlist by def
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `OPTIONS_MAX_CANDIDATES` | `25` | Maximum number of candidates scored per selection attempt. |
+| `OPTIONS_CANDIDATE_LIMIT` | `25` | Maximum number of candidates scored per selection attempt. `OPTIONS_MAX_CANDIDATES` is still accepted for backward compatibility. |
+| `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` | `5` | Maximum number of rejected candidate detail records attached to diagnostics/logs. |
 
-After Alpaca returns contracts, they are sorted by `(DTE distance from OPTIONS_TARGET_DTE, strike distance from target price)` and capped at `OPTIONS_MAX_CANDIDATES` before quote checks. Among candidates that pass all constraints, the one with the lowest spread percentage wins.
+After Alpaca returns contracts, they are ranked before the candidate cap. Ranking prefers contracts with usable/open-interest data first, then strikes nearest the target or underlying price, then the preferred DTE window, higher open interest, and stable symbol ordering. The selector still rejects any candidate that fails hard quote, liquidity, spread, or notional filters. Among candidates that pass all constraints, the best quote wins by lower spread percentage, lower spread, lower estimated notional, better quote size, and higher open interest.
 
-Raising `OPTIONS_MAX_CANDIDATES` increases the chance of finding a passing contract in wide markets at the cost of more Alpaca quote API calls per cycle.
+Raising `OPTIONS_CANDIDATE_LIMIT` increases the chance of finding a passing contract in wide markets at the cost of more Alpaca quote API calls per cycle.
+
+Detailed rejected-candidate diagnostics are intentionally capped. Use `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` to increase the sample only when you need a short-term investigation; keeping it low avoids giant Render logs.
+
+## Preview Attempts
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `OPTIONS_PREVIEW_MAX_ATTEMPTS` | `3` | Maximum failed market-cycle preview attempts for a signal before it is marked `preview_rejected` and skipped by future cycles. |
+
+Market-cycle preview failures now update the source signal with `preview_attempts`, `last_previewed_at`, `last_preview_error_code`, `last_preview_error`, and structured `preview_rejection_reasons` when the option selector provides reason counts. Seeing `preview_rejected` signals is expected when no contract passes quote, liquidity, spread, or notional filters after the configured number of attempts.
 
 ## Interaction with Per-Profile Settings
 
@@ -72,7 +85,7 @@ The global settings and per-profile settings work at different layers:
 
 ```
 1. Alpaca API request:  filtered by DTE window (global) + expiration_date from strategy config
-2. Candidate sort/cap:  sorted by DTE score + strike distance; capped at OPTIONS_MAX_CANDIDATES
+2. Candidate sort/cap:  ranked by OI availability, strike proximity, DTE score, and liquidity; capped at OPTIONS_CANDIDATE_LIMIT
 3. Quote check per candidate:
    a. OI check:         MIN_OPEN_INTEREST (profile) + missing-OI allowlist (global)
    b. Quote check:      bid/ask must exist and be positive
@@ -106,6 +119,16 @@ Query for recent failures:
 SELECT underlying_symbol, reason_counts, candidate_count, created_at
 FROM option_selection_diagnostics
 ORDER BY created_at DESC
+LIMIT 50;
+```
+
+Query signals retired by preview attempts:
+
+```sql
+SELECT id, symbol, preview_attempts, last_preview_error_code, preview_rejection_reasons, last_previewed_at
+FROM signals
+WHERE status = 'preview_rejected'
+ORDER BY last_previewed_at DESC
 LIMIT 50;
 ```
 

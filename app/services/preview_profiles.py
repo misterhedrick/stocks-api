@@ -55,7 +55,7 @@ def resolve_preview_profile_limits(
         max_estimated_notional=settings.preview_profile_decimal(
             profile,
             "MAX_ESTIMATED_NOTIONAL",
-            max_estimated_notional or settings.paper_strategy_max_estimated_notional,
+            max_estimated_notional or settings.options_max_contract_notional,
         ),
         max_spread=settings.preview_profile_decimal(
             profile,
@@ -70,7 +70,7 @@ def resolve_preview_profile_limits(
         min_open_interest=settings.preview_profile_int(
             profile,
             "MIN_OPEN_INTEREST",
-            _int_or_none(min_open_interest) or settings.paper_strategy_min_open_interest,
+            _int_or_none(min_open_interest) or settings.options_min_open_interest,
         ),
     )
 

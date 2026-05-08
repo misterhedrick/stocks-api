@@ -97,7 +97,9 @@ Broker reconciliation imports Alpaca orders, FILL account activities, and positi
 
 Deterministic Alpaca validation errors such as 400/422 responses are mapped as client/configuration errors instead of transient 502s. Render job retries remain enabled for transient 429/500/502/503/504 responses, but known validation-style failure bodies such as page-size-limit errors are treated as non-retryable.
 
-When option contract selection fails before an `order_intent` can be previewed, the app does not create a fake order intent. It emits structured selection-failure logs and stores an `option_selection_diagnostics` row grouped by signal, strategy, underlying symbol, scanner type, and preview profile. These diagnostics include candidate rejection reason counts such as missing/low open interest, notional cap, wide spread, missing quote, no usable two-sided quote, unavailable quote, no expiration/strike match, and not-tradable contracts.
+When option contract selection fails before an `order_intent` can be previewed, the app does not create a fake order intent. It emits structured selection-failure logs and stores an `option_selection_diagnostics` row grouped by signal, strategy, underlying symbol, scanner type, and preview profile. These diagnostics include candidate rejection reason counts such as missing/low open interest, notional cap, wide spread, missing quote, no usable two-sided quote, unavailable quote, no expiration/strike match, and not-tradable contracts. Detailed rejected-candidate samples are capped by `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` so Render logs stay readable.
+
+Market-cycle may create signals but no orders when no option contract passes quote, liquidity, spread, or notional filters. Failed auto-preview attempts are tracked on the signal. After `OPTIONS_PREVIEW_MAX_ATTEMPTS` failures, the signal is marked `preview_rejected` and skipped by future preview cycles; this is expected behavior and preserves duplicate signal suppression without retrying the same impossible signal forever.
 
 ## Current Render cron topology
 
@@ -410,14 +412,14 @@ Not implemented yet:
 Current high-priority next steps:
 
 1. Paper-test the full evaluator-backed strategy set and tune scanner thresholds / preview-profile limits by strategy type.
-2. Improve option contract selection with better liquidity/moneyness/delta-style scoring.
+2. Continue improving option contract selection with Greeks/delta-style scoring as broker data allows.
 3. Compare `option_selection_diagnostics` with `trade_cases` so AI review can learn from rejected previews as well as closed round trips.
 4. Add real DB integration tests or a local Docker Compose/Postgres helper.
 5. Build AI trade review service using persisted `trade_cases`.
 
 Known limitations:
 
-- Option contract selection is still first-pass and can reject many candidates due open interest, notional, spread, or quote quality.
+- Option contract selection can reject many candidates due open interest, notional, spread, or quote quality. Repeated failed previews retire to `preview_rejected` after `OPTIONS_PREVIEW_MAX_ATTEMPTS`.
 - Render only needs explicit evaluator env vars when overriding defaults; `render.yaml` lists them so deployed behavior is visible.
 - News scanning is lightweight RSS/headline gating only.
 - Statuses are plain strings, not a formal enum/state machine.
