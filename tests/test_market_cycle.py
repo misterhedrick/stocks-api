@@ -10,6 +10,7 @@ from app.db.models import AuditLog, BrokerOrder, JobRun, OrderIntent, Signal, St
 from app.services.automation_guard import AutomationDecision
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import run_market_cycle
+from app.services.option_contracts import OptionContractNotFoundError
 from app.services.news_scanner import NewsScanResult
 from app.services.position_exits import ExitEvaluationResult
 from app.services.signal_scanner import SignalScanResult
@@ -237,6 +238,7 @@ def build_signal(strategy: Strategy) -> Signal:
         rationale="Scanner signal",
         market_context={"price": "500.50"},
         status="new",
+        preview_attempts=0,
         created_at=now,
         updated_at=now,
     )
@@ -395,6 +397,99 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result.preview["previews_created"], 1)
         self.assertEqual(result.preview["order_intent_ids"], [str(order_intent.id)])
         preview.assert_called_once()
+
+    def test_failed_preview_updates_signal_lifecycle_fields(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals
+
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+        failure = OptionContractNotFoundError(
+            "No option contract matched quote constraints for SPY: low_open_interest×2",
+            diagnostics={"reason_counts": {"low_open_interest": 2}},
+        )
+
+        with patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            side_effect=failure,
+        ):
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=_pc(),
+                phase_timeout=70,
+            )
+
+        self.assertEqual(result["previews_created"], 0)
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(signal.preview_attempts, 1)
+        self.assertIsNotNone(signal.last_previewed_at)
+        self.assertEqual(signal.last_preview_error_code, "OptionContractNotFoundError")
+        self.assertEqual(signal.preview_rejection_reasons, {"low_open_interest": 2})
+        self.assertEqual(signal.status, "new")
+        self.assertEqual(db.commit_count, 1)
+
+    def test_failed_preview_at_max_attempts_marks_preview_rejected(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals
+
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        signal.preview_attempts = 2
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch(
+            "app.services.market_cycle.settings.options_preview_max_attempts",
+            3,
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+            side_effect=OptionContractNotFoundError(
+                "No option contract matched quote constraints for SPY",
+                diagnostics={"reason_counts": {"estimated_notional_above_max": 1}},
+            ),
+        ):
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=_pc(),
+                phase_timeout=70,
+            )
+
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(signal.preview_attempts, 3)
+        self.assertEqual(signal.status, "preview_rejected")
+        self.assertIn("OptionContractNotFoundError", signal.rejected_reason)
+
+    def test_signals_at_max_preview_attempts_are_skipped(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals
+
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        signal.preview_attempts = 3
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch(
+            "app.services.market_cycle.settings.options_preview_max_attempts",
+            3,
+        ), patch(
+            "app.services.market_cycle.preview_order_intent_from_signal",
+        ) as preview:
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=_pc(),
+                phase_timeout=70,
+            )
+
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(result["skipped_reasons"]["max_preview_attempts"], 1)
+        self.assertEqual(signal.status, "preview_rejected")
+        preview.assert_not_called()
 
     def test_run_market_cycle_skips_auto_preview_without_strategy_preview_config(self) -> None:
         strategy = build_strategy()

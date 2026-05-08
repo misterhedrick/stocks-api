@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -21,6 +22,8 @@ from app.schemas.options import OptionContractSelectionRead
 from app.services.audit_logs import record_audit_log
 from app.services.option_contracts import select_option_contract
 from app.services.option_contracts import OptionContractNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class OrderIntentNotFoundError(LookupError):
@@ -213,6 +216,27 @@ def _record_option_selection_diagnostic(
         }
     summary["scanner_type"] = scanner_type
     summary["preview_profile"] = selection_payload.preview_profile
+    top_candidates = summary.get("top_rejected_candidates")
+    if isinstance(top_candidates, list):
+        enriched_candidates = [
+            _enrich_candidate_diagnostic(
+                candidate,
+                signal=signal,
+                strategy=strategy,
+                scanner_type=scanner_type,
+                underlying_symbol=selection_payload.underlying_symbol,
+            )
+            for candidate in top_candidates
+            if isinstance(candidate, dict)
+        ]
+        summary["top_rejected_candidates"] = enriched_candidates
+        if enriched_candidates:
+            logger.info(
+                "Option contract selection rejected candidates for signal %s: %s",
+                signal.id,
+                enriched_candidates,
+                extra={"option_selection_rejected_candidates": enriched_candidates},
+            )
 
     diagnostic = OptionSelectionDiagnostic(
         signal_id=signal.id,
@@ -236,6 +260,25 @@ def _record_option_selection_diagnostic(
         payload=summary,
     )
     db.commit()
+
+
+def _enrich_candidate_diagnostic(
+    candidate: dict[str, object],
+    *,
+    signal: Signal,
+    strategy: Strategy | None,
+    scanner_type: str | None,
+    underlying_symbol: str,
+) -> dict[str, object]:
+    enriched = dict(candidate)
+    enriched["signal_id"] = str(signal.id)
+    enriched["underlying_symbol"] = underlying_symbol
+    enriched["strategy"] = (
+        {"id": str(strategy.id), "name": strategy.name, "scanner_type": scanner_type}
+        if strategy is not None
+        else None
+    )
+    return enriched
 
 
 def submit_order_intent(

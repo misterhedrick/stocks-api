@@ -72,6 +72,11 @@ class Signal(TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(String(30), default="new", server_default="new", nullable=False)
     rejected_reason: Mapped[str | None] = mapped_column(Text)
+    preview_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    last_previewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_preview_error: Mapped[str | None] = mapped_column(Text)
+    last_preview_error_code: Mapped[str | None] = mapped_column(String(120))
+    preview_rejection_reasons: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     strategy: Mapped[Strategy | None] = relationship(back_populates="signals")
     order_intents: Mapped[list["OrderIntent"]] = relationship(back_populates="signal")
