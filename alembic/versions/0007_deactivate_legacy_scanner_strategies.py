@@ -22,10 +22,8 @@ LEGACY_SCANNER_TYPES = (
 
 
 def upgrade() -> None:
-    print("MIGRATION_0007_MARKER: no-op checkpoint reached", flush=True)
     pass
 
 
 def downgrade() -> None:
-    print("MIGRATION_0007_MARKER: downgrade no-op reached", flush=True)
     pass
