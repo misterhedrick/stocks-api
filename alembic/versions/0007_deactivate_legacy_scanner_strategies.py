@@ -22,12 +22,10 @@ LEGACY_SCANNER_TYPES = (
 
 
 def upgrade() -> None:
-    # Keep this revision as an Alembic checkpoint only. The previous data update
-    # was not required for the schema and can fail on databases with older table
-    # layouts.
+    print("MIGRATION_0007_MARKER: no-op checkpoint reached", flush=True)
     pass
 
 
 def downgrade() -> None:
-    # Do not change strategy rows automatically on downgrade.
+    print("MIGRATION_0007_MARKER: downgrade no-op reached", flush=True)
     pass
