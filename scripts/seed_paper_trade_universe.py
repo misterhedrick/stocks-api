@@ -29,7 +29,6 @@ from app.services.strategy_templates import (
     build_moving_average_strategy_payload,
     build_rsi_reversal_strategy_payload,
     build_support_resistance_strategy_payload,
-    build_trend_confirmation_strategy_payload,
     build_volatility_squeeze_strategy_payload,
     build_volume_confirmed_breakout_strategy_payload,
 )
@@ -171,18 +170,6 @@ def _strategy_payloads(
                     target_strike=target_strike,
                     option_type="put",
                     trigger="bearish_trend",
-                ),
-                build_trend_confirmation_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_trend_confirmation_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
                 ),
                 build_momentum_rate_of_change_strategy_payload(
                     symbol=symbol,
