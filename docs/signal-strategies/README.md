@@ -11,7 +11,7 @@ The current app mostly maps bullish signals to long calls and bearish signals to
 
 ## Current app status
 
-The evaluator-backed scanner path is implemented for:
+The scanner path is evaluator-backed for:
 
 ```text
 momentum_rate_of_change
@@ -25,7 +25,7 @@ volatility_squeeze
 support_resistance
 ```
 
-Legacy direct scanner paths still exist for `price_threshold`, `percent_change`, and `trend_confirmation`.
+Legacy direct scanner paths for `price_threshold`, `percent_change`, and `trend_confirmation` have been removed from active strategy seeding and should not be used for new strategy configs.
 
 ## Folder Layout
 
