@@ -427,6 +427,10 @@ def _performance_summary(result: object) -> dict[str, Any]:
         "by_strategy": result.by_strategy[:20],
         "by_symbol": result.by_symbol[:20],
         "open_positions": result.open_positions,
+        "signal_summary": result.signal_summary,
+        "no_signal_summary": result.no_signal_summary,
+        "option_selection_diagnostics": result.option_selection_diagnostics,
+        "rejected_preview_outcomes": result.rejected_preview_outcomes[:20],
     }
 
 

@@ -103,6 +103,8 @@ Market-cycle may create signals but no orders when no option contract passes quo
 
 `OPTIONS_CANDIDATE_LIMIT` controls how many option contracts are requested and quote-checked before giving up. Increasing it can improve contract discovery but increases preview runtime, so this is the first tuning step before loosening open-interest, spread, or notional safety filters. `OPTIONS_CANDIDATE_LIMIT` is already `100`. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only caps the number of rejected candidate samples stored/logged for debugging; the current recommended value is `10`.
 
+The `/api/v1/automation/performance` and learning report outputs include paper-trade summaries plus signal and rejection context for tuning. They report signal volume by status, scanner type, and symbol; aggregate no-signal reasons and option-selection diagnostic rejection reasons; and compare `preview_rejected` signals with later same-symbol/same-scanner paper round trips. This is for review and tuning only; it does not change strategy logic automatically.
+
 ## Current Render cron topology
 
 Render cron schedules are UTC and are not DST-aware.

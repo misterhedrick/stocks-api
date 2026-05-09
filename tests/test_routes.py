@@ -963,6 +963,16 @@ class RouteBehaviorTests(unittest.TestCase):
                     "exit_at": now.isoformat(),
                 }
             ],
+            signal_summary={"signals_seen": 3},
+            no_signal_summary={"reasons_seen": 2},
+            option_selection_diagnostics={"diagnostics_seen": 1},
+            rejected_preview_outcomes=[
+                {
+                    "scanner_type": "moving_average",
+                    "symbol": "SPY",
+                    "rejected_signals": 1,
+                }
+            ],
         )
 
         with patch(
@@ -977,6 +987,16 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["fills_seen"], 2)
         self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
+        self.assertEqual(response.json()["signal_summary"]["signals_seen"], 3)
+        self.assertEqual(response.json()["no_signal_summary"]["reasons_seen"], 2)
+        self.assertEqual(
+            response.json()["option_selection_diagnostics"]["diagnostics_seen"],
+            1,
+        )
+        self.assertEqual(
+            response.json()["rejected_preview_outcomes"][0]["scanner_type"],
+            "moving_average",
+        )
         performance.assert_called_once_with(db, limit=25)
 
     def test_trade_lifecycle_route_returns_service_result(self) -> None:
