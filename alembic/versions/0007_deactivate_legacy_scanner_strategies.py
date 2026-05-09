@@ -1,6 +1,6 @@
 """Deactivate legacy direct scanner strategies.
 
-Revision ID: 0007_deactivate_legacy_scanner_strategies
+Revision ID: 0007_legacy_scanner_noop
 Revises: 0006_signal_preview_lifecycle
 Create Date: 2026-05-08
 """
@@ -8,7 +8,7 @@ Create Date: 2026-05-08
 from collections.abc import Sequence
 
 
-revision: str = "0007_deactivate_legacy_scanner_strategies"
+revision: str = "0007_legacy_scanner_noop"
 down_revision: str | Sequence[str] | None = "0006_signal_preview_lifecycle"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
