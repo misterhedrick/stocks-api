@@ -113,35 +113,10 @@ Automation risk caps:
 - MAX_CONTRACTS_PER_ORDER caps order quantity.
 - MAX_ESTIMATED_PREMIUM_PER_ORDER caps estimated premium per order.
 
-Render cron runner env:
-- JOB_PATH selects the protected API job endpoint.
-- JOB_TIMEOUT_SECONDS controls request timeout.
-- JOB_RETRY_DELAYS_SECONDS controls retry backoff.
-- JOB_SKIP_HTTP_STATUS_CODES lists non-fatal HTTP statuses, currently useful for 429 rate limits.
-- Deterministic validation failures are non-retryable. Alpaca FILL page-size errors and other 400/422-style validation problems should not be treated as transient 502s.
-
 === CURRENT DATABASE / STRATEGY STATE ===
 
-Existing production DB strategies were patched with preview profiles by GitHub Actions.
-
-Patch workflow:
-- .github/workflows/update-strategy-preview-profiles.yml
-- Secret required: DATABASE_URL = Render External Database URL.
-- Script:
-  python scripts/update_strategy_preview_profiles.py --dry-run
-  python scripts/update_strategy_preview_profiles.py
-
-Patch result confirmed:
-- Committed. updated=43 skipped=0
-
-Existing active strategies now have:
-- scanner.preview.preview_profile set from scanner type where patched or seeded.
-
-Current strategy type / preview profile names:
-- price_threshold
-- percent_change
+Current active strategy type / preview profile names should be evaluator-backed only after migrations and reseeding:
 - moving_average
-- trend_confirmation
 - momentum_rate_of_change
 - rsi_reversal
 - macd_crossover
@@ -151,6 +126,22 @@ Current strategy type / preview profile names:
 - volatility_squeeze
 - support_resistance
 
+Legacy scanner types:
+- price_threshold
+- percent_change
+- trend_confirmation
+
+Legacy cleanup status on develop:
+- scripts/seed_paper_trade_universe.py no longer seeds trend_confirmation.
+- app/services/strategy_templates.py no longer creates price_threshold, percent_change, or trend_confirmation templates.
+- docs/signal-strategies/README.md documents evaluator-backed strategy types only.
+- alembic/versions/0004_deactivate_legacy_scanner_strategies.py deactivates existing DB strategies whose config.scanner.type is price_threshold, percent_change, or trend_confirmation.
+- app/services/signal_scanner.py still physically contains the old direct legacy branches until it is patched locally or through a safe full-file GitHub update.
+
+Important migration note:
+- GitHub develop currently has 0004_deactivate_legacy_scanner_strategies.py after 0003_add_ai_review_tables.
+- If a local checkout has another 0004 migration, rename the legacy cleanup migration to the next available revision and set down_revision to the actual Alembic head before deploying.
+
 Preview profile env pattern:
 - PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>
 
@@ -158,11 +149,10 @@ Examples:
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
-- PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_ESTIMATED_NOTIONAL=3500
 - PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 - PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 
-The runtime contract selector can now use profile-specific env limits when preview_profile is supplied.
+The runtime contract selector can use profile-specific env limits when preview_profile is supplied.
 
 === CURRENT SYMBOL UNIVERSE ===
 
@@ -172,9 +162,8 @@ SPY, QQQ, NVDA, AAPL, MSFT
 
 The GitHub Actions seed workflow defaults to the same five-symbol universe and accepts a comma-separated symbol override.
 
-The script seeds call/put variants per symbol for:
+The script now seeds call/put variants per symbol for:
 - moving_average
-- trend_confirmation
 - momentum_rate_of_change
 - rsi_reversal
 - macd_crossover
@@ -184,9 +173,10 @@ The script seeds call/put variants per symbol for:
 - volatility_squeeze
 - support_resistance
 
-Each seeded strategy tags scanner.preview.preview_profile from scanner type.
+Default seeded set after cleanup:
+- 5 symbols x 9 scanner types x call/put = 90 strategies.
 
-Current paper data-gathering profile for the active 100 strategies:
+Current paper data-gathering profile:
 - strictness_level=0.50
 - max_estimated_notional=5000
 - max_notional_per_order=5000
@@ -230,14 +220,6 @@ Each strategy now has its own folder:
 - volatility-squeeze/
 - shared/
 
-Each strategy folder has:
-- description.md
-- deep-dive.md
-- tuning.md
-- implementation-note.md where an implementation note exists.
-
-The tuning docs are human-readable and AI-friendly. They include evidence to inspect, scanner knobs, preview/risk knobs, human tuning rules, and an AI adjustment contract for small reviewed config changes.
-
 3. Signal evaluation foundation and scanner routing
 
 Implemented on develop:
@@ -256,20 +238,6 @@ Implemented on develop:
 - app/services/signals/evaluators/volatility_squeeze.py
 - app/services/signals/evaluators/support_resistance.py
 - app/services/signals/evaluators/registry.py
-
-Tests added:
-- tests/services/signals/__init__.py
-- tests/services/signals/test_indicators.py
-- tests/services/signals/test_momentum_evaluator.py
-- tests/services/signals/test_moving_average_evaluator.py
-- tests/services/signals/test_rsi_evaluator.py
-- tests/services/signals/test_macd_evaluator.py
-- tests/services/signals/test_mean_reversion_evaluator.py
-- tests/services/signals/test_breakout_evaluator.py
-- tests/services/signals/test_volume_breakout_evaluator.py
-- tests/services/signals/test_volatility_squeeze_evaluator.py
-- tests/services/signals/test_support_resistance_evaluator.py
-- tests/services/signals/test_signal_scanner_evaluator.py
 
 Implemented indicator helpers:
 - SMA
@@ -291,7 +259,7 @@ Implemented evaluators:
 - VolatilitySqueezeEvaluator
 - SupportResistanceEvaluator
 
-Live scanner routing is implemented for:
+Evaluator-backed scanner routing is implemented for:
 - momentum_rate_of_change
 - moving_average
 - rsi_reversal
@@ -302,29 +270,17 @@ Live scanner routing is implemented for:
 - volatility_squeeze
 - support_resistance
 
-Legacy direct scanner paths still exist for:
+=== CURRENT RECOMMENDED NEXT TASK ===
+
+Next code task:
+Patch app/services/signal_scanner.py to physically remove the direct legacy scanner branches and helper functions for:
 - price_threshold
 - percent_change
 - trend_confirmation
 
-=== CURRENT RECOMMENDED NEXT TASK ===
+Because this file is long, avoid overwriting it from truncated connector output. Patch it locally or through a safe full-file/diff workflow.
 
-Next code task:
-Paper-test and tune the full evaluator-backed strategy set now that registry, scanner routing, strategy templates, seed script entries, and scanner tests exist.
-
-Current evaluator feature flags:
-- SIGNAL_EVALUATORS_ENABLED
-- MOMENTUM_EVALUATOR_ENABLED
-- MOVING_AVERAGE_EVALUATOR_ENABLED
-- RSI_EVALUATOR_ENABLED
-- MACD_EVALUATOR_ENABLED
-- MEAN_REVERSION_EVALUATOR_ENABLED
-- BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED
-- VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED
-- VOLATILITY_SQUEEZE_EVALUATOR_ENABLED
-- SUPPORT_RESISTANCE_EVALUATOR_ENABLED
-
-Recommended next steps:
+After scanner cleanup:
 1. Run controlled paper tests on the five-symbol seeded universe.
 2. Compare signal volume and no-signal reasons by scanner type.
 3. Tune scanner thresholds and PAPER_PREVIEW_PROFILE_<PROFILE>_* settings.
@@ -332,29 +288,12 @@ Recommended next steps:
 
 Do NOT let AI or automation directly rewrite strategy logic. AI can recommend changes only.
 
-=== STRATEGY IMPLEMENTATION ORDER ===
-
-Current implementation status:
-1. Shared indicator/evaluator foundation. DONE on develop.
-2. Momentum / rate-of-change evaluator and scanner routing. DONE.
-3. Moving average evaluator refactor and scanner routing. DONE.
-4. RSI reversal evaluator and scanner routing. DONE.
-5. MACD crossover evaluator and scanner routing. DONE.
-6. Mean reversion evaluator and scanner routing. DONE.
-7. Breakout / price-threshold evaluator and scanner routing. DONE.
-8. Volume-confirmed breakout evaluator and scanner routing. DONE.
-9. Volatility squeeze evaluator and scanner routing. DONE.
-10. Support/resistance evaluator and scanner routing. DONE.
-
 === AI REVIEW LAYER STATE ===
 
 Migration 0003 added:
 - trade_cases
 - ai_trade_reviews
 - strategy_change_suggestions
-
-Migration 0004 added:
-- Enables scanner.submit.enabled on existing strategy configs that were previously false.
 
 Implemented:
 - app/services/trade_cases.py
@@ -372,6 +311,7 @@ Rule:
 
 === CURRENT KNOWN GAPS ===
 
+- app/services/signal_scanner.py still needs physical legacy branch cleanup.
 - Full evaluator-backed strategy set needs paper-volume tuning and production observation.
 - Option contract selection is first-pass and lacks robust delta/Greeks/moneyness/liquidity scoring.
 - Broker reconciliation paginates Alpaca FILL account activities with page_token and caps fill_page_size at Alpaca's max of 100.
@@ -390,6 +330,10 @@ Run tests:
 Run all tests:
 
     python -m pytest
+
+Check Alembic heads:
+
+    alembic heads
 
 Manual market-cycle entry job:
 
