@@ -101,7 +101,7 @@ When option contract selection fails before an `order_intent` can be previewed, 
 
 Market-cycle may create signals but no orders when no option contract passes quote, liquidity, spread, or notional filters. Failed auto-preview attempts are tracked on the signal. After `OPTIONS_PREVIEW_MAX_ATTEMPTS` failures, the signal is marked `preview_rejected` and skipped by future preview cycles; this is expected behavior and preserves duplicate signal suppression without retrying the same impossible signal forever.
 
-`OPTIONS_CANDIDATE_LIMIT` controls how many option contracts are requested and quote-checked before giving up. Increasing it can improve contract discovery but increases preview runtime, so this is the first tuning step before loosening open-interest, spread, or notional safety filters. The current recommended value is `100`. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only caps the number of rejected candidate samples stored/logged for debugging; the current recommended value is `10`.
+`OPTIONS_CANDIDATE_LIMIT` controls how many option contracts are requested and quote-checked before giving up. Increasing it can improve contract discovery but increases preview runtime, so this is the first tuning step before loosening open-interest, spread, or notional safety filters. `OPTIONS_CANDIDATE_LIMIT` is already `100`. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only caps the number of rejected candidate samples stored/logged for debugging; the current recommended value is `10`.
 
 ## Current Render cron topology
 
@@ -109,56 +109,21 @@ Render cron schedules are UTC and are not DST-aware.
 
 | Service | Purpose | Endpoint | Schedule |
 |---|---|---|---|
-| `stocks-api-market-cycle` | Entry cycle: scan -> reconcile/news/preview/submit | `POST /api/v1/jobs/market-cycle?scan_limit=25&order_limit=25&fill_page_size=50` | `*/10 14-19 * * 1-5` |
-| `stocks-api-market-entry-spy` | SPY-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=25&order_limit=25&fill_page_size=50` | `0-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-qqq` | QQQ-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=25&order_limit=25&fill_page_size=50` | `1-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=25&order_limit=25&fill_page_size=50` | `2-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=25&order_limit=25&fill_page_size=50` | `3-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=25&order_limit=25&fill_page_size=50` | `4-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-spy` | SPY-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100` | `0-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-qqq` | QQQ-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100` | `1-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100` | `2-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100` | `3-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100` | `4-59/5 14-19 * * 1-5` |
 | `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 
-- Combined entry cycle (`market-cycle`) runs **every 10 minutes** from **10:00am through 3:50pm Eastern**.
-- Symbol entry cycles (`market-entry-cycle`) run each target symbol every 5 minutes, staggered by minute. These split entry work by ticker while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
+- Symbol entry cycles (`market-entry-cycle`) run each target symbol every 5 minutes, staggered by minute. Scheduled entries now come from these five symbol-specific cron jobs while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
 - Exit cycle (`market-exits`) runs every minute from about **9:00am through 4:59pm Eastern**.
 - Maintenance runs pre-market (8:30am ET) and post-market (5:30pm EDT / 4:30pm EST).
 
-Entry splitting is meant to keep expanded option candidate searches from making one large combined job slow. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional. Once the symbol-specific entry jobs are deployed and producing healthy logs, disable the old combined `stocks-api-market-cycle` cron if you want entries to come only from the split jobs.
-
-### market-cycle schedule: always 10 minutes
-
-**Do not shorten `market-cycle` below 10 minutes.** The full scan → preview → reconcile → submit cycle can take 60–120+ seconds under normal load. Shorter intervals cause overlapping cron invocations, which compounds timeout pressure and can produce Render 502/504 errors.
-
-The `market-cycle` endpoint is protected by a PostgreSQL advisory lock (`pg_try_advisory_xact_lock`). If one invocation is already running, the next one returns immediately with `status: skipped, reason: already_running`. However, frequent overlapping invocations still waste cron capacity and load the free-tier web service.
-
-Only reduce the interval after timing logs (`timings` field in the response) confirm that the cycle consistently completes well inside the interval. Example: if `total_seconds` is routinely under 40s, a 5-minute schedule might be safe. If `total_seconds` is over 60s, keep it at 10 minutes.
-
-**Temporary safety limits** (lower scan/order limits reduce per-run work while the system is being tuned):
-
-```
-scan_limit=25
-order_limit=25
-fill_page_size=50
-```
-
-Restore to `scan_limit=100&order_limit=100&fill_page_size=100` only after timing confirms safe headroom.
-
-**Do not confuse `market-cycle` with `market-exits`:**
-
-- `market-cycle`: entry scans, previews, and submits. Runs every **10 minutes**. Has the advisory lock.
-- `market-exits`: exit evaluations only. Runs every **1 minute**. Time-sensitive; shorter interval is intentional.
-
-**Runtime budget:** `MARKET_CYCLE_PHASE_TIMEOUT_SECONDS=120` (env var on the web service). The cycle aborts gracefully after this many seconds and returns `status: partial`. Completed phases are preserved. Increase this setting only if timing logs show consistently slow but necessary work.
-
-**Runner retries:** `JOB_RETRY_DELAYS_SECONDS` is intentionally empty for `market-cycle`. Render will invoke the job again in 10 minutes anyway; retrying a timed-out cycle just piles on more overlapping load.
-
-When Eastern time switches back to EST, the entry cron should be reviewed. The equivalent 10:00am through 3:50pm EST schedule is:
-
-```yaml
-schedule: "*/10 15-20 * * 1-5"
-```
+Entry splitting is meant to keep expanded option candidate searches from making one large combined job slow. The five symbol-specific entry cron jobs should use `scan_limit=100`, `order_limit=100`, and `fill_page_size=100` to match the current option candidate budget. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional. The old combined `market-cycle` endpoint may still exist for manual/admin diagnostics, but `stocks-api-market-cycle` is no longer scheduled as a Render cron.
 
 ## Emergency stops
 
@@ -438,7 +403,7 @@ Known limitations:
 ## Useful manual job calls
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100" \
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100" \
   -H "Authorization: Bearer change-me"
 ```
 

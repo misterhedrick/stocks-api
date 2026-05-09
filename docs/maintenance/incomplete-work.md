@@ -2,9 +2,9 @@
 
 This file captures work that is known to be incomplete or intentionally deferred so it is not lost between sessions.
 
-## Not yet applied: per-symbol entry cron limit increase
+## Completed: per-symbol entry cron limit increase
 
-The intended change is to update the five symbol-specific `market-entry-cycle` cron paths in `render.yaml` from:
+The five symbol-specific `market-entry-cycle` cron paths in `render.yaml` have been updated from:
 
 ```text
 scan_limit=25&order_limit=25&fill_page_size=50
@@ -24,9 +24,11 @@ Symbols affected:
 - MSFT
 - NVDA
 
-`OPTIONS_CANDIDATE_LIMIT` is already set to `100`, but the symbol-specific cron `JOB_PATH` values still cap each run at 25 scans/orders and fill page size 50 until `render.yaml` is changed.
+`OPTIONS_CANDIDATE_LIMIT` is already set to `100`, and the symbol-specific cron `JOB_PATH` values now use matching scan, order, and fill page-size limits.
 
-Do not change the old combined `stocks-api-market-cycle` fallback job unless intentionally re-enabling it at full size.
+## Completed: legacy combined market-cycle cron removal
+
+The old combined `stocks-api-market-cycle` entry cron has been removed from `render.yaml`. Scheduled entries now come from the five symbol-specific `market-entry-cycle` cron jobs.
 
 ## Incomplete AI review layer
 
@@ -60,7 +62,7 @@ The file is large, so use a safe local patch/diff workflow rather than replacing
 
 ## Paper testing and tuning still pending
 
-After legacy scanner cleanup and cron-limit review:
+After legacy scanner cleanup:
 
 - Paper-test the full evaluator-backed strategy set.
 - Compare signal volume by scanner type.
@@ -92,4 +94,3 @@ Not implemented yet:
 - News scanning is lightweight RSS/headline gating only.
 - Render cron schedules are UTC-only and must be reviewed around DST changes.
 - Symbol-specific entry crons may increase monthly Render cost because each cron service can count separately.
-- The old combined `stocks-api-market-cycle` entry cron should be disabled in Render once symbol-specific entry crons are confirmed healthy, if entries should come only from split jobs.

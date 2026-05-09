@@ -206,54 +206,9 @@ services:
         value: 15
       - key: SCHEDULED_JOBS_ENABLED
         value: true
-  # Entry market-cycle cron: scan/reconcile/preview/submit every 10 minutes.
-  # IMPORTANT: Do NOT shorten below 10 minutes. The full scan+preview+submit cycle
-  # can take 60-120+ seconds. Shorter intervals cause overlapping runs which
-  # compound timeout pressure and degrade performance. The advisory lock inside
-  # market-cycle will return "skipped" for any concurrent invocation, but frequent
-  # invocations still waste cron resources and can worsen Render 502/504 pressure.
-  # Only reduce the interval after timing logs prove safe completion with buffer.
-  # 14-19 UTC covers 10am-3:55pm EDT (UTC-4) and 9am-2:55pm EST (UTC-5).
-  # strategy scanner.submit.trade_windows (10:00-16:00 ET) blocks submissions
-  # outside the target window in both seasons, so the extra cron coverage is safe.
-  # DST caveat: during EST, 9am ET is one hour early but trade_windows blocks entry.
-  # During EDT, this schedule matches the current 10am-3:55pm ET entry window.
-  - type: cron
-    name: stocks-api-market-cycle
-    env: python
-    region: virginia
-    plan: starter
-    branch: master
-    buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/run_render_job.py
-    # Every 10 minutes during market hours. Do NOT change to */2 or */5 — see comment above.
-    schedule: "*/10 14-19 * * 1-5"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.13
-      - key: SCHEDULED_JOBS_ENABLED
-        value: true
-      - key: STOCKS_API_BASE_URL
-        value: https://stocks-api-z11i.onrender.com
-      # Temporarily reduced limits to lower per-invocation runtime pressure.
-      # Restore to scan_limit=100&order_limit=100&fill_page_size=100 only after
-      # timing logs confirm the cycle completes comfortably within 90 seconds.
-      - key: JOB_PATH
-        value: /api/v1/jobs/market-cycle?scan_limit=25&order_limit=25&fill_page_size=50
-      - key: JOB_TIMEOUT_SECONDS
-        value: 120
-      # No retries for market-cycle: Render will invoke it again in 10 minutes anyway.
-      # Retrying a timed-out market-cycle just adds more overlapping load.
-      - key: JOB_RETRY_DELAYS_SECONDS
-        value: ""
-      - key: JOB_SKIP_HTTP_STATUS_CODES
-        value: 429
-      - key: ADMIN_API_TOKEN
-        sync: false
   # Symbol-specific entry crons use the same API and safety guards while keeping
-  # option candidate searches smaller per invocation. Disable stocks-api-market-cycle
-  # in Render after these have deployed cleanly if you want entries to come only
-  # from the split jobs; keep exits and maintenance global.
+  # option candidate searches smaller per invocation. Scheduled entries come
+  # from these split jobs; exits and maintenance stay global.
   - type: cron
     name: stocks-api-market-entry-spy
     env: python
@@ -271,7 +226,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -297,7 +252,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -323,7 +278,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -349,7 +304,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -375,7 +330,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
