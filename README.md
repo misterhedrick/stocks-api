@@ -162,10 +162,7 @@ Contract selection can now use env-backed preview profiles by strategy type inst
 Profile names currently used:
 
 ```text
-price_threshold
-percent_change
 moving_average
-trend_confirmation
 momentum_rate_of_change
 rsi_reversal
 macd_crossover
@@ -349,7 +346,7 @@ volatility_squeeze
 support_resistance
 ```
 
-The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths. Legacy hand-built scanner paths still exist for `price_threshold`, `percent_change`, and `trend_confirmation`.
+The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths. Legacy direct scanner types (`price_threshold`, `percent_change`, and `trend_confirmation`) are unsupported and should not be used for new strategy configs.
 
 Evaluator feature flags:
 

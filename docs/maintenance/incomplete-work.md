@@ -50,19 +50,17 @@ Not implemented yet:
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
 
-## Signal scanner cleanup still pending
+## Completed: legacy signal scanner cleanup
 
-`app/services/signal_scanner.py` still needs physical cleanup of direct legacy scanner branches and helper functions for:
+`app/services/signal_scanner.py` no longer routes direct legacy scanner types. These legacy `scanner.type` values are unsupported:
 
 - `price_threshold`
 - `percent_change`
 - `trend_confirmation`
 
-The file is large, so use a safe local patch/diff workflow rather than replacing the whole file from truncated connector output.
-
 ## Paper testing and tuning still pending
 
-After legacy scanner cleanup:
+After cron and legacy scanner cleanup:
 
 - Paper-test the full evaluator-backed strategy set.
 - Compare signal volume by scanner type.
