@@ -135,12 +135,12 @@ Legacy cleanup status on develop:
 - scripts/seed_paper_trade_universe.py no longer seeds trend_confirmation.
 - app/services/strategy_templates.py no longer creates price_threshold, percent_change, or trend_confirmation templates.
 - docs/signal-strategies/README.md documents evaluator-backed strategy types only.
-- alembic/versions/0004_deactivate_legacy_scanner_strategies.py deactivates existing DB strategies whose config.scanner.type is price_threshold, percent_change, or trend_confirmation.
-- app/services/signal_scanner.py still physically contains the old direct legacy branches until it is patched locally or through a safe full-file GitHub update.
+- alembic/versions/0007_deactivate_legacy_scanner_strategies.py deactivates existing DB strategies whose config.scanner.type is price_threshold, percent_change, or trend_confirmation.
+- app/services/signal_scanner.py no longer routes price_threshold, percent_change, or trend_confirmation.
 
 Important migration note:
-- GitHub develop currently has 0004_deactivate_legacy_scanner_strategies.py after 0003_add_ai_review_tables.
-- If a local checkout has another 0004 migration, rename the legacy cleanup migration to the next available revision and set down_revision to the actual Alembic head before deploying.
+- Local develop has the legacy cleanup migration as 0007_deactivate_legacy_scanner_strategies.py after 0006_signal_preview_lifecycle.
+- `alembic heads` should report a single head: 0007_deactivate_legacy_scanner_strategies.
 
 Preview profile env pattern:
 - PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>

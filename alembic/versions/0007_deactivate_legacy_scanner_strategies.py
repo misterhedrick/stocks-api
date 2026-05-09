@@ -1,7 +1,7 @@
 """Deactivate legacy direct scanner strategies.
 
-Revision ID: 0004_deactivate_legacy_scanner_strategies
-Revises: 0003_add_ai_review_tables
+Revision ID: 0007_deactivate_legacy_scanner_strategies
+Revises: 0006_signal_preview_lifecycle
 Create Date: 2026-05-08
 """
 
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 from alembic import op
 
 
-revision: str = "0004_deactivate_legacy_scanner_strategies"
-down_revision: str | Sequence[str] | None = "0003_add_ai_review_tables"
+revision: str = "0007_deactivate_legacy_scanner_strategies"
+down_revision: str | Sequence[str] | None = "0006_signal_preview_lifecycle"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
