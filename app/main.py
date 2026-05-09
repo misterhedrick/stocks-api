@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     if settings.should_auto_migrate_on_startup:
         logger.info("Auto-migrating database during startup")
-        upgrade_database_to_head()
+        try:
+            upgrade_database_to_head()
+        except Exception:
+            logger.exception("Database migration failed during startup")
+            raise
 
     yield
 
