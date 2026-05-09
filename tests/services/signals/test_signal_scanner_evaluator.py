@@ -421,6 +421,23 @@ def test_unknown_scanner_type_raises_value_error() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "scanner_type",
+    ["price_threshold", "percent_change", "trend_confirmation"],
+)
+def test_legacy_direct_scanner_types_raise_value_error(scanner_type: str) -> None:
+    strategy = MagicMock()
+    strategy.name = "test-strategy"
+    strategy.config = {"scanner": {"type": scanner_type, "symbols": ["SPY"]}}
+
+    with pytest.raises(ValueError, match="scanner.type must be"):
+        _signal_specs_from_scanner(
+            strategy,
+            market_data_client=None,
+            no_signal_reasons=[],
+        )
+
+
 # ---------------------------------------------------------------------------
 # _rsi_reversal_signal_specs — feature flag guards
 # ---------------------------------------------------------------------------

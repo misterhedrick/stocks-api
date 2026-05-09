@@ -9,12 +9,12 @@ import uuid
 from app.db.models import AuditLog, Strategy
 from scripts.tune_paper_strategies import (
     list_strategy_summaries,
+    momentum_rate_of_change_payload_from_args,
     moving_average_payload_from_args,
     patch_strategy_scanner,
     scanner_patch_from_args,
     set_strategy_submit_config,
     submit_config_from_args,
-    trend_confirmation_payload_from_args,
     upsert_strategy,
 )
 
@@ -107,8 +107,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(scanner["type"], "moving_average")
         self.assertTrue(scanner["submit"]["enabled"])
 
-    def test_trend_confirmation_payload_from_args_uses_sample_price(self) -> None:
-        payload = trend_confirmation_payload_from_args(
+    def test_momentum_rate_of_change_payload_from_args_uses_sample_price(self) -> None:
+        payload = momentum_rate_of_change_payload_from_args(
             Namespace(
                 symbol="spy",
                 target_strike=None,
@@ -116,18 +116,21 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 name=None,
                 option_type="call",
                 direction="bullish",
-                short_window=8,
-                long_window=21,
-                lookback_minutes=1440,
-                timeframe="5Min",
-                min_change_percent="0.20",
-                confidence="0.6800",
+                timeframe="1Min",
+                lookback_minutes=30,
+                change_above_percent="0.20",
+                change_below_percent="-0.20",
+                short_average_type="ema",
+                short_average_window=9,
+                confidence="0.6500",
             )
         )
 
         scanner = payload["config"]["scanner"]
         self.assertEqual(scanner["preview"]["target_strike"], "501")
-        self.assertEqual(scanner["type"], "trend_confirmation")
+        self.assertEqual(scanner["type"], "momentum_rate_of_change")
+        self.assertEqual(scanner["change_above_percent"], "0.20")
+        self.assertEqual(scanner["change_below_percent"], "-0.20")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertTrue(scanner["submit"]["enabled"])
 
