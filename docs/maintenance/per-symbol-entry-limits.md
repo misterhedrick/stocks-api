@@ -1,8 +1,8 @@
 # Per-symbol entry limit change
 
-Needed update for `render.yaml` on `develop`:
+Completed update for `render.yaml` on `develop`:
 
-Change each symbol-specific `market-entry-cycle` cron from:
+Each symbol-specific `market-entry-cycle` cron was changed from:
 
 ```text
 scan_limit=25&order_limit=25&fill_page_size=50
@@ -22,4 +22,4 @@ Symbols:
 - MSFT
 - NVDA
 
-Leave the old combined `market-cycle` fallback unchanged unless intentionally re-enabling it at full size.
+The old combined `stocks-api-market-cycle` cron has been removed. Scheduled entries now come from the five symbol-specific `market-entry-cycle` cron jobs; exits and maintenance remain separate global jobs.
