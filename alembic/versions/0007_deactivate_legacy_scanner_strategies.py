@@ -26,13 +26,34 @@ LEGACY_SCANNER_TYPES = (
 def upgrade() -> None:
     op.execute(
         """
-        UPDATE strategies
-        SET is_active = false
-        WHERE config->'scanner'->>'type' IN (
-            'price_threshold',
-            'percent_change',
-            'trend_confirmation'
-        )
+        DO $$
+        BEGIN
+            IF to_regclass('public.strategies') IS NOT NULL
+               AND EXISTS (
+                   SELECT 1
+                   FROM information_schema.columns
+                   WHERE table_schema = 'public'
+                     AND table_name = 'strategies'
+                     AND column_name = 'is_active'
+               )
+               AND EXISTS (
+                   SELECT 1
+                   FROM information_schema.columns
+                   WHERE table_schema = 'public'
+                     AND table_name = 'strategies'
+                     AND column_name = 'config'
+                     AND data_type IN ('json', 'jsonb')
+               )
+            THEN
+                UPDATE strategies
+                SET is_active = false
+                WHERE config::jsonb->'scanner'->>'type' IN (
+                    'price_threshold',
+                    'percent_change',
+                    'trend_confirmation'
+                );
+            END IF;
+        END $$;
         """
     )
 
