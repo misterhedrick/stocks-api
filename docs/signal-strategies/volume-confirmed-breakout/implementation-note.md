@@ -4,7 +4,7 @@ Branch: `feature/add-signal-strategies`
 
 ## Current status
 
-`volume_confirmed_breakout` has been added as a reusable evaluator but is not yet wired into the live scanner.
+`volume_confirmed_breakout` has been added as a reusable evaluator and is wired into the live scanner.
 
 Implemented:
 
@@ -57,22 +57,20 @@ volume_confirmed_price_breakout
 volume_confirmed_price_breakdown
 ```
 
-## Scanner routing still needed
+## Scanner routing
 
-Add scanner dispatch for:
+Scanner dispatch is implemented for:
 
 ```text
 scanner.type == "volume_confirmed_breakout"
 ```
 
-Use the existing evaluator-backed scanner pattern already used by:
+It uses the same evaluator-backed scanner pattern as:
 
 ```text
 momentum_rate_of_change
 moving_average
 ```
-
-Do not edit `app/services/signal_scanner.py` unless the full file can be viewed and preserved. During this feature work, GitHub connector reads repeatedly truncated that file.
 
 ## Tests to run
 
@@ -82,7 +80,7 @@ python -m pytest tests/services/signals/test_signal_scanner_evaluator.py
 python -m pytest
 ```
 
-After scanner routing is added, add scanner-level tests for:
+Scanner-level tests should cover:
 
 ```text
 configured bullish volume breakout creates signal

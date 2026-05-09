@@ -248,12 +248,12 @@ Each evaluator should have tests for:
 - dedupe key output
 - confidence score boundaries
 
-## Recommended implementation order
+## Implemented rollout order
 
 1. Build CandleFrame normalization.
 2. Build shared indicator helpers and unit tests.
 3. Build evaluator interface and registry.
-4. Port existing moving_average/percent_change/price_threshold to the evaluator interface.
+4. Add evaluator-backed moving average, momentum rate of change, and breakout price threshold strategies.
 5. Add RSI and MACD.
 6. Add mean reversion.
 7. Add support/resistance and volume breakout.
