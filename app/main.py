@@ -1,5 +1,4 @@
 import logging
-import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,14 +20,10 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.should_auto_migrate_on_startup:
-        print("STARTUP_MARKER: auto migration starting", flush=True)
         logger.info("Auto-migrating database during startup")
         try:
             upgrade_database_to_head()
-            print("STARTUP_MARKER: auto migration finished", flush=True)
-        except Exception as exc:
-            print(f"STARTUP_MARKER: database migration failed: {exc!r}", flush=True)
-            traceback.print_exc()
+        except Exception:
             logger.exception("Database migration failed during startup")
             raise
 
