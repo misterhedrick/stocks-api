@@ -2,9 +2,9 @@
 
 This file captures work that is known to be incomplete or intentionally deferred so it is not lost between sessions.
 
-## Not yet applied: per-symbol entry cron limit increase
+## Completed: per-symbol entry cron limit increase
 
-The intended change is to update the five symbol-specific `market-entry-cycle` cron paths in `render.yaml` from:
+The five symbol-specific `market-entry-cycle` cron paths in `render.yaml` have been updated from:
 
 ```text
 scan_limit=25&order_limit=25&fill_page_size=50
@@ -24,7 +24,7 @@ Symbols affected:
 - MSFT
 - NVDA
 
-`OPTIONS_CANDIDATE_LIMIT` is already set to `100`, but the symbol-specific cron `JOB_PATH` values still cap each run at 25 scans/orders and fill page size 50 until `render.yaml` is changed.
+`OPTIONS_CANDIDATE_LIMIT` is already set to `100`, and the symbol-specific cron `JOB_PATH` values now use matching scan, order, and fill page-size limits.
 
 Do not change the old combined `stocks-api-market-cycle` fallback job unless intentionally re-enabling it at full size.
 

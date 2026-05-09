@@ -271,7 +271,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -297,7 +297,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -323,7 +323,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -349,7 +349,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
@@ -375,7 +375,7 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=25&order_limit=25&fill_page_size=50
+        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100
       - key: JOB_TIMEOUT_SECONDS
         value: 120
       - key: JOB_RETRY_DELAYS_SECONDS
