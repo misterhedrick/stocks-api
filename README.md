@@ -409,7 +409,7 @@ Known limitations:
 
 ## Local Postgres helper
 
-A lightweight Postgres helper is available for future real-DB integration tests:
+A lightweight Postgres helper is available for real-DB integration tests:
 
 ```bash
 docker compose -f docker-compose.postgres.yml up -d
@@ -417,6 +417,20 @@ docker compose -f docker-compose.postgres.yml up -d
 
 ```bash
 DATABASE_URL=postgresql+psycopg://stocks_api:stocks_api@127.0.0.1:5433/stocks_api_test alembic upgrade head
+```
+
+```bash
+STOCKS_API_RUN_DB_INTEGRATION_TESTS=1 \
+STOCKS_API_INTEGRATION_DATABASE_URL=postgresql+psycopg://stocks_api:stocks_api@127.0.0.1:5433/stocks_api_test \
+python -m pytest tests/integration
+```
+
+On PowerShell:
+
+```powershell
+$env:STOCKS_API_RUN_DB_INTEGRATION_TESTS="1"
+$env:STOCKS_API_INTEGRATION_DATABASE_URL="postgresql+psycopg://stocks_api:stocks_api@127.0.0.1:5433/stocks_api_test"
+python -m pytest tests/integration
 ```
 
 ## Useful manual job calls

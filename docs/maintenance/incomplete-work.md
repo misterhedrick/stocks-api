@@ -93,12 +93,12 @@ Current option selection is first-pass and still needs better scoring/filters as
 
 Not implemented yet:
 
-- Real DB integration test suite.
 - Formal state enums/state machine for currently string-based statuses.
 
-Implemented helper:
+Implemented:
 
 - `docker-compose.postgres.yml` starts a local Postgres test database for future integration tests.
+- `tests/integration/test_postgres_review_flow.py` provides opt-in real-Postgres coverage for Alembic upgrade, paper-review snapshot upsert, AI review/suggestion persistence, suggestion review metadata, and trading reset cleanup.
 
 ## Operational limitations still present
 
