@@ -75,6 +75,10 @@ class PaperPerformanceRead(BaseModel):
     recent_round_trips: list[dict[str, Any]]
     unmatched_closing_fills: list[dict[str, Any]] = Field(default_factory=list)
     ignored_fills: list[dict[str, Any]] = Field(default_factory=list)
+    signal_summary: dict[str, Any] = Field(default_factory=dict)
+    no_signal_summary: dict[str, Any] = Field(default_factory=dict)
+    option_selection_diagnostics: dict[str, Any] = Field(default_factory=dict)
+    rejected_preview_outcomes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TradeLifecycleRead(BaseModel):

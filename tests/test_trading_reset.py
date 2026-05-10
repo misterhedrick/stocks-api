@@ -69,7 +69,7 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertEqual(db.executed, [])
 
     def test_dry_run_counts_runtime_tables_without_deleting(self) -> None:
-        db = FakeResetSession(counts=[9, 10, 11, 12, 2, 3, 4, 5, 6, 7, 8])
+        db = FakeResetSession(counts=[9, 10, 11, 12, 13, 2, 3, 4, 5, 6, 7, 8])
 
         result = run_trading_data_reset(db)
 
@@ -77,8 +77,9 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertTrue(result.include_history)
         self.assertEqual(result.counts_before["strategy_change_suggestions"], 9)
         self.assertEqual(result.counts_before["ai_trade_reviews"], 10)
-        self.assertEqual(result.counts_before["trade_cases"], 11)
-        self.assertEqual(result.counts_before["option_selection_diagnostics"], 12)
+        self.assertEqual(result.counts_before["paper_review_snapshots"], 11)
+        self.assertEqual(result.counts_before["trade_cases"], 12)
+        self.assertEqual(result.counts_before["option_selection_diagnostics"], 13)
         self.assertEqual(result.counts_before["fills"], 2)
         self.assertEqual(result.counts_before["position_snapshots"], 6)
         self.assertEqual(result.counts_before["audit_logs"], 7)
@@ -89,8 +90,8 @@ class TradingDataResetTests(unittest.TestCase):
 
     def test_confirmed_reset_deletes_runtime_tables_and_history(self) -> None:
         db = FakeResetSession(
-            counts=[9, 10, 11, 12, 2, 3, 4, 5, 6, 7, 8],
-            rowcounts=[9, 10, 11, 12, 2, 3, 4, 5, 6, 7, 8],
+            counts=[9, 10, 11, 12, 13, 2, 3, 4, 5, 6, 7, 8],
+            rowcounts=[9, 10, 11, 12, 13, 2, 3, 4, 5, 6, 7, 8],
         )
 
         result = run_trading_data_reset(
@@ -102,8 +103,9 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertFalse(result.dry_run)
         self.assertEqual(result.deleted["strategy_change_suggestions"], 9)
         self.assertEqual(result.deleted["ai_trade_reviews"], 10)
-        self.assertEqual(result.deleted["trade_cases"], 11)
-        self.assertEqual(result.deleted["option_selection_diagnostics"], 12)
+        self.assertEqual(result.deleted["paper_review_snapshots"], 11)
+        self.assertEqual(result.deleted["trade_cases"], 12)
+        self.assertEqual(result.deleted["option_selection_diagnostics"], 13)
         self.assertEqual(result.deleted["fills"], 2)
         self.assertEqual(result.deleted["broker_orders"], 3)
         self.assertEqual(result.deleted["order_intents"], 4)
@@ -112,7 +114,7 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertEqual(result.deleted["audit_logs"], 7)
         self.assertEqual(result.deleted["job_runs"], 8)
         self.assertEqual(result.kept_tables, ["strategies"])
-        self.assertEqual(len(db.executed), 11)
+        self.assertEqual(len(db.executed), 12)
         self.assertEqual(db.commit_count, 1)
         job_runs = [item for item in db.added if isinstance(item, JobRun)]
         self.assertEqual(job_runs[-1].status, "succeeded")
@@ -121,8 +123,8 @@ class TradingDataResetTests(unittest.TestCase):
 
     def test_reset_can_preserve_job_and_audit_history(self) -> None:
         db = FakeResetSession(
-            counts=[9, 10, 11, 12, 2, 3, 4, 5, 6],
-            rowcounts=[9, 10, 11, 12, 2, 3, 4, 5, 6],
+            counts=[9, 10, 11, 12, 13, 2, 3, 4, 5, 6],
+            rowcounts=[9, 10, 11, 12, 13, 2, 3, 4, 5, 6],
         )
 
         result = run_trading_data_reset(
@@ -136,7 +138,7 @@ class TradingDataResetTests(unittest.TestCase):
         self.assertNotIn("audit_logs", result.deleted)
         self.assertNotIn("job_runs", result.deleted)
         self.assertEqual(result.kept_tables, ["strategies", "job_runs", "audit_logs"])
-        self.assertEqual(len(db.executed), 9)
+        self.assertEqual(len(db.executed), 10)
 
 
 if __name__ == "__main__":

@@ -963,6 +963,16 @@ class RouteBehaviorTests(unittest.TestCase):
                     "exit_at": now.isoformat(),
                 }
             ],
+            signal_summary={"signals_seen": 3},
+            no_signal_summary={"reasons_seen": 2},
+            option_selection_diagnostics={"diagnostics_seen": 1},
+            rejected_preview_outcomes=[
+                {
+                    "scanner_type": "moving_average",
+                    "symbol": "SPY",
+                    "rejected_signals": 1,
+                }
+            ],
         )
 
         with patch(
@@ -977,6 +987,16 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["fills_seen"], 2)
         self.assertEqual(response.json()["totals"]["realized_pnl"], "35")
+        self.assertEqual(response.json()["signal_summary"]["signals_seen"], 3)
+        self.assertEqual(response.json()["no_signal_summary"]["reasons_seen"], 2)
+        self.assertEqual(
+            response.json()["option_selection_diagnostics"]["diagnostics_seen"],
+            1,
+        )
+        self.assertEqual(
+            response.json()["rejected_preview_outcomes"][0]["scanner_type"],
+            "moving_average",
+        )
         performance.assert_called_once_with(db, limit=25)
 
     def test_trade_lifecycle_route_returns_service_result(self) -> None:
@@ -1051,6 +1071,37 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["matched_round_trips"], 1)
         self.assertEqual(response.json()["by_symbol"][0]["realized_pnl"], "35")
         trade_cases.assert_called_once_with(db, limit=25)
+
+    def test_paper_review_snapshots_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        snapshot = {
+            "id": str(uuid.uuid4()),
+            "review_date": "2026-05-08",
+            "review_type": "post_market",
+            "status": "completed",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {"counts": {"signals": 2}},
+        }
+
+        with patch(
+            "app.api.routes.automation.get_paper_review_snapshots",
+            return_value=[snapshot],
+        ) as snapshots:
+            response = client.get(
+                "/api/v1/automation/paper-review-snapshots?limit=5",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["review_date"], "2026-05-08")
+        self.assertEqual(response.json()[0]["summary"]["counts"]["signals"], 2)
+        snapshots.assert_called_once_with(db, limit=5)
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:

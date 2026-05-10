@@ -15,6 +15,7 @@ from app.db.models import (
     JobRun,
     OptionSelectionDiagnostic,
     OrderIntent,
+    PaperReviewSnapshot,
     PositionSnapshot,
     Signal,
     StrategyChangeSuggestion,
@@ -27,6 +28,7 @@ RESET_TRADING_DATA_CONFIRMATION = "RESET_TRADING_DATA"
 RUNTIME_TABLES = (
     (StrategyChangeSuggestion, "strategy_change_suggestions"),
     (AiTradeReview, "ai_trade_reviews"),
+    (PaperReviewSnapshot, "paper_review_snapshots"),
     (TradeCase, "trade_cases"),
     (OptionSelectionDiagnostic, "option_selection_diagnostics"),
     (Fill, "fills"),

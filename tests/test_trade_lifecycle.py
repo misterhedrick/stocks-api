@@ -55,10 +55,12 @@ class FakeTradeLifecycleSession:
 
 class FakeTradeCasesSession:
     def __init__(self, rows: list[tuple]) -> None:
-        self.rows = rows
+        self.result_sets = [rows, [], [], [], []]
 
     def execute(self, _: object) -> list[tuple]:
-        return self.rows
+        if not self.result_sets:
+            return []
+        return self.result_sets.pop(0)
 
 
 def build_strategy() -> Strategy:

@@ -17,6 +17,9 @@ from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.news_scanner import scan_market_news
 from app.services.performance_review import get_paper_performance_review
+from app.services.paper_review_snapshots import (
+    create_or_update_post_market_paper_review_snapshot,
+)
 from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
 
 
@@ -34,6 +37,7 @@ class MarketMaintenanceResult:
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
     trade_cases: dict[str, Any] | None = None
+    paper_review_snapshot: dict[str, Any] | None = None
 
 
 def run_market_maintenance(
@@ -184,6 +188,12 @@ def run_post_market_maintenance(
     # Runs in its own transaction so a failure here never rolls back the maintenance record.
     trade_cases = _populate_trade_cases_safely(db, limit=5000)
     _write_trade_cases_audit_log(db, maintenance_job_run=job_run, trade_cases=trade_cases)
+    paper_review_snapshot = _paper_review_snapshot_safely(
+        db,
+        maintenance_job_run=job_run,
+        generated_at=started_at,
+        limit=5000,
+    )
 
     return MarketMaintenanceResult(
         job_run=job_run,
@@ -195,6 +205,7 @@ def run_post_market_maintenance(
         readiness=readiness,
         settings_snapshot=settings_snapshot,
         trade_cases=trade_cases,
+        paper_review_snapshot=paper_review_snapshot,
     )
 
 
@@ -327,6 +338,88 @@ def _write_trade_cases_audit_log(
         )
 
 
+def _paper_review_snapshot_safely(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    generated_at: datetime,
+    limit: int,
+) -> dict[str, Any]:
+    try:
+        result = create_or_update_post_market_paper_review_snapshot(
+            db,
+            generated_at=generated_at,
+            limit=limit,
+        )
+        payload = {
+            "snapshot_id": str(result.snapshot.id),
+            "created": result.created,
+            "review_date": result.review_date.isoformat(),
+            "review_type": result.review_type,
+            "signal_count": result.signal_count,
+            "order_intent_count": result.order_intent_count,
+            "fill_count": result.fill_count,
+            "diagnostic_count": result.diagnostic_count,
+            "rejected_shadow_outcome_count": result.rejected_shadow_outcome_count,
+        }
+        _write_paper_review_snapshot_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            snapshot=payload,
+        )
+        return payload
+    except Exception as exc:
+        logger.error(
+            "Paper review snapshot failed during post-market maintenance: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+        payload = {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
+        _write_paper_review_snapshot_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            snapshot=payload,
+        )
+        return payload
+
+
+def _write_paper_review_snapshot_audit_log(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    snapshot: dict[str, Any],
+) -> None:
+    failed = "error" in snapshot
+    event_type = (
+        "market_maintenance.post_market.paper_review_snapshot.failed"
+        if failed
+        else "market_maintenance.post_market.paper_review_snapshot.succeeded"
+    )
+    try:
+        record_audit_log(
+            db,
+            event_type=event_type,
+            entity_type="job_run",
+            entity_id=maintenance_job_run.id,
+            message=(
+                "Post-market paper review snapshot succeeded"
+                if not failed
+                else "Post-market paper review snapshot failed"
+            ),
+            payload={
+                "maintenance_job_run_id": str(maintenance_job_run.id),
+                **snapshot,
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error(
+            "Failed to write paper-review snapshot audit log: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+
+
 def _start_job_run(db: Session, job_name: str, *, started_at: datetime) -> JobRun:
     job_run = JobRun(
         job_name=job_name,
@@ -427,6 +520,10 @@ def _performance_summary(result: object) -> dict[str, Any]:
         "by_strategy": result.by_strategy[:20],
         "by_symbol": result.by_symbol[:20],
         "open_positions": result.open_positions,
+        "signal_summary": result.signal_summary,
+        "no_signal_summary": result.no_signal_summary,
+        "option_selection_diagnostics": result.option_selection_diagnostics,
+        "rejected_preview_outcomes": result.rejected_preview_outcomes[:20],
     }
 
 
