@@ -117,6 +117,15 @@ class TradeCasePopulationRead(BaseModel):
     errors: list[str]
 
 
+class AiTradeReviewWriterRead(BaseModel):
+    job_run: JobRunRead
+    trade_cases_seen: int
+    reviews_created: int
+    reviews_skipped: int
+    suggestions_created: int
+    errors: list[str]
+
+
 class PatchStrategyDteRead(BaseModel):
     job_run: JobRunRead
     strategies_seen: int

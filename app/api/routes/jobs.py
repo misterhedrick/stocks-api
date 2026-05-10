@@ -14,6 +14,7 @@ from app.integrations.alpaca import (
     AlpacaTradingError,
 )
 from app.schemas.jobs import (
+    AiTradeReviewWriterRead,
     BrokerReconciliationRead,
     JobRunRead,
     MarketMaintenanceRead,
@@ -25,6 +26,7 @@ from app.schemas.jobs import (
     PatchStrategyDteRead,
     TradingDataResetRead,
 )
+from app.services.ai_trade_review import write_ai_trade_reviews_from_paper_evidence
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import (
     normalize_market_entry_symbol,
@@ -661,6 +663,26 @@ def populate_trade_cases_route(
         inserted=result.inserted,
         updated=result.updated,
         skipped=result.skipped,
+        errors=result.errors,
+    )
+
+
+@router.post(
+    "/write-ai-trade-reviews",
+    response_model=AiTradeReviewWriterRead,
+    status_code=status.HTTP_200_OK,
+)
+def write_ai_trade_reviews_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> AiTradeReviewWriterRead:
+    result = write_ai_trade_reviews_from_paper_evidence(db, limit=limit)
+    return AiTradeReviewWriterRead(
+        job_run=JobRunRead.model_validate(result.job_run),
+        trade_cases_seen=result.trade_cases_seen,
+        reviews_created=result.reviews_created,
+        reviews_skipped=result.reviews_skipped,
+        suggestions_created=result.suggestions_created,
         errors=result.errors,
     )
 

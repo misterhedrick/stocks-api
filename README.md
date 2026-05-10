@@ -376,10 +376,15 @@ Implemented:
 - `option_selection_diagnostics` table and ORM model for rejected preview/contract-selection context.
 - `app/services/trade_cases.py` to idempotently populate closed FIFO round trips.
 - Post-market maintenance automatically populates trade cases in an isolated transaction.
+- Post-market maintenance persists `paper_review_snapshots` with signal, preview, fill, diagnostic, and rejected-outcome context.
+- `app/services/ai_trade_review.py` writes local, deterministic paper-trade reviews from `trade_cases` plus the latest `paper_review_snapshots` row.
+- `POST /api/v1/jobs/write-ai-trade-reviews?limit=100` stores generated `ai_trade_reviews` and pending `strategy_change_suggestions`.
+- `scripts/print_paper_review_snapshot.py` prints the latest paper-review snapshot as a readable CLI report.
 
 Not implemented yet:
 
-- AI review service that reads `trade_cases` and writes `ai_trade_reviews` / `strategy_change_suggestions`.
+- External LLM-backed review generation.
+- Any approval workflow for accepting/rejecting AI suggestions.
 - Automatic strategy changes from AI suggestions. AI recommendations are recommendation-only; strategy logic changes remain human-approved and must not be applied automatically.
 
 ## Important limitations / next work
@@ -388,9 +393,9 @@ Current high-priority next steps:
 
 1. Paper-test the full evaluator-backed strategy set and tune scanner thresholds / preview-profile limits by strategy type.
 2. Continue improving option contract selection with Greeks/delta-style scoring as broker data allows.
-3. Compare `option_selection_diagnostics` with `trade_cases` so AI review can learn from rejected previews as well as closed round trips.
+3. Review generated `ai_trade_reviews` and pending `strategy_change_suggestions` after post-market maintenance.
 4. Add real DB integration tests or a local Docker Compose/Postgres helper.
-5. Build AI trade review service using persisted `trade_cases`.
+5. Add an explicit human-approval workflow before any suggestion can become a config change.
 
 Known limitations:
 
@@ -413,6 +418,15 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-cycle-exits?limit=100&ord
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-maintenance?phase=auto&news_enabled=false" \
+  -H "Authorization: Bearer change-me"
+```
+
+```bash
+python scripts/print_paper_review_snapshot.py --limit 8
+```
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/jobs/write-ai-trade-reviews?limit=100" \
   -H "Authorization: Bearer change-me"
 ```
 

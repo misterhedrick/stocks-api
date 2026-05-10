@@ -19,6 +19,7 @@ from app.schemas.automation import (
     AutomationStatusRead,
     AutomationSwitchesRead,
 )
+from app.services.ai_trade_review import AiTradeReviewWriterResult
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
 from app.services.market_maintenance import MarketMaintenanceResult
@@ -687,6 +688,48 @@ class RouteBehaviorTests(unittest.TestCase):
             fill_page_size=100,
             stale_after_hours=0,
         )
+
+    def test_write_ai_trade_reviews_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = AiTradeReviewWriterResult(
+            job_run=JobRun(
+                id=uuid.uuid4(),
+                job_name="write_ai_trade_reviews",
+                status="succeeded",
+                started_at=now,
+                finished_at=now,
+                details={"reviews_created": 1},
+                error=None,
+                created_at=now,
+            ),
+            trade_cases_seen=2,
+            reviews_created=1,
+            reviews_skipped=1,
+            suggestions_created=2,
+            errors=[],
+        )
+
+        with patch(
+            "app.api.routes.jobs.write_ai_trade_reviews_from_paper_evidence",
+            return_value=result,
+        ) as writer:
+            response = client.post(
+                "/api/v1/jobs/write-ai-trade-reviews?limit=25",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["trade_cases_seen"], 2)
+        self.assertEqual(response.json()["reviews_created"], 1)
+        self.assertEqual(response.json()["suggestions_created"], 2)
+        writer.assert_called_once_with(db, limit=25)
 
     def test_reset_trading_data_route_returns_service_result(self) -> None:
         db = FakeRouteSession()

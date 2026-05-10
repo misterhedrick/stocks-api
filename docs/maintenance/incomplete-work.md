@@ -39,12 +39,14 @@ Implemented:
 - `strategy_change_suggestions` table and ORM model.
 - `app/services/trade_cases.py` for FIFO-matched closed round trips.
 - Post-market maintenance populates trade cases in an isolated transaction.
+- `paper_review_snapshots` rows with post-market paper-trading evidence.
+- Local AI-review writer that reads `trade_cases` and recent paper-review evidence.
+- Writer that stores generated `ai_trade_reviews`.
+- Writer that stores pending `strategy_change_suggestions`.
 
 Not implemented yet:
 
-- AI review service that reads `trade_cases`.
-- Writer that stores generated `ai_trade_reviews`.
-- Writer that stores `strategy_change_suggestions`.
+- External LLM-backed review generation.
 - Any human-approval workflow for accepting or rejecting AI suggestions.
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
@@ -52,6 +54,8 @@ Important rule: AI may recommend strategy changes only. It must not directly mod
 ## Completed: post-market paper review snapshots
 
 Post-market maintenance now creates or updates one `paper_review_snapshots` row per review date and review type. The snapshot stores performance summaries, signal/no-signal context, previews, broker orders, fills, option-selection diagnostics, rejected-preview trade comparisons, and rejected-signal shadow market movement comparisons.
+
+`scripts/print_paper_review_snapshot.py` prints the latest snapshot as a readable local report.
 
 ## Completed: legacy signal scanner cleanup
 
