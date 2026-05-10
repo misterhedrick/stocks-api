@@ -41,8 +41,8 @@ def main() -> None:
     parser.add_argument("--max-orders-per-day", type=int, default=2)
     parser.add_argument("--max-open-contracts-per-symbol", type=int, default=1)
     parser.add_argument("--max-open-contracts-per-strategy", type=int, default=1)
-    parser.add_argument("--trade-window-start", default="09:45")
-    parser.add_argument("--trade-window-end", default="15:30")
+    parser.add_argument("--trade-window-start", default="10:00")
+    parser.add_argument("--trade-window-end", default="16:00")
     parser.add_argument(
         "--keep-legacy-active",
         action="store_true",

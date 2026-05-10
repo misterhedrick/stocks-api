@@ -166,7 +166,7 @@ Bullish example:
 
 ```json
 {
-  "strategy_type": "percent_change",
+  "strategy_type": "momentum_rate_of_change",
   "signal_type": "momentum_breakout",
   "direction": "bullish",
   "confidence": "0.62",
@@ -178,7 +178,7 @@ Bearish example:
 
 ```json
 {
-  "strategy_type": "percent_change",
+  "strategy_type": "momentum_rate_of_change",
   "signal_type": "momentum_breakdown",
   "direction": "bearish",
   "confidence": "0.62",

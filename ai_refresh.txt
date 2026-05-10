@@ -67,16 +67,22 @@ Render web service:
 
 Render cron services:
 
-1. stocks-api-market-cycle
-   - Entry cycle: scan/reconcile/news/preview/submit.
-   - Endpoint:
-     /api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100
-   - Current cron:
-     */5 14-19 * * 1-5
-   - During EDT this runs every 5 minutes from 10:00am through 3:55pm Eastern.
-   - Render cron is UTC-only and not DST-aware. When Eastern switches to EST, change to:
-     */5 15-20 * * 1-5
-     for 10:00am through 3:55pm EST.
+1. Symbol-specific entry crons
+   - Entry cycle: scan/reconcile/news/preview/submit for one symbol per job.
+   - Endpoints:
+     /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100
+     /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100
+     /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100
+     /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100
+     /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100
+   - Current crons:
+     SPY: 0-55/5 14-19 * * 1-5
+     QQQ: 1-55/5 14-19 * * 1-5
+     AAPL: 2-55/5 14-19 * * 1-5
+     MSFT: 3-55/5 14-19 * * 1-5
+     NVDA: 4-55/5 14-19 * * 1-5
+   - During EDT these run from 10:00am through 3:55pm Eastern, staggered by symbol, with no entry cron after 3:55pm.
+   - Render cron is UTC-only and not DST-aware. When Eastern switches to EST, change the hour window from 14-19 UTC to 15-20 UTC.
 
 2. stocks-api-market-exits
    - Exit-only cycle: reconcile + exit evaluation + optional exit submit.
@@ -126,21 +132,13 @@ Current active strategy type / preview profile names should be evaluator-backed 
 - volatility_squeeze
 - support_resistance
 
-Legacy scanner types:
+Legacy scanner types are deactivated and unsupported:
 - price_threshold
 - percent_change
 - trend_confirmation
 
-Legacy cleanup status on develop:
-- scripts/seed_paper_trade_universe.py no longer seeds trend_confirmation.
-- app/services/strategy_templates.py no longer creates price_threshold, percent_change, or trend_confirmation templates.
-- docs/signal-strategies/README.md documents evaluator-backed strategy types only.
-- alembic/versions/0007_deactivate_legacy_scanner_strategies.py deactivates existing DB strategies whose config.scanner.type is price_threshold, percent_change, or trend_confirmation.
-- app/services/signal_scanner.py no longer routes price_threshold, percent_change, or trend_confirmation.
-
 Important migration note:
-- Local develop has the legacy cleanup migration as 0007_deactivate_legacy_scanner_strategies.py after 0006_signal_preview_lifecycle.
-- `alembic heads` should report a single head: 0007_deactivate_legacy_scanner_strategies.
+- `alembic heads` should report a single head: 0010_deactivate_legacy_scanners.
 
 Preview profile env pattern:
 - PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>
@@ -173,7 +171,7 @@ The script now seeds call/put variants per symbol for:
 - volatility_squeeze
 - support_resistance
 
-Default seeded set after cleanup:
+Default seeded set:
 - 5 symbols x 9 scanner types x call/put = 90 strategies.
 
 Current paper data-gathering profile:
@@ -272,19 +270,12 @@ Evaluator-backed scanner routing is implemented for:
 
 === CURRENT RECOMMENDED NEXT TASK ===
 
-Next code task:
-Patch app/services/signal_scanner.py to physically remove the direct legacy scanner branches and helper functions for:
-- price_threshold
-- percent_change
-- trend_confirmation
-
-Because this file is long, avoid overwriting it from truncated connector output. Patch it locally or through a safe full-file/diff workflow.
-
-After scanner cleanup:
+Next paper-trading tasks:
 1. Run controlled paper tests on the five-symbol seeded universe.
 2. Compare signal volume and no-signal reasons by scanner type.
 3. Tune scanner thresholds and PAPER_PREVIEW_PROFILE_<PROFILE>_* settings.
-4. Keep entries paper-only and human-review strategy changes before changing live logic.
+4. Improve option contract selection scoring when broker data allows.
+5. Keep entries paper-only and human-review strategy changes before changing live logic.
 
 Do NOT let AI or automation directly rewrite strategy logic. AI can recommend changes only.
 
@@ -301,22 +292,17 @@ Implemented:
 - trade_cases population uses FIFO matched closed round trips and (entry_fill_id, exit_fill_id) dedupe.
 
 Not implemented yet:
-- AI review service that reads trade_cases.
-- ai_trade_reviews writer.
-- strategy_change_suggestions writer.
-- Review of rejected signals for outcome comparison.
+- External LLM-backed review generation.
+- Automatic application of approved suggestions to strategy config.
 
 Rule:
 - AI should recommend changes only, never automatically change live strategy logic.
 
 === CURRENT KNOWN GAPS ===
 
-- app/services/signal_scanner.py still needs physical legacy branch cleanup.
 - Full evaluator-backed strategy set needs paper-volume tuning and production observation.
 - Option contract selection is first-pass and lacks robust delta/Greeks/moneyness/liquidity scoring.
 - Broker reconciliation paginates Alpaca FILL account activities with page_token and caps fill_page_size at Alpaca's max of 100.
-- No real DB integration test suite yet.
-- No local Docker Compose/Postgres helper yet.
 - News scanning is lightweight RSS/headline gating only.
 - Statuses are plain strings, not formal enums/state machine.
 - Render cron schedules are UTC-only and must be reviewed around DST.
@@ -335,9 +321,9 @@ Check Alembic heads:
 
     alembic heads
 
-Manual market-cycle entry job:
+Manual symbol entry job:
 
-    curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-cycle?scan_limit=100&order_limit=100&fill_page_size=100" -H "Authorization: Bearer change-me"
+    curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100" -H "Authorization: Bearer change-me"
 
 Manual exit cycle:
 

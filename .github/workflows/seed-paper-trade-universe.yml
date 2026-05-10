@@ -28,13 +28,13 @@ on:
         required: false
         default: "20"
       trade_window_start:
-        description: Trade window open time ET (e.g. 09:45)
+        description: Trade window open time ET (e.g. 10:00)
         required: false
-        default: "09:45"
+        default: "10:00"
       trade_window_end:
-        description: Trade window close time ET (e.g. 15:30)
+        description: Trade window close time ET (e.g. 16:00)
         required: false
-        default: "15:30"
+        default: "16:00"
 
 jobs:
   seed-paper-trade-universe:

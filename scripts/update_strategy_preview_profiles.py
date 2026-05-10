@@ -5,10 +5,15 @@ This does not delete or rebuild strategies. It only patches:
 - scanner.preview.preview_profile
 
 By default the profile is inferred from scanner.type, e.g.:
-- price_threshold
-- percent_change
 - moving_average
-- trend_confirmation
+- momentum_rate_of_change
+- rsi_reversal
+- macd_crossover
+- mean_reversion
+- breakout_price_threshold
+- volume_confirmed_breakout
+- volatility_squeeze
+- support_resistance
 
 Usage:
     python scripts/update_strategy_preview_profiles.py [--dry-run] [--all]

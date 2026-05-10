@@ -111,21 +111,21 @@ Render cron schedules are UTC and are not DST-aware.
 
 | Service | Purpose | Endpoint | Schedule |
 |---|---|---|---|
-| `stocks-api-market-entry-spy` | SPY-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100` | `0-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-qqq` | QQQ-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100` | `1-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100` | `2-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100` | `3-59/5 14-19 * * 1-5` |
-| `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100` | `4-59/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-spy` | SPY-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100` | `0-55/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-qqq` | QQQ-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100` | `1-55/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100` | `2-55/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100` | `3-55/5 14-19 * * 1-5` |
+| `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100` | `4-55/5 14-19 * * 1-5` |
 | `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 
-- Symbol entry cycles (`market-entry-cycle`) run each target symbol every 5 minutes, staggered by minute. Scheduled entries now come from these five symbol-specific cron jobs while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
+- Symbol entry cycles (`market-entry-cycle`) run from 10:00am through 3:55pm Eastern, staggered by minute, while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
 - Exit cycle (`market-exits`) runs every minute from about **9:00am through 4:59pm Eastern**.
 - Maintenance runs pre-market (8:30am ET) and post-market (5:30pm EDT / 4:30pm EST).
 
-Entry splitting is meant to keep expanded option candidate searches from making one large combined job slow. The five symbol-specific entry cron jobs should use `scan_limit=100`, `order_limit=100`, and `fill_page_size=100` to match the current option candidate budget. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional. The old combined `market-cycle` endpoint may still exist for manual/admin diagnostics, but `stocks-api-market-cycle` is no longer scheduled as a Render cron.
+Entry splitting is meant to keep expanded option candidate searches smaller per invocation. The five symbol-specific entry cron jobs should use `scan_limit=100`, `order_limit=100`, and `fill_page_size=100` to match the current option candidate budget. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional.
 
 ## Emergency stops
 
@@ -187,7 +187,6 @@ Examples:
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
-PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_ESTIMATED_NOTIONAL=3500
 PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 ```
@@ -231,7 +230,6 @@ The seed script creates call/put variants for:
 
 ```text
 moving_average
-trend_confirmation
 momentum_rate_of_change
 rsi_reversal
 macd_crossover
@@ -348,7 +346,7 @@ volatility_squeeze
 support_resistance
 ```
 
-The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths. Legacy direct scanner types (`price_threshold`, `percent_change`, and `trend_confirmation`) are unsupported and should not be used for new strategy configs.
+The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths.
 
 Evaluator feature flags:
 

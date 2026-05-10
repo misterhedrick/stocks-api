@@ -117,8 +117,8 @@ def main() -> None:
     submit_parser.add_argument("--max-orders-per-trading-day", type=int, default=500)
     submit_parser.add_argument("--trading-day-timezone", default="America/New_York")
     submit_parser.add_argument("--trade-window-timezone", default="America/New_York")
-    submit_parser.add_argument("--trade-window-start", default="09:45")
-    submit_parser.add_argument("--trade-window-end", default="15:30")
+    submit_parser.add_argument("--trade-window-start", default="10:00")
+    submit_parser.add_argument("--trade-window-end", default="16:00")
     submit_parser.add_argument(
         "--allowed-side",
         action="append",

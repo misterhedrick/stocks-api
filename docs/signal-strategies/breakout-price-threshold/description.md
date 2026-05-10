@@ -185,7 +185,7 @@ Bullish example:
 
 ```json
 {
-  "strategy_type": "price_threshold",
+  "strategy_type": "breakout_price_threshold",
   "signal_type": "price_breakout",
   "direction": "bullish",
   "confidence": "0.65",
@@ -197,7 +197,7 @@ Bearish example:
 
 ```json
 {
-  "strategy_type": "price_threshold",
+  "strategy_type": "breakout_price_threshold",
   "signal_type": "price_breakdown",
   "direction": "bearish",
   "confidence": "0.65",

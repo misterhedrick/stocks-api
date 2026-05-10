@@ -25,7 +25,7 @@ volatility_squeeze
 support_resistance
 ```
 
-Legacy direct scanner paths for `price_threshold`, `percent_change`, and `trend_confirmation` have been removed from active strategy seeding and should not be used for new strategy configs.
+New strategy configs should use one of those evaluator-backed `scanner.type` values.
 
 ## Folder Layout
 

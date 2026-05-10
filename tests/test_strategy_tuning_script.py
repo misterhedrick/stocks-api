@@ -211,8 +211,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 max_orders_per_trading_day=500,
                 trading_day_timezone="America/New_York",
                 trade_window_timezone="America/New_York",
-                trade_window_start="09:45",
-                trade_window_end="15:30",
+                trade_window_start="10:00",
+                trade_window_end="16:00",
                 allowed_sides=None,
             )
         )
@@ -221,7 +221,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(submit["max_notional_per_order"], "2500.00")
         self.assertEqual(submit["max_orders_per_trading_day"], 500)
         self.assertEqual(submit["max_open_contracts_per_strategy"], 100)
-        self.assertEqual(submit["trade_windows"][0]["end"], "15:30")
+        self.assertEqual(submit["trade_windows"][0]["start"], "10:00")
+        self.assertEqual(submit["trade_windows"][0]["end"], "16:00")
         self.assertEqual(submit["allowed_sides"], ["buy"])
 
     def test_set_strategy_submit_config_updates_submit_controls(self) -> None:
@@ -240,8 +241,8 @@ class StrategyTuningScriptTests(unittest.TestCase):
             "trade_windows": [
                 {
                     "timezone": "America/New_York",
-                    "start": "09:45",
-                    "end": "15:30",
+                    "start": "10:00",
+                    "end": "16:00",
                 }
             ],
             "allowed_sides": ["buy"],

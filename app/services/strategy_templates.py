@@ -643,8 +643,8 @@ def _submit_config(*, max_notional_per_order: str | None = None) -> dict[str, An
         "trade_windows": [
             {
                 "timezone": "America/New_York",
-                "start": "09:45",
-                "end": "15:45",
+                "start": "10:00",
+                "end": "16:00",
             }
         ],
         "allowed_sides": ["buy"],
@@ -681,8 +681,8 @@ def _exit_config(
             "trade_windows": [
                 {
                     "timezone": "America/New_York",
-                    "start": "09:45",
-                    "end": "15:45",
+                    "start": "10:00",
+                    "end": "16:00",
                 }
             ],
             "allowed_sides": ["sell"],
