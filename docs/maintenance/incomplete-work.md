@@ -45,10 +45,13 @@ Not implemented yet:
 - AI review service that reads `trade_cases`.
 - Writer that stores generated `ai_trade_reviews`.
 - Writer that stores `strategy_change_suggestions`.
-- Rejected-signal / rejected-preview outcome comparison.
 - Any human-approval workflow for accepting or rejecting AI suggestions.
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
+
+## Completed: post-market paper review snapshots
+
+Post-market maintenance now creates or updates one `paper_review_snapshots` row per review date and review type. The snapshot stores performance summaries, signal/no-signal context, previews, broker orders, fills, option-selection diagnostics, rejected-preview trade comparisons, and rejected-signal shadow market movement comparisons.
 
 ## Completed: legacy signal scanner cleanup
 

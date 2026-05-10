@@ -1072,6 +1072,37 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["by_symbol"][0]["realized_pnl"], "35")
         trade_cases.assert_called_once_with(db, limit=25)
 
+    def test_paper_review_snapshots_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        snapshot = {
+            "id": str(uuid.uuid4()),
+            "review_date": "2026-05-08",
+            "review_type": "post_market",
+            "status": "completed",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "summary": {"counts": {"signals": 2}},
+        }
+
+        with patch(
+            "app.api.routes.automation.get_paper_review_snapshots",
+            return_value=[snapshot],
+        ) as snapshots:
+            response = client.get(
+                "/api/v1/automation/paper-review-snapshots?limit=5",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["review_date"], "2026-05-08")
+        self.assertEqual(response.json()[0]["summary"]["counts"]["signals"], 2)
+        snapshots.assert_called_once_with(db, limit=5)
+
 
 def build_reconciliation_result() -> BrokerReconciliationResult:
     now = datetime.now(timezone.utc)

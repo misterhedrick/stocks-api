@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.schemas.automation import (
 from app.services.automation_status import get_automation_status
 from app.services.learning_report import build_learning_report
 from app.services.performance_review import get_paper_performance_review
+from app.services.paper_review_snapshots import get_paper_review_snapshots
 from app.services.position_exits import get_position_management_statuses
 from app.services.trade_lifecycle import get_trade_cases, get_trade_lifecycle
 
@@ -95,3 +96,15 @@ def learning_report_route(
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ) -> LearningReportRead:
     return build_learning_report(db, limit=limit)
+
+
+@router.get(
+    "/paper-review-snapshots",
+    response_model=list[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+)
+def paper_review_snapshots_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[dict[str, Any]]:
+    return get_paper_review_snapshots(db, limit=limit)
