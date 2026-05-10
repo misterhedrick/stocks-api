@@ -43,11 +43,14 @@ Implemented:
 - Local AI-review writer that reads `trade_cases` and recent paper-review evidence.
 - Writer that stores generated `ai_trade_reviews`.
 - Writer that stores pending `strategy_change_suggestions`.
+- Read endpoints for AI trade reviews and strategy-change suggestions.
+- Review metadata endpoint for approving, rejecting, and annotating suggestions.
+- Post-market maintenance runs the AI-review writer after trade cases and paper-review snapshots.
 
 Not implemented yet:
 
 - External LLM-backed review generation.
-- Any human-approval workflow for accepting or rejecting AI suggestions.
+- Automatic application of approved suggestions to strategy config.
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
 
@@ -91,8 +94,11 @@ Current option selection is first-pass and still needs better scoring/filters as
 Not implemented yet:
 
 - Real DB integration test suite.
-- Local Docker Compose/Postgres helper.
 - Formal state enums/state machine for currently string-based statuses.
+
+Implemented helper:
+
+- `docker-compose.postgres.yml` starts a local Postgres test database for future integration tests.
 
 ## Operational limitations still present
 

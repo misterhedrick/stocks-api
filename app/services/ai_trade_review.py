@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +30,11 @@ class AiTradeReviewWriterResult:
     reviews_skipped: int
     suggestions_created: int
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SuggestionReviewResult:
+    suggestion: StrategyChangeSuggestion
 
 
 def write_ai_trade_reviews_from_paper_evidence(
@@ -61,6 +67,8 @@ def write_ai_trade_reviews_from_paper_evidence(
         skipped = 0
         suggestions_created = 0
         errors: list[str] = []
+        group_stats = _trade_case_group_stats(trade_cases)
+        suggested_groups: set[tuple[str, str, str]] = set()
 
         for trade_case in trade_cases:
             try:
@@ -78,6 +86,7 @@ def write_ai_trade_reviews_from_paper_evidence(
                     trade_case,
                     latest_snapshot=latest_snapshot,
                     review_model=review_model,
+                    group_stats=group_stats,
                 )
                 review = AiTradeReview(
                     trade_case_id=trade_case.id,
@@ -101,6 +110,14 @@ def write_ai_trade_reviews_from_paper_evidence(
                     trade_case,
                     assessment,
                 ):
+                    group_key = (
+                        str(suggestion_payload["suggestion_type"]),
+                        str(assessment.get("scanner_type") or "unknown"),
+                        str(assessment.get("underlying_symbol") or assessment.get("symbol") or "unknown").upper(),
+                    )
+                    if group_key in suggested_groups:
+                        continue
+                    suggested_groups.add(group_key)
                     db.add(
                         StrategyChangeSuggestion(
                             ai_trade_review_id=review.id,
@@ -127,6 +144,7 @@ def write_ai_trade_reviews_from_paper_evidence(
             "suggestions_created": suggestions_created,
             "errors": errors,
             "review_model": review_model,
+            "suggestion_grouping": "suggestions are deduplicated by type, scanner, and symbol per run",
             "paper_review_snapshot_id": str(latest_snapshot.id)
             if latest_snapshot is not None
             else None,
@@ -186,6 +204,7 @@ def _assessment_for_trade_case(
     *,
     latest_snapshot: PaperReviewSnapshot | None,
     review_model: str,
+    group_stats: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     realized_pl = Decimal(str(trade_case.realized_pl or "0"))
     realized_pl_percent = Decimal(str(trade_case.realized_pl_percent or "0"))
@@ -203,6 +222,8 @@ def _assessment_for_trade_case(
     )
     scanner_type = market_context.get("strategy_type") or "unknown"
     symbol = trade_case.underlying_symbol or trade_case.symbol
+    group_key = (str(scanner_type), str(symbol).upper())
+    stats = (group_stats or {}).get(group_key, _empty_group_stats(group_key))
     snapshot_context = _snapshot_context_for_trade(
         latest_snapshot,
         scanner_type=str(scanner_type),
@@ -244,6 +265,7 @@ def _assessment_for_trade_case(
         "confidence": confidence,
         "realized_pl": str(realized_pl),
         "realized_pl_percent": str(realized_pl_percent),
+        "group_context": stats,
         "observations": observations,
         "risk_notes": risk_notes,
         "snapshot_context": snapshot_context,
@@ -307,6 +329,8 @@ def _suggestions_for_assessment(
     outcome = assessment.get("outcome")
     scanner_type = assessment.get("scanner_type")
     symbol = assessment.get("underlying_symbol") or assessment.get("symbol")
+    group_context = assessment.get("group_context") if isinstance(assessment.get("group_context"), dict) else {}
+    group_summary = _group_summary_text(group_context)
 
     if outcome == "loss":
         suggestions.append(
@@ -315,7 +339,7 @@ def _suggestions_for_assessment(
                 "description": (
                     f"Review {scanner_type} risk controls for {symbol}: this closed "
                     "trade lost money. Compare signal features, exit timing, spread, "
-                    "and notional sizing before changing config."
+                    f"and notional sizing before changing config. {group_summary}"
                 ),
                 "proposed_config_patch": {},
             }
@@ -329,7 +353,7 @@ def _suggestions_for_assessment(
                 "description": (
                     f"Review option-selection filters for {scanner_type} {symbol}; "
                     "recent diagnostics show rejected candidates. Consider liquidity, "
-                    "spread, moneyness, and notional limits with human approval."
+                    f"spread, moneyness, and notional limits with human approval. {group_summary}"
                 ),
                 "proposed_config_patch": {},
             }
@@ -344,7 +368,7 @@ def _suggestions_for_assessment(
                 "suggestion_type": "review_rejected_signal_outcomes",
                 "description": (
                     f"Review rejected-signal shadow outcomes for {scanner_type} {symbol}; "
-                    "some rejected signals have later market movement evidence."
+                    f"some rejected signals have later market movement evidence. {group_summary}"
                 ),
                 "proposed_config_patch": {},
             }
@@ -372,3 +396,192 @@ def _suggestions_for_assessment(
         seen.add(suggestion_type)
         unique.append(suggestion)
     return unique
+
+
+def get_ai_trade_reviews(
+    db: Session,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    statement = (
+        select(AiTradeReview)
+        .order_by(AiTradeReview.created_at.desc())
+        .limit(limit)
+    )
+    return [_ai_trade_review_read_item(review) for review in db.scalars(statement)]
+
+
+def get_strategy_change_suggestions(
+    db: Session,
+    *,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    statement = select(StrategyChangeSuggestion).order_by(
+        StrategyChangeSuggestion.created_at.desc()
+    )
+    if status:
+        statement = statement.where(StrategyChangeSuggestion.status == status)
+    statement = statement.limit(limit)
+    return [
+        _strategy_change_suggestion_read_item(suggestion)
+        for suggestion in db.scalars(statement)
+    ]
+
+
+def update_strategy_change_suggestion_review(
+    db: Session,
+    *,
+    suggestion_id: uuid.UUID,
+    status: str | None = None,
+    review_notes: str | None = None,
+    reviewed_by: str | None = None,
+) -> SuggestionReviewResult:
+    suggestion = db.get(StrategyChangeSuggestion, suggestion_id)
+    if suggestion is None:
+        raise LookupError(f"strategy change suggestion {suggestion_id} was not found")
+
+    if status is not None:
+        normalized = status.strip().lower()
+        if normalized not in {"pending", "approved", "rejected"}:
+            raise ValueError("status must be pending, approved, or rejected")
+        suggestion.status = normalized
+
+    if review_notes is not None:
+        suggestion.review_notes = review_notes
+    if reviewed_by is not None:
+        suggestion.reviewed_by = reviewed_by
+    if status is not None or review_notes is not None or reviewed_by is not None:
+        suggestion.reviewed_at = datetime.now(timezone.utc)
+
+    db.add(suggestion)
+    record_audit_log(
+        db,
+        event_type="strategy_change_suggestions.review_updated",
+        entity_type="strategy_change_suggestion",
+        entity_id=suggestion.id,
+        message="Strategy change suggestion review metadata updated",
+        payload={
+            "status": suggestion.status,
+            "review_notes": suggestion.review_notes,
+            "reviewed_by": suggestion.reviewed_by,
+            "reviewed_at": suggestion.reviewed_at.isoformat()
+            if suggestion.reviewed_at
+            else None,
+            "auto_apply": False,
+        },
+    )
+    db.commit()
+    db.refresh(suggestion)
+    return SuggestionReviewResult(suggestion=suggestion)
+
+
+def _ai_trade_review_read_item(review: AiTradeReview) -> dict[str, Any]:
+    return {
+        "id": str(review.id),
+        "trade_case_id": str(review.trade_case_id),
+        "review_model": review.review_model,
+        "review_status": review.review_status,
+        "assessment": review.assessment,
+        "raw_response": review.raw_response,
+        "created_at": review.created_at.isoformat(),
+    }
+
+
+def _strategy_change_suggestion_read_item(
+    suggestion: StrategyChangeSuggestion,
+) -> dict[str, Any]:
+    return {
+        "id": str(suggestion.id),
+        "ai_trade_review_id": str(suggestion.ai_trade_review_id)
+        if suggestion.ai_trade_review_id
+        else None,
+        "strategy_id": str(suggestion.strategy_id) if suggestion.strategy_id else None,
+        "suggestion_type": suggestion.suggestion_type,
+        "description": suggestion.description,
+        "proposed_config_patch": suggestion.proposed_config_patch,
+        "status": suggestion.status,
+        "review_notes": suggestion.review_notes,
+        "reviewed_at": suggestion.reviewed_at.isoformat()
+        if suggestion.reviewed_at
+        else None,
+        "reviewed_by": suggestion.reviewed_by,
+        "created_at": suggestion.created_at.isoformat(),
+        "auto_apply": False,
+    }
+
+
+def _trade_case_group_stats(trade_cases: list[TradeCase]) -> dict[tuple[str, str], dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[TradeCase]] = {}
+    for trade_case in trade_cases:
+        scanner_type = _scanner_type_for_trade_case(trade_case)
+        symbol = str(trade_case.underlying_symbol or trade_case.symbol).upper()
+        grouped.setdefault((scanner_type, symbol), []).append(trade_case)
+
+    return {
+        key: _group_stats_for_cases(key, cases)
+        for key, cases in grouped.items()
+    }
+
+
+def _group_stats_for_cases(
+    key: tuple[str, str],
+    cases: list[TradeCase],
+) -> dict[str, Any]:
+    realized_values = [Decimal(str(case.realized_pl or "0")) for case in cases]
+    losses = [value for value in realized_values if value < 0]
+    wins = [value for value in realized_values if value > 0]
+    total = sum(realized_values, Decimal("0"))
+    return {
+        "scanner_type": key[0],
+        "symbol": key[1],
+        "trade_cases_seen": len(cases),
+        "wins": len(wins),
+        "losses": len(losses),
+        "flats": len(cases) - len(wins) - len(losses),
+        "total_realized_pl": str(total),
+        "average_realized_pl": str(total / Decimal(len(cases))) if cases else "0",
+        "win_rate_percent": str((Decimal(len(wins)) / Decimal(len(cases)) * Decimal("100")) if cases else Decimal("0")),
+    }
+
+
+def _empty_group_stats(key: tuple[str, str]) -> dict[str, Any]:
+    return {
+        "scanner_type": key[0],
+        "symbol": key[1],
+        "trade_cases_seen": 0,
+        "wins": 0,
+        "losses": 0,
+        "flats": 0,
+        "total_realized_pl": "0",
+        "average_realized_pl": "0",
+        "win_rate_percent": "0",
+    }
+
+
+def _scanner_type_for_trade_case(trade_case: TradeCase) -> str:
+    context = trade_case.context if isinstance(trade_case.context, dict) else {}
+    entry_context = context.get("entry") if isinstance(context.get("entry"), dict) else {}
+    signal_context = (
+        entry_context.get("signal")
+        if isinstance(entry_context.get("signal"), dict)
+        else {}
+    )
+    market_context = (
+        signal_context.get("market_context")
+        if isinstance(signal_context.get("market_context"), dict)
+        else {}
+    )
+    return str(market_context.get("strategy_type") or "unknown")
+
+
+def _group_summary_text(group_context: dict[str, Any]) -> str:
+    if not group_context:
+        return "No grouped paper-trade context is available yet."
+    return (
+        "Grouped context: "
+        f"{group_context.get('trade_cases_seen', 0)} recent cases, "
+        f"{group_context.get('wins', 0)} wins, "
+        f"{group_context.get('losses', 0)} losses, "
+        f"total P/L {group_context.get('total_realized_pl', '0')}."
+    )

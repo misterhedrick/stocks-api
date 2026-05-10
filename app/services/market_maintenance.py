@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.models import JobRun, OrderIntent, Signal, Strategy
 from app.services.audit_logs import record_audit_log
+from app.services.ai_trade_review import write_ai_trade_reviews_from_paper_evidence
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.news_scanner import scan_market_news
 from app.services.performance_review import get_paper_performance_review
@@ -38,6 +39,7 @@ class MarketMaintenanceResult:
     settings_snapshot: dict[str, Any]
     trade_cases: dict[str, Any] | None = None
     paper_review_snapshot: dict[str, Any] | None = None
+    ai_trade_reviews: dict[str, Any] | None = None
 
 
 def run_market_maintenance(
@@ -194,6 +196,11 @@ def run_post_market_maintenance(
         generated_at=started_at,
         limit=5000,
     )
+    ai_trade_reviews = _ai_trade_reviews_safely(
+        db,
+        maintenance_job_run=job_run,
+        limit=5000,
+    )
 
     return MarketMaintenanceResult(
         job_run=job_run,
@@ -206,6 +213,7 @@ def run_post_market_maintenance(
         settings_snapshot=settings_snapshot,
         trade_cases=trade_cases,
         paper_review_snapshot=paper_review_snapshot,
+        ai_trade_reviews=ai_trade_reviews,
     )
 
 
@@ -415,6 +423,80 @@ def _write_paper_review_snapshot_audit_log(
     except Exception as exc:
         logger.error(
             "Failed to write paper-review snapshot audit log: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+
+
+def _ai_trade_reviews_safely(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    limit: int,
+) -> dict[str, Any]:
+    try:
+        result = write_ai_trade_reviews_from_paper_evidence(db, limit=limit)
+        payload = {
+            "job_run_id": str(result.job_run.id),
+            "trade_cases_seen": result.trade_cases_seen,
+            "reviews_created": result.reviews_created,
+            "reviews_skipped": result.reviews_skipped,
+            "suggestions_created": result.suggestions_created,
+            "errors": result.errors,
+        }
+        _write_ai_trade_reviews_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            ai_trade_reviews=payload,
+        )
+        return payload
+    except Exception as exc:
+        logger.error(
+            "AI trade review writer failed during post-market maintenance: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+        payload = {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
+        _write_ai_trade_reviews_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            ai_trade_reviews=payload,
+        )
+        return payload
+
+
+def _write_ai_trade_reviews_audit_log(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    ai_trade_reviews: dict[str, Any],
+) -> None:
+    failed = "error" in ai_trade_reviews
+    event_type = (
+        "market_maintenance.post_market.ai_trade_reviews.failed"
+        if failed
+        else "market_maintenance.post_market.ai_trade_reviews.succeeded"
+    )
+    try:
+        record_audit_log(
+            db,
+            event_type=event_type,
+            entity_type="job_run",
+            entity_id=maintenance_job_run.id,
+            message=(
+                "Post-market AI trade review writer succeeded"
+                if not failed
+                else "Post-market AI trade review writer failed"
+            ),
+            payload={
+                "maintenance_job_run_id": str(maintenance_job_run.id),
+                **ai_trade_reviews,
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error(
+            "Failed to write AI trade-review audit log: %s: %s",
             exc.__class__.__name__,
             exc,
         )

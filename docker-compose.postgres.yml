@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: stocks_api_test
+      POSTGRES_USER: stocks_api
+      POSTGRES_PASSWORD: stocks_api
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stocks_api -d stocks_api_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - stocks_api_test_pgdata:/var/lib/postgresql/data
+
+volumes:
+  stocks_api_test_pgdata:
