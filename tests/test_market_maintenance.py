@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.db.models import AuditLog, JobRun, OrderIntent, Signal, Strategy
+from app.services.ai_trade_review import AiTradeReviewWriterResult
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_maintenance import (
     MarketMaintenanceResult,
@@ -200,6 +201,17 @@ def build_paper_review_snapshot_result() -> PaperReviewSnapshotResult:
     )
 
 
+def build_ai_trade_review_writer_result() -> AiTradeReviewWriterResult:
+    return AiTradeReviewWriterResult(
+        job_run=build_job_run("write_ai_trade_reviews"),
+        trade_cases_seen=2,
+        reviews_created=1,
+        reviews_skipped=1,
+        suggestions_created=2,
+        errors=[],
+    )
+
+
 def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
     return MarketMaintenanceResult(
         job_run=build_job_run(f"{phase}_maintenance"),
@@ -211,6 +223,9 @@ def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
         readiness={"active_strategies": 1},
         settings_snapshot={"paper_mode": True},
         trade_cases={"round_trips_seen": 2, "inserted": 1, "updated": 0, "skipped": 1, "errors": []}
+        if phase == "post_market"
+        else None,
+        ai_trade_reviews={"trade_cases_seen": 2, "reviews_created": 1}
         if phase == "post_market"
         else None,
     )
@@ -348,6 +363,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         ), patch(
             "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
             return_value=build_paper_review_snapshot_result(),
+        ), patch(
+            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            return_value=build_ai_trade_review_writer_result(),
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
@@ -355,6 +373,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.performance["matched_round_trips"], 1)
         self.assertEqual(result.performance["totals"]["realized_pnl"], "25")
         self.assertEqual(result.paper_review_snapshot["signal_count"], 4)
+        self.assertEqual(result.ai_trade_reviews["reviews_created"], 1)
         self.assertIsNone(result.news)
         performance.assert_called_once_with(db, limit=5000)
 
@@ -376,6 +395,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         ) as populate, patch(
             "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
             return_value=build_paper_review_snapshot_result(),
+        ), patch(
+            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            return_value=build_ai_trade_review_writer_result(),
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
@@ -386,8 +408,8 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.trade_cases["errors"], [])
         self.assertEqual(result.paper_review_snapshot["diagnostic_count"], 1)
         populate.assert_called_once_with(db, limit=5000)
-        # Three commits: maintenance + trade case audit + snapshot audit
-        self.assertEqual(db.commit_count, 3)
+        # Four commits: maintenance + trade case audit + snapshot audit + AI review audit
+        self.assertEqual(db.commit_count, 4)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         tc_audit = next(
             (a for a in audit_logs if "trade_cases" in a.event_type), None
@@ -410,6 +432,15 @@ class MarketMaintenanceTests(unittest.TestCase):
             snapshot_audit.event_type,
             "market_maintenance.post_market.paper_review_snapshot.succeeded",
         )
+        ai_audit = next(
+            (a for a in audit_logs if "ai_trade_reviews" in a.event_type),
+            None,
+        )
+        self.assertIsNotNone(ai_audit)
+        self.assertEqual(
+            ai_audit.event_type,
+            "market_maintenance.post_market.ai_trade_reviews.succeeded",
+        )
 
     def test_post_market_maintenance_trade_case_failure_does_not_fail_maintenance(self) -> None:
         signal = build_signal()
@@ -429,6 +460,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         ), patch(
             "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
             return_value=build_paper_review_snapshot_result(),
+        ), patch(
+            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            return_value=build_ai_trade_review_writer_result(),
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
@@ -441,7 +475,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertIn("fill table exploded", result.trade_cases["error"])
         self.assertEqual(result.trade_cases["status"], "failed")
         # Failure audit event is written and committed
-        self.assertEqual(db.commit_count, 3)
+        self.assertEqual(db.commit_count, 4)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         tc_audit = next(
             (a for a in audit_logs if "trade_cases" in a.event_type), None

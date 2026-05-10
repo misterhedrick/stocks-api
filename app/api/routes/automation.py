@@ -1,6 +1,8 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
@@ -10,8 +12,14 @@ from app.schemas.automation import (
     LearningReportRead,
     PaperPerformanceRead,
     PositionManagementStatusRead,
+    StrategySuggestionReviewUpdate,
     TradeCasesRead,
     TradeLifecycleRead,
+)
+from app.services.ai_trade_review import (
+    get_ai_trade_reviews,
+    get_strategy_change_suggestions,
+    update_strategy_change_suggestion_review,
 )
 from app.services.automation_status import get_automation_status
 from app.services.learning_report import build_learning_report
@@ -108,3 +116,68 @@ def paper_review_snapshots_route(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
     return get_paper_review_snapshots(db, limit=limit)
+
+
+@router.get(
+    "/ai-trade-reviews",
+    response_model=list[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+)
+def ai_trade_reviews_route(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, Any]]:
+    return get_ai_trade_reviews(db, limit=limit)
+
+
+@router.get(
+    "/strategy-change-suggestions",
+    response_model=list[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+)
+def strategy_change_suggestions_route(
+    db: Annotated[Session, Depends(get_db)],
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, Any]]:
+    return get_strategy_change_suggestions(
+        db,
+        status=status_filter,
+        limit=limit,
+    )
+
+
+@router.patch(
+    "/strategy-change-suggestions/{suggestion_id}",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def update_strategy_change_suggestion_route(
+    suggestion_id: uuid.UUID,
+    payload: StrategySuggestionReviewUpdate,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    try:
+        result = update_strategy_change_suggestion_review(
+            db,
+            suggestion_id=suggestion_id,
+            status=payload.status,
+            review_notes=payload.review_notes,
+            reviewed_by=payload.reviewed_by,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    suggestion = result.suggestion
+    return {
+        "id": str(suggestion.id),
+        "status": suggestion.status,
+        "review_notes": suggestion.review_notes,
+        "reviewed_at": suggestion.reviewed_at.isoformat()
+        if suggestion.reviewed_at
+        else None,
+        "reviewed_by": suggestion.reviewed_by,
+        "auto_apply": False,
+    }

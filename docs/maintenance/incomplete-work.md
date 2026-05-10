@@ -39,19 +39,26 @@ Implemented:
 - `strategy_change_suggestions` table and ORM model.
 - `app/services/trade_cases.py` for FIFO-matched closed round trips.
 - Post-market maintenance populates trade cases in an isolated transaction.
+- `paper_review_snapshots` rows with post-market paper-trading evidence.
+- Local AI-review writer that reads `trade_cases` and recent paper-review evidence.
+- Writer that stores generated `ai_trade_reviews`.
+- Writer that stores pending `strategy_change_suggestions`.
+- Read endpoints for AI trade reviews and strategy-change suggestions.
+- Review metadata endpoint for approving, rejecting, and annotating suggestions.
+- Post-market maintenance runs the AI-review writer after trade cases and paper-review snapshots.
 
 Not implemented yet:
 
-- AI review service that reads `trade_cases`.
-- Writer that stores generated `ai_trade_reviews`.
-- Writer that stores `strategy_change_suggestions`.
-- Any human-approval workflow for accepting or rejecting AI suggestions.
+- External LLM-backed review generation.
+- Automatic application of approved suggestions to strategy config.
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
 
 ## Completed: post-market paper review snapshots
 
 Post-market maintenance now creates or updates one `paper_review_snapshots` row per review date and review type. The snapshot stores performance summaries, signal/no-signal context, previews, broker orders, fills, option-selection diagnostics, rejected-preview trade comparisons, and rejected-signal shadow market movement comparisons.
+
+`scripts/print_paper_review_snapshot.py` prints the latest snapshot as a readable local report.
 
 ## Completed: legacy signal scanner cleanup
 
@@ -86,9 +93,12 @@ Current option selection is first-pass and still needs better scoring/filters as
 
 Not implemented yet:
 
-- Real DB integration test suite.
-- Local Docker Compose/Postgres helper.
 - Formal state enums/state machine for currently string-based statuses.
+
+Implemented:
+
+- `docker-compose.postgres.yml` starts a local Postgres test database for future integration tests.
+- `tests/integration/test_postgres_review_flow.py` provides opt-in real-Postgres coverage for Alembic upgrade, paper-review snapshot upsert, AI review/suggestion persistence, suggestion review metadata, and trading reset cleanup.
 
 ## Operational limitations still present
 

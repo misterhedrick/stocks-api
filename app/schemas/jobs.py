@@ -96,6 +96,7 @@ class MarketMaintenanceRead(BaseModel):
     settings_snapshot: dict[str, Any]
     trade_cases: dict[str, Any] | None = None
     paper_review_snapshot: dict[str, Any] | None = None
+    ai_trade_reviews: dict[str, Any] | None = None
 
 
 class TradingDataResetRead(BaseModel):
@@ -114,6 +115,15 @@ class TradeCasePopulationRead(BaseModel):
     inserted: int
     updated: int
     skipped: int
+    errors: list[str]
+
+
+class AiTradeReviewWriterRead(BaseModel):
+    job_run: JobRunRead
+    trade_cases_seen: int
+    reviews_created: int
+    reviews_skipped: int
+    suggestions_created: int
     errors: list[str]
 
 

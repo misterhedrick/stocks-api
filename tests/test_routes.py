@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ from app.schemas.automation import (
     AutomationStatusRead,
     AutomationSwitchesRead,
 )
+from app.services.ai_trade_review import AiTradeReviewWriterResult
 from app.services.broker_reconciliation import BrokerReconciliationResult
 from app.services.market_cycle import MarketCycleResult
 from app.services.market_maintenance import MarketMaintenanceResult
@@ -688,6 +690,48 @@ class RouteBehaviorTests(unittest.TestCase):
             stale_after_hours=0,
         )
 
+    def test_write_ai_trade_reviews_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        now = datetime.now(timezone.utc)
+        result = AiTradeReviewWriterResult(
+            job_run=JobRun(
+                id=uuid.uuid4(),
+                job_name="write_ai_trade_reviews",
+                status="succeeded",
+                started_at=now,
+                finished_at=now,
+                details={"reviews_created": 1},
+                error=None,
+                created_at=now,
+            ),
+            trade_cases_seen=2,
+            reviews_created=1,
+            reviews_skipped=1,
+            suggestions_created=2,
+            errors=[],
+        )
+
+        with patch(
+            "app.api.routes.jobs.write_ai_trade_reviews_from_paper_evidence",
+            return_value=result,
+        ) as writer:
+            response = client.post(
+                "/api/v1/jobs/write-ai-trade-reviews?limit=25",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["trade_cases_seen"], 2)
+        self.assertEqual(response.json()["reviews_created"], 1)
+        self.assertEqual(response.json()["suggestions_created"], 2)
+        writer.assert_called_once_with(db, limit=25)
+
     def test_reset_trading_data_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
@@ -1102,6 +1146,110 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()[0]["review_date"], "2026-05-08")
         self.assertEqual(response.json()[0]["summary"]["counts"]["signals"], 2)
         snapshots.assert_called_once_with(db, limit=5)
+
+    def test_ai_trade_reviews_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        review = {
+            "id": str(uuid.uuid4()),
+            "trade_case_id": str(uuid.uuid4()),
+            "review_model": "local-paper-review-v1",
+            "review_status": "generated",
+            "assessment": {"outcome": "win"},
+            "raw_response": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with patch(
+            "app.api.routes.automation.get_ai_trade_reviews",
+            return_value=[review],
+        ) as reviews:
+            response = client.get(
+                "/api/v1/automation/ai-trade-reviews?limit=5",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]["assessment"]["outcome"], "win")
+        reviews.assert_called_once_with(db, limit=5)
+
+    def test_strategy_change_suggestions_route_returns_service_result(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        suggestion = {
+            "id": str(uuid.uuid4()),
+            "status": "pending",
+            "suggestion_type": "review_strategy_risk_controls",
+            "auto_apply": False,
+        }
+
+        with patch(
+            "app.api.routes.automation.get_strategy_change_suggestions",
+            return_value=[suggestion],
+        ) as suggestions:
+            response = client.get(
+                "/api/v1/automation/strategy-change-suggestions?status=pending&limit=5",
+                headers=_AUTH,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()[0]["auto_apply"])
+        suggestions.assert_called_once_with(db, status="pending", limit=5)
+
+    def test_update_strategy_change_suggestion_route_updates_review_metadata(self) -> None:
+        db = FakeRouteSession()
+
+        def override_db() -> Iterator[FakeRouteSession]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+        suggestion_id = uuid.uuid4()
+        reviewed_at = datetime.now(timezone.utc)
+        result = SimpleNamespace(
+            suggestion=SimpleNamespace(
+                id=suggestion_id,
+                status="approved",
+                review_notes="Looks reasonable for later config review.",
+                reviewed_at=reviewed_at,
+                reviewed_by="admin",
+            )
+        )
+
+        with patch(
+            "app.api.routes.automation.update_strategy_change_suggestion_review",
+            return_value=result,
+        ) as updater:
+            response = client.patch(
+                f"/api/v1/automation/strategy-change-suggestions/{suggestion_id}",
+                headers=_AUTH,
+                json={
+                    "status": "approved",
+                    "review_notes": "Looks reasonable for later config review.",
+                    "reviewed_by": "admin",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "approved")
+        self.assertFalse(response.json()["auto_apply"])
+        updater.assert_called_once_with(
+            db,
+            suggestion_id=suggestion_id,
+            status="approved",
+            review_notes="Looks reasonable for later config review.",
+            reviewed_by="admin",
+        )
 
 
 def build_reconciliation_result() -> BrokerReconciliationResult:

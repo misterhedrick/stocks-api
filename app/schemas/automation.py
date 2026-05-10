@@ -110,3 +110,9 @@ class TradeCasesRead(BaseModel):
     by_symbol: list[dict[str, Any]]
     unmatched_closing_fills: list[dict[str, Any]] = Field(default_factory=list)
     ignored_fills: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class StrategySuggestionReviewUpdate(BaseModel):
+    status: str | None = None
+    review_notes: str | None = None
+    reviewed_by: str | None = None
