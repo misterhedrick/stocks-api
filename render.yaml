@@ -65,17 +65,17 @@ services:
         value: true
       - key: AUTO_SUBMIT_REQUIRES_PAPER
         value: true
-      # Moderate daily limits - enough trades to collect data; avoids runaway correlated positions.
+      # Paper-test limits - loosened to collect more trade data; tighten before live trading.
       - key: MAX_AUTO_ORDERS_PER_CYCLE
-        value: 3
-      - key: MAX_AUTO_ORDERS_PER_DAY
         value: 50
+      - key: MAX_AUTO_ORDERS_PER_DAY
+        value: 1000
       - key: MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY
-        value: 5
+        value: 200
       - key: MAX_OPEN_POSITIONS
-        value: 25
+        value: 200
       - key: MAX_OPEN_POSITIONS_PER_SYMBOL
-        value: 3
+        value: 50
       - key: MAX_CONTRACTS_PER_ORDER
         value: 1
       - key: MAX_ESTIMATED_PREMIUM_PER_ORDER
