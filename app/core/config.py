@@ -47,11 +47,11 @@ class Settings(BaseSettings):
     )
     trading_automation_enabled: bool = False
     auto_submit_requires_paper: bool = True
-    max_auto_orders_per_cycle: int = 1
-    max_auto_orders_per_day: int = 3
-    max_auto_orders_per_symbol_per_day: int = 5
-    max_open_positions: int = 3
-    max_open_positions_per_symbol: int = 1
+    max_auto_orders_per_cycle: int = 50
+    max_auto_orders_per_day: int = 1000
+    max_auto_orders_per_symbol_per_day: int = 200
+    max_open_positions: int = 200
+    max_open_positions_per_symbol: int = 50
     max_contracts_per_order: int = 1
     max_estimated_premium_per_order: Decimal = Decimal("250")
     paper_strategy_min_change_percent: Decimal = Decimal("0.05")
