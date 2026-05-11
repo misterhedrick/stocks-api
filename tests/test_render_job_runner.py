@@ -306,8 +306,8 @@ class RenderJobRunnerTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(0)
 
-    def test_market_cycle_no_retry_on_timeout_when_delays_empty(self) -> None:
-        """market-cycle sets JOB_RETRY_DELAYS_SECONDS to empty string to disable retries.
+    def test_entry_cycle_no_retry_on_timeout_when_delays_empty(self) -> None:
+        """Entry crons set JOB_RETRY_DELAYS_SECONDS to empty string to disable retries.
         A single timeout must not be retried; Render will re-invoke the job in 10 minutes.
         """
         with patch.dict(
@@ -316,8 +316,8 @@ class RenderJobRunnerTests(unittest.TestCase):
                 "SCHEDULED_JOBS_ENABLED": "true",
                 "STOCKS_API_BASE_URL": "https://example.test",
                 "ADMIN_API_TOKEN": "token",
-                "JOB_PATH": "/api/v1/jobs/market-cycle?scan_limit=25&order_limit=25&fill_page_size=50",
-                "JOB_RETRY_DELAYS_SECONDS": "",  # No retries for market-cycle
+                "JOB_PATH": "/api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100",
+                "JOB_RETRY_DELAYS_SECONDS": "",  # No retries for entry crons
             },
             clear=True,
         ), patch(
@@ -335,13 +335,13 @@ class RenderJobRunnerTests(unittest.TestCase):
             exit_code = run_job_from_env()
 
         self.assertEqual(exit_code, 1)
-        self.assertEqual(urlopen.call_count, 1)  # No retry — exactly one attempt
+        self.assertEqual(urlopen.call_count, 1)  # No retry; exactly one attempt
         sleep.assert_not_called()
 
-    def test_market_cycle_no_retry_on_502_when_delays_empty(self) -> None:
-        """market-cycle must not retry on 502 when JOB_RETRY_DELAYS_SECONDS is empty."""
+    def test_entry_cycle_no_retry_on_502_when_delays_empty(self) -> None:
+        """Entry crons must not retry on 502 when JOB_RETRY_DELAYS_SECONDS is empty."""
         server_error = HTTPError(
-            "https://example.test/api/v1/jobs/market-cycle",
+            "https://example.test/api/v1/jobs/market-entry-cycle",
             502,
             "Bad Gateway",
             hdrs=None,
@@ -354,7 +354,7 @@ class RenderJobRunnerTests(unittest.TestCase):
                 "SCHEDULED_JOBS_ENABLED": "true",
                 "STOCKS_API_BASE_URL": "https://example.test",
                 "ADMIN_API_TOKEN": "token",
-                "JOB_PATH": "/api/v1/jobs/market-cycle?scan_limit=25&order_limit=25&fill_page_size=50",
+                "JOB_PATH": "/api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100",
                 "JOB_RETRY_DELAYS_SECONDS": "",
             },
             clear=True,

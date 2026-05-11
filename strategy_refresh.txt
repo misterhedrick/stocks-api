@@ -75,11 +75,8 @@ Where to inspect current strategy behavior:
   - Moving-average template default trigger is bullish_cross (fires only at the crossover event, not on sustained trend).
   - bullish_cross is more selective than bullish_trend; it fires once at the MA crossover moment rather than on every bar the short MA stays above the long MA.
 - app/services/signal_scanner.py
-  - Implements supported scanner types:
-    - price_threshold
-    - percent_change
+  - Implements supported evaluator-backed scanner types:
     - moving_average
-    - trend_confirmation
     - momentum_rate_of_change
     - rsi_reversal
     - macd_crossover
@@ -175,7 +172,7 @@ Useful local scripts:
 Current strategy configuration shape:
 - Strategy.config is JSONB.
 - Most active strategies use config.scanner.
-- config.scanner.type can currently be price_threshold, percent_change, moving_average, trend_confirmation, momentum_rate_of_change, rsi_reversal, macd_crossover, mean_reversion, breakout_price_threshold, volume_confirmed_breakout, volatility_squeeze, or support_resistance.
+- config.scanner.type should be one of the active evaluator-backed types: moving_average, momentum_rate_of_change, rsi_reversal, macd_crossover, mean_reversion, breakout_price_threshold, volume_confirmed_breakout, volatility_squeeze, or support_resistance.
 - Common scanner keys include:
   - symbols
   - data_feed
@@ -184,14 +181,6 @@ Current strategy configuration shape:
   - confidence
   - rationale
   - dedupe_minutes
-- price_threshold keys:
-  - price_above
-  - price_below
-- percent_change keys:
-  - lookback_minutes
-  - timeframe
-  - change_above_percent
-  - change_below_percent
 - moving_average keys:
   - short_window
   - long_window
@@ -201,13 +190,6 @@ Current strategy configuration shape:
   - bullish_cross / bearish_cross: fires only at the crossover moment (higher quality, fewer false positives)
   - bullish_trend / bearish_trend: fires on every bar the short MA is above/below the long MA (noisier)
   - Default template trigger is now bullish_cross.
-- trend_confirmation keys:
-  - short_window
-  - long_window
-  - lookback_minutes
-  - timeframe
-  - min_change_percent
-  - direction: bullish or bearish
 - config.scanner.preview controls option preview/order-intent generation.
 - config.scanner.exit controls managed exit behavior.
   - profit_target_percent: close when realized P/L exceeds this % of entry cost.

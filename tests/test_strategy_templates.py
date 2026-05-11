@@ -108,7 +108,7 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
         self.assertTrue(scanner["submit"]["enabled"])
 
-    def test_submit_trade_windows_are_09_45_to_15_45_et(self) -> None:
+    def test_submit_trade_windows_are_10_00_to_16_00_et(self) -> None:
         payload = build_moving_average_strategy_payload(
             symbol="SPY",
             target_strike=Decimal("500"),
@@ -116,8 +116,8 @@ class StrategyTemplateTests(unittest.TestCase):
         windows = payload["config"]["scanner"]["submit"]["trade_windows"]
         self.assertEqual(len(windows), 1)
         self.assertEqual(windows[0]["timezone"], "America/New_York")
-        self.assertEqual(windows[0]["start"], "09:45")
-        self.assertEqual(windows[0]["end"], "15:45")
+        self.assertEqual(windows[0]["start"], "10:00")
+        self.assertEqual(windows[0]["end"], "16:00")
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(

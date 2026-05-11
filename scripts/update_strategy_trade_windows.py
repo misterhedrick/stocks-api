@@ -13,7 +13,7 @@ Options:
     --all       Include inactive strategies (default: active strategies only).
     --force     Replace any existing scanner.submit.trade_windows value with
                 [{"timezone": "America/New_York", "start": "10:00", "end": "16:00"}].
-                Without --force, only the old 09:45-15:45 window is patched.
+                Without --force, only known old 09:45 windows are patched.
 
 Manual SQL equivalent for force mode:
 
@@ -54,8 +54,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.models import Strategy
 from app.db.session import SessionLocal
 
-OLD_START = "09:45"
-OLD_END = "15:45"
+OLD_WINDOWS = {
+    ("09:45", "15:30"),
+    ("09:45", "15:45"),
+}
 NEW_START = "10:00"
 NEW_END = "16:00"
 TARGET_TIMEZONE = "America/New_York"
@@ -115,8 +117,7 @@ def _patch_submit_trade_windows(
             continue
         if (
             window.get("timezone") == TARGET_TIMEZONE
-            and window.get("start") == OLD_START
-            and window.get("end") == OLD_END
+            and (window.get("start"), window.get("end")) in OLD_WINDOWS
         ):
             window["start"] = NEW_START
             window["end"] = NEW_END

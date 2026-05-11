@@ -2,50 +2,7 @@
 
 This file captures work that is known to be incomplete or intentionally deferred so it is not lost between sessions.
 
-## Completed: per-symbol entry cron limit increase
-
-The five symbol-specific `market-entry-cycle` cron paths in `render.yaml` have been updated from:
-
-```text
-scan_limit=25&order_limit=25&fill_page_size=50
-```
-
-to:
-
-```text
-scan_limit=100&order_limit=100&fill_page_size=100
-```
-
-Symbols affected:
-
-- SPY
-- QQQ
-- AAPL
-- MSFT
-- NVDA
-
-`OPTIONS_CANDIDATE_LIMIT` is already set to `100`, and the symbol-specific cron `JOB_PATH` values now use matching scan, order, and fill page-size limits.
-
-## Completed: legacy combined market-cycle cron removal
-
-The old combined `stocks-api-market-cycle` entry cron has been removed from `render.yaml`. Scheduled entries now come from the five symbol-specific `market-entry-cycle` cron jobs.
-
 ## Incomplete AI review layer
-
-Implemented:
-
-- `trade_cases` table and ORM model.
-- `ai_trade_reviews` table and ORM model.
-- `strategy_change_suggestions` table and ORM model.
-- `app/services/trade_cases.py` for FIFO-matched closed round trips.
-- Post-market maintenance populates trade cases in an isolated transaction.
-- `paper_review_snapshots` rows with post-market paper-trading evidence.
-- Local AI-review writer that reads `trade_cases` and recent paper-review evidence.
-- Writer that stores generated `ai_trade_reviews`.
-- Writer that stores pending `strategy_change_suggestions`.
-- Read endpoints for AI trade reviews and strategy-change suggestions.
-- Review metadata endpoint for approving, rejecting, and annotating suggestions.
-- Post-market maintenance runs the AI-review writer after trade cases and paper-review snapshots.
 
 Not implemented yet:
 
@@ -54,23 +11,7 @@ Not implemented yet:
 
 Important rule: AI may recommend strategy changes only. It must not directly modify live strategy logic or deployed trading behavior.
 
-## Completed: post-market paper review snapshots
-
-Post-market maintenance now creates or updates one `paper_review_snapshots` row per review date and review type. The snapshot stores performance summaries, signal/no-signal context, previews, broker orders, fills, option-selection diagnostics, rejected-preview trade comparisons, and rejected-signal shadow market movement comparisons.
-
-`scripts/print_paper_review_snapshot.py` prints the latest snapshot as a readable local report.
-
-## Completed: legacy signal scanner cleanup
-
-`app/services/signal_scanner.py` no longer routes direct legacy scanner types. These legacy `scanner.type` values are unsupported:
-
-- `price_threshold`
-- `percent_change`
-- `trend_confirmation`
-
 ## Paper testing and tuning still pending
-
-After cron and legacy scanner cleanup:
 
 - Paper-test the full evaluator-backed strategy set.
 - Compare signal volume by scanner type.
@@ -94,11 +35,6 @@ Current option selection is first-pass and still needs better scoring/filters as
 Not implemented yet:
 
 - Formal state enums/state machine for currently string-based statuses.
-
-Implemented:
-
-- `docker-compose.postgres.yml` starts a local Postgres test database for future integration tests.
-- `tests/integration/test_postgres_review_flow.py` provides opt-in real-Postgres coverage for Alembic upgrade, paper-review snapshot upsert, AI review/suggestion persistence, suggestion review metadata, and trading reset cleanup.
 
 ## Operational limitations still present
 
