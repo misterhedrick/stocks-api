@@ -307,7 +307,7 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ) as scanner, patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ) as reconcile:
             result = run_market_cycle(
@@ -353,7 +353,7 @@ class MarketCycleTests(unittest.TestCase):
                 created_signal_ids=[],
             ),
         ) as scanner, patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ) as reconcile, patch("app.services.market_cycle.evaluate_position_exits") as exits:
             result = run_market_entry_cycle(
@@ -384,7 +384,7 @@ class MarketCycleTests(unittest.TestCase):
         signal.underlying_symbol = "QQQ"
         db = FakeMarketCycleSession(signal=signal, strategy=strategy)
 
-        with patch("app.services.market_cycle.preview_order_intent_from_signal") as preview:
+        with patch("app.services.market_cycle_preview.preview_order_intent_from_signal") as preview:
             result = _preview_created_signals(
                 db,
                 [signal.id],
@@ -410,7 +410,7 @@ class MarketCycleTests(unittest.TestCase):
             order_intent=order_intent,
         )
 
-        with patch("app.services.market_cycle.submit_order_intent") as submit:
+        with patch("app.services.market_cycle_submit_core.submit_order_intent") as submit:
             result = _submit_previewed_order_intents(
                 db,
                 [order_intent.id],
@@ -439,13 +439,13 @@ class MarketCycleTests(unittest.TestCase):
         )
 
         with patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=AutomationDecision(
                 allowed=False,
                 reasons=["MAX_AUTO_ORDERS_PER_DAY reached"],
                 limits_snapshot={},
             ),
-        ), patch("app.services.market_cycle.submit_order_intent") as submit:
+        ), patch("app.services.market_cycle_submit_core.submit_order_intent") as submit:
             result = _submit_previewed_order_intents(
                 db,
                 [order_intent.id],
@@ -473,10 +473,10 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ) as preview:
             result = run_market_cycle(db)
@@ -513,10 +513,10 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle._signal_ids_for_preview",
             return_value=[signal.id],
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ) as preview:
             result = run_market_cycle(db)
@@ -540,7 +540,7 @@ class MarketCycleTests(unittest.TestCase):
         )
 
         with patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             side_effect=failure,
         ):
             result = _preview_created_signals(
@@ -570,10 +570,10 @@ class MarketCycleTests(unittest.TestCase):
         db = FakeMarketCycleSession(signal=signal, strategy=strategy)
 
         with patch(
-            "app.services.market_cycle.settings.options_preview_max_attempts",
+            "app.services.market_cycle_preview.settings.options_preview_max_attempts",
             3,
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             side_effect=OptionContractNotFoundError(
                 "No option contract matched quote constraints for SPY",
                 diagnostics={"reason_counts": {"estimated_notional_above_max": 1}},
@@ -602,10 +602,10 @@ class MarketCycleTests(unittest.TestCase):
         db = FakeMarketCycleSession(signal=signal, strategy=strategy)
 
         with patch(
-            "app.services.market_cycle.settings.options_preview_max_attempts",
+            "app.services.market_cycle_preview.settings.options_preview_max_attempts",
             3,
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
         ) as preview:
             result = _preview_created_signals(
                 db,
@@ -632,10 +632,10 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
         ) as preview:
             result = run_market_cycle(db)
 
@@ -652,7 +652,7 @@ class MarketCycleTests(unittest.TestCase):
         strategy.config["scanner"]["preview"]["limit"] = 20
         signal = build_signal(strategy)
 
-        with patch("app.services.market_cycle.settings.options_max_candidates", 100):
+        with patch("app.services.market_cycle_submit_config.settings.options_max_candidates", 100):
             payload = _preview_payload_for_signal(signal, strategy)
 
         self.assertIsNotNone(payload.contract_selection)
@@ -673,13 +673,13 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value="auto-preview delayed until scanner.submit.trade_windows opens",
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
         ) as preview:
             result = run_market_cycle(db)
 
@@ -710,19 +710,19 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, broker_order),
         ) as submit:
             result = run_market_cycle(db)
@@ -757,13 +757,13 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
 
@@ -799,18 +799,18 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
         ) as guard, patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
 
@@ -845,16 +845,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
 
@@ -877,7 +877,7 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
             "app.services.market_cycle.evaluate_position_exits",
@@ -902,7 +902,7 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
             "app.services.market_cycle.scan_market_news",
@@ -947,13 +947,13 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
             "app.services.market_cycle.scan_market_news",
             return_value=high_risk_news,
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
         ) as preview:
             result = run_market_cycle(db)
 
@@ -984,19 +984,19 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
 
@@ -1030,19 +1030,19 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=blocked_decision,
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             result = run_market_cycle(db)
 
@@ -1078,19 +1078,19 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1122,16 +1122,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1162,16 +1162,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1202,16 +1202,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1244,25 +1244,25 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.settings.market_cycle_submit_enabled",
             True,
         ), patch(
-            "app.services.market_cycle.datetime",
+            "app.services.market_cycle_submit_core.datetime",
             wraps=datetime,
         ) as market_cycle_datetime, patch(
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason",
+            "app.services.market_cycle_preview._entry_preview_delay_reason",
             return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit:
             market_cycle_datetime.now.return_value = datetime(
                 2026,
@@ -1297,20 +1297,20 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+            "app.services.market_cycle_preview._entry_preview_delay_reason", return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit, patch(
-            "app.services.market_cycle.datetime", wraps=datetime,
+            "app.services.market_cycle_submit_core.datetime", wraps=datetime,
         ) as mock_dt:
             # 9:30 AM EDT (UTC-4) = 13:30 UTC — before the 10:00 ET window
             mock_dt.now.return_value = datetime(2026, 4, 23, 13, 30, tzinfo=timezone.utc)
@@ -1339,21 +1339,21 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+            "app.services.market_cycle_preview._entry_preview_delay_reason", return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, broker_order),
         ) as submit, patch(
-            "app.services.market_cycle.datetime", wraps=datetime,
+            "app.services.market_cycle_submit_core.datetime", wraps=datetime,
         ) as mock_dt:
             # 11:00 AM EDT (UTC-4) = 15:00 UTC — inside the 10:00-16:00 ET window
             mock_dt.now.return_value = datetime(2026, 4, 23, 15, 0, tzinfo=timezone.utc)
@@ -1380,20 +1380,20 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle._entry_preview_delay_reason", return_value=None,
+            "app.services.market_cycle_preview._entry_preview_delay_reason", return_value=None,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
         ) as submit, patch(
-            "app.services.market_cycle.datetime", wraps=datetime,
+            "app.services.market_cycle_submit_core.datetime", wraps=datetime,
         ) as mock_dt:
             # 4:30 PM EDT (UTC-4) = 20:30 UTC — after the 16:00 ET window
             mock_dt.now.return_value = datetime(2026, 4, 23, 20, 30, tzinfo=timezone.utc)
@@ -1427,16 +1427,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1468,16 +1468,16 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(signal.id),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_cycle.preview_order_intent_from_signal",
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
             return_value=order_intent,
         ), patch(
-            "app.services.market_cycle.can_auto_submit_order_intent",
+            "app.services.market_cycle_submit_core.can_auto_submit_order_intent",
             return_value=allowed_automation_decision(),
         ), patch(
-            "app.services.market_cycle.submit_order_intent",
+            "app.services.market_cycle_submit_core.submit_order_intent",
             return_value=(order_intent, build_broker_order(order_intent)),
         ) as submit:
             result = run_market_cycle(db)
@@ -1498,7 +1498,7 @@ class MarketCycleTests(unittest.TestCase):
         ), patch(
             "app.services.market_cycle.scan_signals",
         ) as scanner, patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
         ) as reconcile:
             result = run_market_cycle(db)
 
@@ -1534,7 +1534,7 @@ class MarketCycleTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
             "app.services.market_cycle.evaluate_position_exits",
@@ -1600,7 +1600,7 @@ class MarketCycleAdvisoryLockTests(unittest.TestCase):
         with patch(
             "app.services.market_cycle.scan_signals",
         ) as scanner, patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
         ) as reconcile:
             run_market_cycle(db)
 
@@ -1614,7 +1614,7 @@ class MarketCycleAdvisoryLockTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ):
             result = run_market_cycle(db)
@@ -1630,7 +1630,7 @@ class MarketCycleAdvisoryLockTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             side_effect=RuntimeError("simulated scan failure"),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), self.assertRaises(RuntimeError):
             run_market_cycle(db)
@@ -1679,7 +1679,7 @@ class MarketCycleRuntimeBudgetTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ):
             result = run_market_cycle(db, phase_timeout_seconds=0)
@@ -1729,7 +1729,7 @@ class MarketCycleRuntimeBudgetTests(unittest.TestCase):
             "app.services.market_cycle.scan_signals",
             return_value=build_signal_scan_result(),
         ), patch(
-            "app.services.market_cycle.reconcile_broker_state",
+            "app.services.market_cycle_steps.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ):
             result = run_market_cycle(db)

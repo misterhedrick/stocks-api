@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from decimal import Decimal, ROUND_HALF_UP
+
+from app.core.config import settings
+
+from app.integrations.alpaca import AlpacaLatestOptionQuote
+
+from app.schemas.order_intents import OrderIntentPreviewCreate
+
+from app.schemas.options import OptionContractSelectionRead
+
+from app.services.order_intent_types import OrderIntentPreviewError
+
+def _build_quote_preview(
+    latest_quote: AlpacaLatestOptionQuote,
+    *,
+    side: str,
+    quantity: int,
+    supplied_limit_price: Decimal | None,
+) -> dict[str, object]:
+    quote = latest_quote.quote
+    bid_price = _usable_quote_price(quote.bid_price)
+    ask_price = _usable_quote_price(quote.ask_price)
+    midpoint = _midpoint(bid_price, ask_price)
+    spread = ask_price - bid_price if bid_price is not None and ask_price is not None else None
+    suggested_limit_price = supplied_limit_price or midpoint
+    estimated_price = supplied_limit_price or _side_price(
+        side,
+        bid_price=bid_price,
+        ask_price=ask_price,
+        fallback=midpoint,
+    )
+    estimated_notional = (
+        estimated_price * Decimal(quantity) * Decimal("100")
+        if estimated_price is not None
+        else None
+    )
+
+    return {
+        "symbol": latest_quote.symbol,
+        "bid_price": _decimal_to_string(bid_price),
+        "bid_size": _decimal_to_string(quote.bid_size),
+        "ask_price": _decimal_to_string(ask_price),
+        "ask_size": _decimal_to_string(quote.ask_size),
+        "midpoint": _decimal_to_string(midpoint),
+        "spread": _decimal_to_string(spread),
+        "suggested_limit_price": _decimal_to_string(suggested_limit_price),
+        "estimated_price": _decimal_to_string(estimated_price),
+        "estimated_notional": _decimal_to_string(estimated_notional),
+        "contract_multiplier": "100",
+        "quote_timestamp": quote.timestamp.isoformat()
+        if quote.timestamp is not None
+        else None,
+        "raw_quote": _json_safe_value(latest_quote.raw_response),
+    }
+
+def _effective_max_estimated_notional(
+    payload: OrderIntentPreviewCreate,
+) -> Decimal | None:
+    if payload.max_estimated_notional is not None:
+        return payload.max_estimated_notional
+    if (
+        payload.contract_selection is not None
+        and payload.contract_selection.max_estimated_notional is not None
+    ):
+        return payload.contract_selection.max_estimated_notional
+    return settings.max_estimated_premium_per_order
+
+def _effective_max_spread(payload: OrderIntentPreviewCreate) -> Decimal | None:
+    if payload.max_spread is not None:
+        return payload.max_spread
+    if (
+        payload.contract_selection is not None
+        and payload.contract_selection.max_spread is not None
+    ):
+        return payload.contract_selection.max_spread
+    return None
+
+def _validate_preview_quote_constraints(
+    quote_preview: dict[str, object],
+    *,
+    max_estimated_notional: Decimal | None,
+    max_spread: Decimal | None,
+) -> None:
+    estimated_notional = _decimal_from_preview(quote_preview.get("estimated_notional"))
+    spread = _decimal_from_preview(quote_preview.get("spread"))
+
+    if (
+        max_estimated_notional is not None
+        and estimated_notional is not None
+        and estimated_notional > max_estimated_notional
+    ):
+        raise OrderIntentPreviewError(
+            "Estimated notional "
+            f"{estimated_notional} exceeds max {max_estimated_notional}"
+        )
+    if max_spread is not None and spread is not None and spread > max_spread:
+        raise OrderIntentPreviewError(
+            f"Quote spread {spread} exceeds max {max_spread}"
+        )
+
+def _selection_preview(
+    selection: OptionContractSelectionRead | None,
+) -> dict[str, object] | None:
+    if selection is None:
+        return None
+    return selection.model_dump(mode="json")
+
+def _midpoint(
+    bid_price: Decimal | None,
+    ask_price: Decimal | None,
+) -> Decimal | None:
+    if bid_price is None or ask_price is None:
+        return None
+    return ((bid_price + ask_price) / Decimal("2")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
+def _side_price(
+    side: str,
+    *,
+    bid_price: Decimal | None,
+    ask_price: Decimal | None,
+    fallback: Decimal | None,
+) -> Decimal | None:
+    if side == "buy":
+        return ask_price or fallback
+    return bid_price or fallback
+
+def _decimal_to_string(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+def _usable_quote_price(value: Decimal | None) -> Decimal | None:
+    if value is None or value <= Decimal("0"):
+        return None
+    return value
+
+def _decimal_from_preview(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(str(value))
+
+def _json_safe_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    return value

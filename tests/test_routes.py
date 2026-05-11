@@ -360,7 +360,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_reconciliation_result()
 
         with patch(
-            "app.api.routes.jobs.reconcile_broker_state",
+            "app.api.routes.jobs_core.reconcile_broker_state",
             return_value=result,
         ) as reconcile:
             response = client.post(
@@ -401,7 +401,7 @@ class RouteBehaviorTests(unittest.TestCase):
         client = TestClient(app)
 
         with patch(
-            "app.api.routes.jobs.reconcile_broker_state",
+            "app.api.routes.jobs_core.reconcile_broker_state",
             side_effect=AlpacaTradingConfigurationError(
                 "Alpaca API credentials are not configured"
             ),
@@ -422,7 +422,7 @@ class RouteBehaviorTests(unittest.TestCase):
         client = TestClient(app)
 
         with patch(
-            "app.api.routes.jobs.reconcile_broker_state",
+            "app.api.routes.jobs_core.reconcile_broker_state",
             side_effect=AlpacaTradingError("Alpaca is unavailable"),
         ):
             response = client.post(
@@ -441,7 +441,7 @@ class RouteBehaviorTests(unittest.TestCase):
         client = TestClient(app)
 
         with patch(
-            "app.api.routes.jobs.reconcile_broker_state",
+            "app.api.routes.jobs_core.reconcile_broker_state",
             side_effect=AlpacaTradingError(
                 "tried to set the page size to 500, but the maximum is 100",
                 status_code=422,
@@ -466,7 +466,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_signal_scan_result()
 
         with patch(
-            "app.api.routes.jobs.scan_signals",
+            "app.api.routes.jobs_core.scan_signals",
             return_value=result,
         ) as scanner:
             response = client.post(
@@ -491,7 +491,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_cycle_result()
 
         with patch(
-            "app.api.routes.jobs.run_market_cycle",
+            "app.api.routes.jobs_market.run_market_cycle",
             return_value=result,
         ) as market_cycle:
             response = client.post(
@@ -521,7 +521,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_cycle_result(symbol="SPY")
 
         with patch(
-            "app.api.routes.jobs.run_market_entry_cycle",
+            "app.api.routes.jobs_market.run_market_entry_cycle",
             return_value=result,
         ) as market_entry_cycle:
             response = client.post(
@@ -577,7 +577,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_cycle_result()
 
         with patch(
-            "app.api.routes.jobs.run_market_cycle",
+            "app.api.routes.jobs_market.run_market_cycle",
             return_value=result,
         ) as market_cycle:
             response = client.post(
@@ -611,7 +611,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_maintenance_result("pre_market")
 
         with patch(
-            "app.api.routes.jobs.run_market_maintenance",
+            "app.api.routes.jobs_maintenance.run_market_maintenance",
             return_value=result,
         ) as maintenance:
             response = client.post(
@@ -641,7 +641,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_maintenance_result("pre_market")
 
         with patch(
-            "app.api.routes.jobs.run_pre_market_maintenance",
+            "app.api.routes.jobs_maintenance.run_pre_market_maintenance",
             return_value=result,
         ) as maintenance:
             response = client.post(
@@ -672,7 +672,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_market_maintenance_result("post_market")
 
         with patch(
-            "app.api.routes.jobs.run_post_market_maintenance",
+            "app.api.routes.jobs_maintenance.run_post_market_maintenance",
             return_value=result,
         ) as maintenance:
             response = client.post(
@@ -718,7 +718,7 @@ class RouteBehaviorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.api.routes.jobs.write_ai_trade_reviews_from_paper_evidence",
+            "app.api.routes.jobs_maintenance.write_ai_trade_reviews_from_paper_evidence",
             return_value=result,
         ) as writer:
             response = client.post(
@@ -743,7 +743,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_trading_data_reset_result()
 
         with patch(
-            "app.api.routes.jobs.run_trading_data_reset",
+            "app.api.routes.jobs_maintenance.run_trading_data_reset",
             return_value=result,
         ) as reset:
             response = client.post(
@@ -787,7 +787,7 @@ class RouteBehaviorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.api.routes.jobs.evaluate_position_exits",
+            "app.api.routes.jobs_core.evaluate_position_exits",
             return_value=result,
         ) as exits:
             response = client.post(
@@ -827,7 +827,7 @@ class RouteBehaviorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.api.routes.jobs.preview_unmanaged_position_exits",
+            "app.api.routes.jobs_core.preview_unmanaged_position_exits",
             return_value=result,
         ) as unmanaged_exits:
             response = client.post(
@@ -851,7 +851,7 @@ class RouteBehaviorTests(unittest.TestCase):
         result = build_news_scan_result()
 
         with patch(
-            "app.api.routes.jobs.scan_market_news",
+            "app.api.routes.jobs_core.scan_market_news",
             return_value=result,
         ) as news_scan:
             response = client.post(
