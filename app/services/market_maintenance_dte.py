@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+import copy
+import logging
+from datetime import datetime, timezone
 from decimal import Decimal
-
 from typing import Any
 
 from sqlalchemy import select
-
 from sqlalchemy.orm import Session
 
-from app.db.models import Strategy
-
+from app.db.models import JobRun, Strategy
 from app.services.market_maintenance_types import PatchStrategyDteResult
+
+logger = logging.getLogger(__name__)
+
 
 def patch_strategy_dte(
     db: Session,
@@ -19,8 +21,10 @@ def patch_strategy_dte(
     min_dte: int = 2,
     max_dte: int = 30,
 ) -> PatchStrategyDteResult:
-    """Update scanner.preview DTE window on all active strategies that need it."""
-    import copy
+    if min_dte <= 0 or max_dte <= 0:
+        raise ValueError("min_dte and max_dte must be positive")
+    if min_dte > max_dte:
+        raise ValueError("min_dte must be <= max_dte")
 
     started_at = datetime.now(timezone.utc)
     job_run = JobRun(
@@ -84,6 +88,7 @@ def patch_strategy_dte(
         strategies_updated=updated,
         strategies_skipped=skipped,
     )
+
 
 def _json_safe_value(value: object) -> object:
     if isinstance(value, Decimal):
