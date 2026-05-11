@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes.automation import router as automation_router
+from app.api.routes.automation_diagnostics import router as automation_diagnostics_router
 from app.api.routes.health import router as health_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.jobs import public_router as jobs_public_router
@@ -45,6 +46,7 @@ def root_health() -> dict[str, str]:
 
 app.include_router(health_router, prefix=settings.api_v1_prefix)
 app.include_router(automation_router, prefix=settings.api_v1_prefix)
+app.include_router(automation_diagnostics_router, prefix=settings.api_v1_prefix)
 app.include_router(jobs_router, prefix=settings.api_v1_prefix)
 app.include_router(jobs_public_router, prefix=settings.api_v1_prefix)
 app.include_router(order_intents_router, prefix=settings.api_v1_prefix)
