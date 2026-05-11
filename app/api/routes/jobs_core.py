@@ -40,8 +40,7 @@ from app.services.market_maintenance import (
     run_pre_market_maintenance,
 )
 from app.services.news_scanner import NewsFetchError, scan_market_news
-from app.services.position_exits import evaluate_position_exits
-from app.services.position_exits import preview_unmanaged_position_exits
+from app.services.position_exits import evaluate_position_exits, preview_unmanaged_position_exits
 from app.services.signal_scanner import scan_signals
 from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
 from app.services.trading_reset import (
