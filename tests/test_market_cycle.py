@@ -559,6 +559,31 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(signal.status, "new")
         self.assertEqual(db.commit_count, 1)
 
+    def test_failed_preview_with_generic_error_is_categorized(self) -> None:
+        from time import perf_counter as _pc
+
+        from app.services.market_cycle import _preview_created_signals
+
+        strategy = build_strategy()
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch(
+            "app.services.market_cycle_preview.preview_order_intent_from_signal",
+            side_effect=TimeoutError("quote lookup timed out"),
+        ):
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=_pc(),
+                phase_timeout=70,
+            )
+
+        self.assertEqual(result["previews_created"], 0)
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(result["skipped_reasons"], {"timeout": 1})
+        self.assertEqual(signal.last_preview_error_code, "TimeoutError")
+
     def test_failed_preview_at_max_attempts_marks_preview_rejected(self) -> None:
         from time import perf_counter as _pc
 

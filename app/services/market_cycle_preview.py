@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.utils import current_trading_day_start_utc
 from app.db.models import OrderIntent, Signal, Strategy
-from app.services.market_cycle_steps import _normalize_symbol
+from app.services.market_cycle_steps import _error_category, _normalize_symbol
 from app.services.market_cycle_submit import _preview_payload_for_signal
 from app.services.market_cycle_submit_config import (
     _submit_config_for_strategy,
