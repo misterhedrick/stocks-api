@@ -245,6 +245,17 @@ Do not tune randomly. Tune based on grouped rejection counts and paper-trade out
 
 Use reset only when intentionally clearing paper-trading state. Prefer dry-run first.
 
+Local script for a new Alpaca paper account:
+
+```bash
+python scripts/reset_paper_account_data.py
+python scripts/reset_paper_account_data.py --apply --confirm RESET_TRADING_DATA
+```
+
+The reset preserves `strategies`. By default it clears runtime trading tables plus
+old `job_runs` and `audit_logs`, then writes a fresh reset job/audit record. Pass
+`--keep-history` to retain job and audit history.
+
 Dry run:
 
 ```bash

@@ -256,6 +256,24 @@ dedupe_minutes=60
 
 This profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in the Alpaca paper sandbox.
 
+## Reset paper account data
+
+When switching to a new Alpaca paper trading account, clear the generated trading data before starting new runs. The reset preserves `strategies` so the application keeps its configured strategy universe.
+
+Dry run first:
+
+```bash
+python scripts/reset_paper_account_data.py
+```
+
+Confirmed reset:
+
+```bash
+python scripts/reset_paper_account_data.py --apply --confirm RESET_TRADING_DATA
+```
+
+The script clears runtime trading tables such as `signals`, `order_intents`, `broker_orders`, `fills`, `position_snapshots`, diagnostics, trade cases, paper review snapshots, AI review rows, and, by default, old `job_runs` and `audit_logs`. It then records the reset itself. Pass `--keep-history` to preserve existing job and audit history.
+
 ## Signal strategy planning docs
 
 Detailed signal strategy specs live under:
