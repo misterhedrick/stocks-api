@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 
 import uuid
@@ -22,6 +23,7 @@ from app.services.ai_trade_review import (
     update_strategy_change_suggestion_review,
 )
 from app.services.automation_status import get_automation_status
+from app.services.daily_paper_review import build_daily_paper_review
 from app.services.learning_report import build_learning_report
 from app.services.performance_review import get_paper_performance_review
 from app.services.paper_review_snapshots import get_paper_review_snapshots
@@ -68,6 +70,19 @@ def paper_performance_route(
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ) -> PaperPerformanceRead:
     return get_paper_performance_review(db, limit=limit)
+
+
+@router.get(
+    "/daily-paper-review",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def daily_paper_review_route(
+    db: Annotated[Session, Depends(get_db)],
+    review_date: Annotated[date | None, Query(alias="date")] = None,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+) -> dict[str, Any]:
+    return build_daily_paper_review(db, review_date=review_date, limit=limit)
 
 
 @router.get(
