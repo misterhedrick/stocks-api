@@ -10,6 +10,7 @@ from app.services.option_selection_diagnostics import (
     build_option_selection_diagnostics_summary,
 )
 from app.services.phase1_readiness import build_phase1_readiness
+from app.services.retention_report import build_retention_report
 
 router = APIRouter(
     prefix="/automation",
@@ -27,6 +28,17 @@ def phase1_readiness_route(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     return build_phase1_readiness(db)
+
+
+@router.get(
+    "/retention-report",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def retention_report_route(
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    return build_retention_report(db)
 
 
 @router.get(
