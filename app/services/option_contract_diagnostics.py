@@ -2,31 +2,19 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from time import perf_counter
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
-    AlpacaMarketDataClient,
     AlpacaOptionContract,
     AlpacaOptionQuote,
-    AlpacaTradingClient,
 )
 from app.schemas.options import (
     OptionContractRead,
     OptionContractSelectionCreate,
-    OptionContractSelectionRead,
-)
-from app.services.preview_profiles import resolve_preview_profile_limits
-from app.services.option_contract_types import (
-    CandidateRejection,
-    OptionContractNotFoundError,
-    OptionContractSelectionError,
 )
 from app.services.option_contract_types import CandidateRejection
 
