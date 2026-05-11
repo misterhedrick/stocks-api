@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from time import perf_counter
-from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -14,19 +12,26 @@ from app.integrations.alpaca import (
     AlpacaLatestOptionQuote,
     AlpacaMarketDataClient,
     AlpacaOptionContract,
-    AlpacaOptionQuote,
-    AlpacaTradingClient,
 )
-from app.schemas.options import (
-    OptionContractRead,
-    OptionContractSelectionCreate,
-    OptionContractSelectionRead,
+from app.schemas.options import OptionContractSelectionCreate
+from app.services.option_contract_diagnostics import (
+    _build_quote_context,
+    _candidate_diagnostic,
+    _contract_diagnostic_fields,
+    _contract_read,
+    _contract_sort_key,
+    _decimal_from_context,
+    _log_selection_failure,
+    _option_candidate_limit,
+    _quoted_contract_sort_key,
+    _quote_diagnostic_fields,
+    _selection_failure_diagnostics,
+    _selection_reason,
+    _spread_pct_string,
 )
-from app.services.preview_profiles import resolve_preview_profile_limits
 from app.services.option_contract_types import (
     CandidateRejection,
     OptionContractNotFoundError,
-    OptionContractSelectionError,
 )
 
 logger = logging.getLogger(__name__)
@@ -350,20 +355,3 @@ def _quote_rejection_reason(
             )
 
     return None
-
-
-from app.services.option_contract_diagnostics import (
-    _build_quote_context,
-    _candidate_diagnostic,
-    _contract_diagnostic_fields,
-    _contract_read,
-    _contract_sort_key,
-    _decimal_from_context,
-    _log_selection_failure,
-    _option_candidate_limit,
-    _quoted_contract_sort_key,
-    _quote_diagnostic_fields,
-    _selection_failure_diagnostics,
-    _selection_reason,
-    _spread_pct_string,
-)
