@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.orm import Session
 
@@ -116,31 +119,34 @@ def _fail_market_cycle(
     phase_timeout: int,
     exc: Exception,
 ) -> None:
-    db.rollback()
-    job_run.status = "failed"
-    job_run.finished_at = datetime.now(timezone.utc)
-    timings["total_seconds"] = _elapsed_seconds(cycle_started)
-    job_run.details = {
-        "timings": timings,
-        "phase_timeout_seconds": phase_timeout,
-        "diagnostics": {
-            "status": "failed",
-            "error_type": exc.__class__.__name__,
-            "error_category": _error_category(str(exc)),
-        },
-    }
-    job_run.error = f"{exc.__class__.__name__}: {exc}"
-    db.add(job_run)
-    record_audit_log(
-        db,
-        event_type=f"{event_prefix}.failed",
-        entity_type="job_run",
-        entity_id=job_run.id,
-        message=f"{event_prefix.replace('_', ' ').title()} failed",
-        payload={"error": job_run.error},
-    )
-    db.commit()
-    db.refresh(job_run)
+    try:
+        db.rollback()
+        job_run.status = "failed"
+        job_run.finished_at = datetime.now(timezone.utc)
+        timings["total_seconds"] = _elapsed_seconds(cycle_started)
+        job_run.details = {
+            "timings": timings,
+            "phase_timeout_seconds": phase_timeout,
+            "diagnostics": {
+                "status": "failed",
+                "error_type": exc.__class__.__name__,
+                "error_category": _error_category(str(exc)),
+            },
+        }
+        job_run.error = f"{exc.__class__.__name__}: {exc}"
+        db.add(job_run)
+        record_audit_log(
+            db,
+            event_type=f"{event_prefix}.failed",
+            entity_type="job_run",
+            entity_id=job_run.id,
+            message=f"{event_prefix.replace('_', ' ').title()} failed",
+            payload={"error": job_run.error},
+        )
+        db.commit()
+        db.refresh(job_run)
+    except Exception:
+        logger.exception("Failed to record market cycle failure for job_run %s", job_run.id)
 
 
 def _submit_skipped_result(

@@ -152,22 +152,25 @@ def reconcile_broker_state(
         )
     except Exception as exc:
         logger.error("Broker reconciliation failed: %s: %s", exc.__class__.__name__, exc)
-        db.rollback()
-        job_run.status = "failed"
-        job_run.finished_at = datetime.now(timezone.utc)
-        job_run.details = {}
-        job_run.error = f"{exc.__class__.__name__}: {exc}"
-        db.add(job_run)
-        record_audit_log(
-            db,
-            event_type="broker_reconciliation.failed",
-            entity_type="job_run",
-            entity_id=job_run.id,
-            message="Broker reconciliation failed",
-            payload={"error": job_run.error},
-        )
-        db.commit()
-        db.refresh(job_run)
+        try:
+            db.rollback()
+            job_run.status = "failed"
+            job_run.finished_at = datetime.now(timezone.utc)
+            job_run.details = {}
+            job_run.error = f"{exc.__class__.__name__}: {exc}"
+            db.add(job_run)
+            record_audit_log(
+                db,
+                event_type="broker_reconciliation.failed",
+                entity_type="job_run",
+                entity_id=job_run.id,
+                message="Broker reconciliation failed",
+                payload={"error": job_run.error},
+            )
+            db.commit()
+            db.refresh(job_run)
+        except Exception:
+            logger.exception("Failed to record broker reconciliation failure for job_run %s", job_run.id)
         raise
 
 
