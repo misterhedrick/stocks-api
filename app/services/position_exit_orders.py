@@ -30,9 +30,12 @@ def _create_exit_order_intent(
     trigger_reason: str,
     market_data_client: AlpacaMarketDataClient,
 ) -> OrderIntent:
+    max_contracts_per_exit = _optional_int(exit_config.get("max_contracts_per_exit"))
+    if max_contracts_per_exit is not None and max_contracts_per_exit <= 0:
+        raise ValueError("scanner.exit.max_contracts_per_exit must be greater than 0")
     quantity = min(
         int(position.quantity),
-        _optional_int(exit_config.get("max_contracts_per_exit")) or int(position.quantity),
+        max_contracts_per_exit or int(position.quantity),
     )
     if quantity <= 0:
         raise ValueError("exit quantity must be greater than 0")
