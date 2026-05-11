@@ -35,6 +35,10 @@ def scan_market_news(
     ticker_limit: int = 5,
     client: RssNewsClient | None = None,
 ) -> NewsScanResult:
+    if market_limit < 1:
+        raise ValueError("market_limit must be >= 1")
+    if ticker_limit < 1:
+        raise ValueError("ticker_limit must be >= 1")
     started_at = datetime.now(timezone.utc)
     job_run = JobRun(
         job_name="news_scan",
@@ -117,22 +121,25 @@ def scan_market_news(
 
         return NewsScanResult(job_run=job_run, **details)
     except Exception as exc:
-        db.rollback()
-        job_run.status = "failed"
-        job_run.finished_at = datetime.now(timezone.utc)
-        job_run.details = {}
-        job_run.error = f"{exc.__class__.__name__}: {exc}"
-        db.add(job_run)
-        record_audit_log(
-            db,
-            event_type="news_scan.failed",
-            entity_type="job_run",
-            entity_id=job_run.id,
-            message="News scan failed",
-            payload={"error": job_run.error},
-        )
-        db.commit()
-        db.refresh(job_run)
+        try:
+            db.rollback()
+            job_run.status = "failed"
+            job_run.finished_at = datetime.now(timezone.utc)
+            job_run.details = {}
+            job_run.error = f"{exc.__class__.__name__}: {exc}"
+            db.add(job_run)
+            record_audit_log(
+                db,
+                event_type="news_scan.failed",
+                entity_type="job_run",
+                entity_id=job_run.id,
+                message="News scan failed",
+                payload={"error": job_run.error},
+            )
+            db.commit()
+            db.refresh(job_run)
+        except Exception:
+            logger.exception("Failed to record news scan failure for job_run %s", job_run.id)
         raise
 
 def _market_feed_urls() -> list[str]:
