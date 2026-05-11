@@ -2,25 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from typing import Any
-
 from sqlalchemy import select
-
 from sqlalchemy.orm import Session
 
 from app.db.models import AiTradeReview, JobRun, StrategyChangeSuggestion, TradeCase
-
-from app.services.audit_logs import record_audit_log
-
 from app.services.ai_trade_review_assessment import (
     _assessment_for_trade_case,
     _latest_snapshot,
     _suggestions_for_assessment,
 )
-
 from app.services.ai_trade_review_stats import _trade_case_group_stats
-
 from app.services.ai_trade_review_types import AiTradeReviewWriterResult, LOCAL_REVIEW_MODEL
+from app.services.audit_logs import record_audit_log
+
 
 def write_ai_trade_reviews_from_paper_evidence(
     db: Session,
@@ -98,7 +92,11 @@ def write_ai_trade_reviews_from_paper_evidence(
                     group_key = (
                         str(suggestion_payload["suggestion_type"]),
                         str(assessment.get("scanner_type") or "unknown"),
-                        str(assessment.get("underlying_symbol") or assessment.get("symbol") or "unknown").upper(),
+                        str(
+                            assessment.get("underlying_symbol")
+                            or assessment.get("symbol")
+                            or "unknown"
+                        ).upper(),
                     )
                     if group_key in suggested_groups:
                         continue
