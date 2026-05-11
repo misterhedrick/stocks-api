@@ -56,6 +56,12 @@ def run_market_maintenance(
     stale_after_hours: int | None = None,
     news_enabled: bool = True,
 ) -> MarketMaintenanceResult:
+    if order_limit is not None and order_limit < 1:
+        raise ValueError("order_limit must be >= 1")
+    if fill_page_size is not None and fill_page_size < 1:
+        raise ValueError("fill_page_size must be >= 1")
+    if stale_after_hours is not None and stale_after_hours < 0:
+        raise ValueError("stale_after_hours must be >= 0")
     selected_phase = resolve_market_maintenance_phase(phase, now=now)
     if selected_phase == "pre_market":
         return run_pre_market_maintenance(
