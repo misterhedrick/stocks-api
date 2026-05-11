@@ -398,6 +398,10 @@ Current high-priority next steps:
 4. Add real DB integration tests that run against the local Postgres helper.
 5. Add an explicit implementation step for approved suggestions, still gated by human review.
 
+Code cleanup TODO:
+
+- `app/services/option_contract_helpers.py` still needs a local-safe cleanup pass after the large module split. Remove unused imports, keep diagnostic-only helpers in `app/services/option_contract_diagnostics.py`, keep quote/expiration/availability helpers in `option_contract_helpers.py`, and run the option-selection tests before merging.
+
 Known limitations:
 
 - Option contract selection can reject many candidates due open interest, notional, spread, or quote quality. Repeated failed previews retire to `preview_rejected` after `OPTIONS_PREVIEW_MAX_ATTEMPTS`.
