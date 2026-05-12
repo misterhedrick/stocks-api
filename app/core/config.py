@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
     paper_strategy_stop_loss_percent: Decimal = Decimal("15")
     paper_strategy_preview_profiles_enabled: bool = True
+    paper_review_snapshot_retention_days: int = 45
     options_min_dte: int = 7
     options_target_dte: int = 14
     options_max_dte: int = 45

@@ -106,6 +106,7 @@ def market_maintenance_route(
         trade_cases=result.trade_cases,
         paper_review_snapshot=result.paper_review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
+        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
     )
 
 
@@ -157,6 +158,7 @@ def pre_market_maintenance_route(
         trade_cases=result.trade_cases,
         paper_review_snapshot=result.paper_review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
+        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
     )
 
 
@@ -201,6 +203,7 @@ def post_market_maintenance_route(
         trade_cases=result.trade_cases,
         paper_review_snapshot=result.paper_review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
+        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
     )
 
 

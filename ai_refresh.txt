@@ -52,6 +52,25 @@ Execution rule:
 - Alpaca is source of truth for broker orders, fills, and positions.
 - AI can recommend strategy changes only; it must not auto-change live logic.
 
+=== STRATEGY REFINEMENT CONSOLIDATION STATE ===
+
+Implemented on develop:
+- /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type and symbol.
+- Post-market maintenance saves the generated learning report inside paper_review_snapshots.raw_payload.learning_report.
+- PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS controls paper_review_snapshots retention; default is 45 days.
+- Post-market maintenance prunes old paper_review_snapshots after creating the latest snapshot and AI reviews.
+- /api/v1/automation/strategy-refinement reads recent saved snapshots and builds a tuning queue with:
+  - priority score trends
+  - minimum evidence gates
+  - readiness statuses
+  - signal vs option-selection vs exit/risk focus
+  - before/after windows around recorded tuning decisions
+- strategy_tuning_decisions persists human-approved tuning decisions, evidence snapshot IDs, expected effect, proposed config patches, and later outcome summaries.
+- /api/v1/automation/strategy-tuning-decisions supports list/create/update for tuning decisions.
+
+Important rule:
+- strategy_tuning_decisions and strategy_change_suggestions are human-review records only. They must not automatically apply config or strategy logic changes.
+
 === CURRENT DEPLOYED / OPERATIONAL STATE ===
 
 Render web service:
