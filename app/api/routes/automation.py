@@ -14,6 +14,8 @@ from app.schemas.automation import (
     PaperPerformanceRead,
     PositionManagementStatusRead,
     StrategySuggestionReviewUpdate,
+    StrategyTuningDecisionCreate,
+    StrategyTuningDecisionUpdate,
     TradeCasesRead,
     TradeLifecycleRead,
 )
@@ -28,6 +30,12 @@ from app.services.learning_report import build_learning_report
 from app.services.performance_review import get_paper_performance_review
 from app.services.paper_review_snapshots import get_paper_review_snapshots
 from app.services.position_exits import get_position_management_statuses
+from app.services.strategy_refinement import (
+    build_strategy_refinement_summary,
+    create_strategy_tuning_decision,
+    get_strategy_tuning_decisions,
+    update_strategy_tuning_decision,
+)
 from app.services.trade_lifecycle import get_trade_cases, get_trade_lifecycle
 
 router = APIRouter(
@@ -194,5 +202,125 @@ def update_strategy_change_suggestion_route(
         if suggestion.reviewed_at
         else None,
         "reviewed_by": suggestion.reviewed_by,
+        "auto_apply": False,
+    }
+
+
+@router.get(
+    "/strategy-refinement",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def strategy_refinement_route(
+    db: Annotated[Session, Depends(get_db)],
+    days: Annotated[int, Query(ge=1, le=90)] = 10,
+    min_closed_trade_cases: Annotated[int, Query(ge=1, le=100)] = 5,
+    min_rejected_previews: Annotated[int, Query(ge=1, le=500)] = 10,
+    min_no_signal_reasons: Annotated[int, Query(ge=1, le=1000)] = 20,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+) -> dict[str, Any]:
+    return build_strategy_refinement_summary(
+        db,
+        days=days,
+        min_closed_trade_cases=min_closed_trade_cases,
+        min_rejected_previews=min_rejected_previews,
+        min_no_signal_reasons=min_no_signal_reasons,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/strategy-tuning-decisions",
+    response_model=list[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+)
+def strategy_tuning_decisions_route(
+    db: Annotated[Session, Depends(get_db)],
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    scanner_type: Annotated[str | None, Query()] = None,
+    symbol: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, Any]]:
+    return get_strategy_tuning_decisions(
+        db,
+        status=status_filter,
+        scanner_type=scanner_type,
+        symbol=symbol,
+        limit=limit,
+    )
+
+
+@router.post(
+    "/strategy-tuning-decisions",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_strategy_tuning_decision_route(
+    payload: StrategyTuningDecisionCreate,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    try:
+        result = create_strategy_tuning_decision(
+            db,
+            scanner_type=payload.scanner_type,
+            symbol=payload.symbol,
+            decision_type=payload.decision_type,
+            description=payload.description,
+            expected_effect=payload.expected_effect,
+            proposed_config_patch=payload.proposed_config_patch,
+            evidence_snapshot_ids=payload.evidence_snapshot_ids,
+            evidence_summary=payload.evidence_summary,
+            strategy_id=payload.strategy_id,
+            created_by=payload.created_by,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _strategy_tuning_decision_response(result.decision)
+
+
+@router.patch(
+    "/strategy-tuning-decisions/{decision_id}",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def update_strategy_tuning_decision_route(
+    decision_id: uuid.UUID,
+    payload: StrategyTuningDecisionUpdate,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    try:
+        result = update_strategy_tuning_decision(
+            db,
+            decision_id=decision_id,
+            status=payload.status,
+            outcome_summary=payload.outcome_summary,
+            expected_effect=payload.expected_effect,
+            description=payload.description,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _strategy_tuning_decision_response(result.decision)
+
+
+def _strategy_tuning_decision_response(decision: object) -> dict[str, Any]:
+    return {
+        "id": str(decision.id),
+        "strategy_id": str(decision.strategy_id) if decision.strategy_id else None,
+        "scanner_type": decision.scanner_type,
+        "symbol": decision.symbol,
+        "decision_type": decision.decision_type,
+        "status": decision.status,
+        "description": decision.description,
+        "expected_effect": decision.expected_effect,
+        "proposed_config_patch": decision.proposed_config_patch,
+        "evidence_snapshot_ids": decision.evidence_snapshot_ids,
+        "evidence_summary": decision.evidence_summary,
+        "outcome_summary": decision.outcome_summary,
+        "created_by": decision.created_by,
+        "created_at": decision.created_at.isoformat(),
+        "updated_at": decision.updated_at.isoformat(),
         "auto_apply": False,
     }

@@ -19,6 +19,7 @@ from app.db.models import (
     PositionSnapshot,
     Signal,
     StrategyChangeSuggestion,
+    StrategyTuningDecision,
     TradeCase,
 )
 from app.services.audit_logs import record_audit_log
@@ -26,6 +27,7 @@ from app.services.audit_logs import record_audit_log
 
 RESET_TRADING_DATA_CONFIRMATION = "RESET_TRADING_DATA"
 RUNTIME_TABLES = (
+    (StrategyTuningDecision, "strategy_tuning_decisions"),
     (StrategyChangeSuggestion, "strategy_change_suggestions"),
     (AiTradeReview, "ai_trade_reviews"),
     (PaperReviewSnapshot, "paper_review_snapshots"),

@@ -86,6 +86,8 @@ services:
         value: 5000
       - key: PAPER_STRATEGY_MIN_OPEN_INTEREST
         value: 25
+      - key: PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS
+        value: 45
       - key: OPTIONS_MIN_OPEN_INTEREST
         value: 25
       - key: OPTIONS_MAX_CONTRACT_NOTIONAL
