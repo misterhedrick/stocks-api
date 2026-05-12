@@ -96,6 +96,7 @@ class LearningReportRead(BaseModel):
     signals_by_strategy: list[dict[str, Any]]
     intents_by_strategy: list[dict[str, Any]]
     non_trade_reasons: list[dict[str, Any]]
+    refinement_candidates: list[dict[str, Any]] = Field(default_factory=list)
     job_failures: list[dict[str, Any]]
 
 
@@ -116,3 +117,24 @@ class StrategySuggestionReviewUpdate(BaseModel):
     status: str | None = None
     review_notes: str | None = None
     reviewed_by: str | None = None
+
+
+class StrategyTuningDecisionCreate(BaseModel):
+    scanner_type: str
+    symbol: str
+    decision_type: str
+    description: str | None = None
+    expected_effect: str | None = None
+    proposed_config_patch: dict[str, Any] = Field(default_factory=dict)
+    evidence_snapshot_ids: list[str] = Field(default_factory=list)
+    evidence_summary: dict[str, Any] = Field(default_factory=dict)
+    strategy_id: uuid.UUID | None = None
+    created_by: str | None = None
+    status: str = "approved"
+
+
+class StrategyTuningDecisionUpdate(BaseModel):
+    status: str | None = None
+    description: str | None = None
+    expected_effect: str | None = None
+    outcome_summary: dict[str, Any] | None = None

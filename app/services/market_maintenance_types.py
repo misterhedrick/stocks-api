@@ -21,6 +21,7 @@ class MarketMaintenanceResult:
     trade_cases: dict[str, Any] | None = None
     paper_review_snapshot: dict[str, Any] | None = None
     ai_trade_reviews: dict[str, Any] | None = None
+    paper_review_snapshot_retention: dict[str, Any] | None = None
 
 @dataclass(slots=True)
 class PatchStrategyDteResult:

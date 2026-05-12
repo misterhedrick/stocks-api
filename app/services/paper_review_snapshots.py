@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import (
     BrokerOrder,
     Fill,
@@ -18,6 +19,7 @@ from app.db.models import (
     Signal,
     Strategy,
 )
+from app.services.learning_report import build_learning_report
 from app.services.performance_review import get_paper_performance_review
 
 
@@ -32,6 +34,7 @@ class PaperReviewSnapshotResult:
     fill_count: int
     diagnostic_count: int
     rejected_shadow_outcome_count: int
+    refinement_candidate_count: int
 
 
 def create_or_update_post_market_paper_review_snapshot(
@@ -72,6 +75,8 @@ def create_or_update_post_market_paper_review_snapshot(
         limit=limit,
     )
     rejected_shadow_outcomes = _rejected_signal_shadow_outcomes(signals)
+    learning_report = _learning_report_payload(db, limit=limit)
+    refinement_candidates = learning_report.get("refinement_candidates", [])
 
     payload = {
         "review_date": selected_date.isoformat(),
@@ -88,6 +93,15 @@ def create_or_update_post_market_paper_review_snapshot(
                 "fills": len(fills),
                 "option_selection_diagnostics": len(diagnostics),
                 "rejected_shadow_outcomes": len(rejected_shadow_outcomes),
+                "refinement_candidates": len(refinement_candidates)
+                if isinstance(refinement_candidates, list)
+                else 0,
+            },
+            "learning_report": {
+                "retention_days": settings.paper_review_snapshot_retention_days,
+                "refinement_candidate_count": len(refinement_candidates)
+                if isinstance(refinement_candidates, list)
+                else 0,
             },
         },
         "signals": {
@@ -123,6 +137,7 @@ def create_or_update_post_market_paper_review_snapshot(
             "trade_comparison": performance.rejected_preview_outcomes,
             "shadow_market_movement": rejected_shadow_outcomes,
         },
+        "learning_report": learning_report,
     }
 
     existing = db.scalar(
@@ -162,6 +177,9 @@ def create_or_update_post_market_paper_review_snapshot(
         fill_count=len(fills),
         diagnostic_count=len(diagnostics),
         rejected_shadow_outcome_count=len(rejected_shadow_outcomes),
+        refinement_candidate_count=len(refinement_candidates)
+        if isinstance(refinement_candidates, list)
+        else 0,
     )
 
 
@@ -196,9 +214,59 @@ def _snapshot_read_item(snapshot: PaperReviewSnapshot) -> dict[str, Any]:
         "fills": snapshot.fills,
         "diagnostics": snapshot.diagnostics,
         "rejected_outcomes": snapshot.rejected_outcomes,
+        "learning_report": _snapshot_learning_report(snapshot),
         "created_at": snapshot.created_at.isoformat(),
         "updated_at": snapshot.updated_at.isoformat(),
     }
+
+
+def prune_old_paper_review_snapshots(
+    db: Session,
+    *,
+    before_date: date,
+    limit: int = 100,
+) -> dict[str, Any]:
+    snapshots = list(
+        db.scalars(
+            select(PaperReviewSnapshot)
+            .where(PaperReviewSnapshot.review_date < before_date)
+            .order_by(PaperReviewSnapshot.review_date.asc())
+            .limit(limit)
+        )
+    )
+    for snapshot in snapshots:
+        db.delete(snapshot)
+    db.commit()
+    return {
+        "before_date": before_date.isoformat(),
+        "deleted": len(snapshots),
+        "retention_days": settings.paper_review_snapshot_retention_days,
+        "snapshot_ids": [str(snapshot.id) for snapshot in snapshots],
+    }
+
+
+def _learning_report_payload(db: Session, *, limit: int) -> dict[str, Any]:
+    report = build_learning_report(db, limit=limit)
+    return {
+        "generated_at": report.generated_at.isoformat(),
+        "totals": report.totals,
+        "performance": report.performance,
+        "signals_by_strategy": report.signals_by_strategy,
+        "intents_by_strategy": report.intents_by_strategy,
+        "non_trade_reasons": report.non_trade_reasons,
+        "refinement_candidates": report.refinement_candidates,
+        "job_failures": report.job_failures,
+        "retention": {
+            "storage": "paper_review_snapshots.raw_payload.learning_report",
+            "retention_days": settings.paper_review_snapshot_retention_days,
+        },
+    }
+
+
+def _snapshot_learning_report(snapshot: PaperReviewSnapshot) -> dict[str, Any] | None:
+    raw_payload = snapshot.raw_payload if isinstance(snapshot.raw_payload, dict) else {}
+    learning_report = raw_payload.get("learning_report")
+    return learning_report if isinstance(learning_report, dict) else None
 
 
 def _performance_payload(performance: object) -> dict[str, Any]:

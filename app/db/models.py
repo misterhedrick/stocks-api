@@ -387,6 +387,68 @@ class StrategyChangeSuggestion(Base):
     ai_trade_review: Mapped[AiTradeReview | None] = relationship(back_populates="suggestions")
 
 
+class StrategyTuningDecision(Base):
+    __tablename__ = "strategy_tuning_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        index=True,
+    )
+    scanner_type: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    decision_type: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="approved",
+        server_default="approved",
+        index=True,
+        nullable=False,
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    expected_effect: Mapped[str | None] = mapped_column(Text)
+    proposed_config_patch: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    evidence_snapshot_ids: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    evidence_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    outcome_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    created_by: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class PaperReviewSnapshot(Base):
     __tablename__ = "paper_review_snapshots"
     __table_args__ = (

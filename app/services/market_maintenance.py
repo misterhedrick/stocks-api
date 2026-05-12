@@ -8,6 +8,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+
 from app.services.ai_trade_review import write_ai_trade_reviews_from_paper_evidence
 
 from app.services.audit_logs import record_audit_log
@@ -38,7 +40,10 @@ from app.services.market_maintenance_types import (
 
 from app.services.news_scanner import scan_market_news
 
-from app.services.paper_review_snapshots import create_or_update_post_market_paper_review_snapshot
+from app.services.paper_review_snapshots import (
+    create_or_update_post_market_paper_review_snapshot,
+    prune_old_paper_review_snapshots,
+)
 
 from app.services.performance_review import get_paper_performance_review
 
@@ -208,6 +213,11 @@ def run_post_market_maintenance(
         maintenance_job_run=job_run,
         limit=5000,
     )
+    paper_review_snapshot_retention = _paper_review_snapshot_retention_safely(
+        db,
+        maintenance_job_run=job_run,
+        generated_at=started_at,
+    )
 
     return MarketMaintenanceResult(
         job_run=job_run,
@@ -221,6 +231,7 @@ def run_post_market_maintenance(
         trade_cases=trade_cases,
         paper_review_snapshot=paper_review_snapshot,
         ai_trade_reviews=ai_trade_reviews,
+        paper_review_snapshot_retention=paper_review_snapshot_retention,
     )
 
 def _populate_trade_cases_safely(db: Session, *, limit: int) -> dict[str, Any]:
@@ -302,6 +313,9 @@ def _paper_review_snapshot_safely(
             "fill_count": result.fill_count,
             "diagnostic_count": result.diagnostic_count,
             "rejected_shadow_outcome_count": result.rejected_shadow_outcome_count,
+            "refinement_candidate_count": result.refinement_candidate_count,
+            "learning_report_saved": True,
+            "learning_report_path": "paper_review_snapshots.raw_payload.learning_report",
         }
         _write_paper_review_snapshot_audit_log(
             db,
@@ -322,6 +336,74 @@ def _paper_review_snapshot_safely(
             snapshot=payload,
         )
         return payload
+
+def _paper_review_snapshot_retention_safely(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    generated_at: datetime,
+) -> dict[str, Any]:
+    try:
+        retention_days = max(1, int(settings.paper_review_snapshot_retention_days))
+        cutoff_date = generated_at.astimezone(timezone.utc).date() - timedelta(
+            days=retention_days,
+        )
+        payload = prune_old_paper_review_snapshots(db, before_date=cutoff_date)
+        _write_paper_review_snapshot_retention_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            retention=payload,
+        )
+        return payload
+    except Exception as exc:
+        logger.error(
+            "Paper review snapshot retention failed during post-market maintenance: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
+        payload = {"status": "failed", "error": f"{exc.__class__.__name__}: {exc}"}
+        _write_paper_review_snapshot_retention_audit_log(
+            db,
+            maintenance_job_run=maintenance_job_run,
+            retention=payload,
+        )
+        return payload
+
+def _write_paper_review_snapshot_retention_audit_log(
+    db: Session,
+    *,
+    maintenance_job_run: JobRun,
+    retention: dict[str, Any],
+) -> None:
+    failed = "error" in retention
+    event_type = (
+        "market_maintenance.post_market.paper_review_snapshot_retention.failed"
+        if failed
+        else "market_maintenance.post_market.paper_review_snapshot_retention.succeeded"
+    )
+    try:
+        record_audit_log(
+            db,
+            event_type=event_type,
+            entity_type="job_run",
+            entity_id=maintenance_job_run.id,
+            message=(
+                "Post-market paper review snapshot retention succeeded"
+                if not failed
+                else "Post-market paper review snapshot retention failed"
+            ),
+            payload={
+                "maintenance_job_run_id": str(maintenance_job_run.id),
+                **retention,
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error(
+            "Failed to write paper-review snapshot retention audit log: %s: %s",
+            exc.__class__.__name__,
+            exc,
+        )
 
 def _write_paper_review_snapshot_audit_log(
     db: Session,

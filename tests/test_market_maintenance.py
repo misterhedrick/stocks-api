@@ -198,6 +198,7 @@ def build_paper_review_snapshot_result() -> PaperReviewSnapshotResult:
         fill_count=2,
         diagnostic_count=1,
         rejected_shadow_outcome_count=1,
+        refinement_candidate_count=2,
     )
 
 
@@ -226,6 +227,9 @@ def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
         if phase == "post_market"
         else None,
         ai_trade_reviews={"trade_cases_seen": 2, "reviews_created": 1}
+        if phase == "post_market"
+        else None,
+        paper_review_snapshot_retention={"deleted": 0}
         if phase == "post_market"
         else None,
     )
@@ -373,6 +377,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.performance["matched_round_trips"], 1)
         self.assertEqual(result.performance["totals"]["realized_pnl"], "25")
         self.assertEqual(result.paper_review_snapshot["signal_count"], 4)
+        self.assertEqual(result.paper_review_snapshot["refinement_candidate_count"], 2)
         self.assertEqual(result.ai_trade_reviews["reviews_created"], 1)
         self.assertIsNone(result.news)
         performance.assert_called_once_with(db, limit=5000)
@@ -398,6 +403,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         ), patch(
             "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
             return_value=build_ai_trade_review_writer_result(),
+        ), patch(
+            "app.services.market_maintenance.prune_old_paper_review_snapshots",
+            return_value={"before_date": "2026-04-01", "deleted": 1, "retention_days": 45},
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
@@ -407,9 +415,11 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.trade_cases["skipped"], 1)
         self.assertEqual(result.trade_cases["errors"], [])
         self.assertEqual(result.paper_review_snapshot["diagnostic_count"], 1)
+        self.assertEqual(result.paper_review_snapshot["learning_report_saved"], True)
+        self.assertEqual(result.paper_review_snapshot_retention["deleted"], 1)
         populate.assert_called_once_with(db, limit=5000)
-        # Four commits: maintenance + trade case audit + snapshot audit + AI review audit
-        self.assertEqual(db.commit_count, 4)
+        # Five commits: maintenance + trade case audit + snapshot audit + AI review audit + retention audit
+        self.assertEqual(db.commit_count, 5)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         tc_audit = next(
             (a for a in audit_logs if "trade_cases" in a.event_type), None
@@ -441,6 +451,15 @@ class MarketMaintenanceTests(unittest.TestCase):
             ai_audit.event_type,
             "market_maintenance.post_market.ai_trade_reviews.succeeded",
         )
+        retention_audit = next(
+            (a for a in audit_logs if "paper_review_snapshot_retention" in a.event_type),
+            None,
+        )
+        self.assertIsNotNone(retention_audit)
+        self.assertEqual(
+            retention_audit.event_type,
+            "market_maintenance.post_market.paper_review_snapshot_retention.succeeded",
+        )
 
     def test_post_market_maintenance_trade_case_failure_does_not_fail_maintenance(self) -> None:
         signal = build_signal()
@@ -463,6 +482,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         ), patch(
             "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
             return_value=build_ai_trade_review_writer_result(),
+        ), patch(
+            "app.services.market_maintenance.prune_old_paper_review_snapshots",
+            return_value={"before_date": "2026-04-01", "deleted": 0, "retention_days": 45},
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
 
@@ -475,7 +497,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertIn("fill table exploded", result.trade_cases["error"])
         self.assertEqual(result.trade_cases["status"], "failed")
         # Failure audit event is written and committed
-        self.assertEqual(db.commit_count, 4)
+        self.assertEqual(db.commit_count, 5)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
         tc_audit = next(
             (a for a in audit_logs if "trade_cases" in a.event_type), None
