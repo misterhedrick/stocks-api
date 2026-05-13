@@ -197,6 +197,8 @@ def _no_signal_reasons_from_job_runs(db: Session, *, limit: int) -> list[dict[st
     for job_run in db.scalars(statement):
         details = job_run.details if isinstance(job_run.details, dict) else {}
         for reason in _extract_no_signal_reasons(details):
+            if _is_expected_symbol_routing_miss(reason):
+                continue
             reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
     return [
@@ -218,6 +220,13 @@ def _extract_no_signal_reasons(details: dict[str, Any]) -> list[str]:
         if isinstance(nested, list):
             reasons.extend(str(r) for r in nested if r)
     return reasons
+
+
+def _is_expected_symbol_routing_miss(reason: str) -> bool:
+    if ":" in reason:
+        _, detail = reason.split(":", 1)
+        reason = detail.strip()
+    return reason.startswith("scanner does not include symbol ")
 
 
 def _job_failures(db: Session, *, limit: int) -> list[dict[str, Any]]:

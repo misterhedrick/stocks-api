@@ -254,6 +254,8 @@ def _no_signal_summary(db: Session, *, limit: int) -> dict[str, Any]:
         details = values[1] if len(values) > 1 and isinstance(values[1], dict) else {}
         for raw_reason in _extract_no_signal_reasons(details):
             strategy_name, reason = _split_no_signal_reason(raw_reason)
+            if _is_expected_symbol_routing_miss(reason):
+                continue
             scanner_type = _scanner_type_for_strategy_name(
                 strategy_name,
                 strategy_scanner_types,
@@ -319,6 +321,10 @@ def _split_no_signal_reason(reason: str) -> tuple[str | None, str]:
         return None, reason.strip()
     prefix, detail = reason.split(":", 1)
     return prefix.strip() or None, detail.strip() or reason.strip()
+
+
+def _is_expected_symbol_routing_miss(reason: str) -> bool:
+    return reason.startswith("scanner does not include symbol ")
 
 
 def _scanner_type_for_strategy_name(

@@ -84,19 +84,45 @@ def preview_order_intent_from_signal(
         quantity=payload.quantity,
         supplied_limit_price=payload.limit_price,
     )
-    _validate_preview_quote_constraints(
-        quote_preview,
-        max_estimated_notional=max_estimated_notional,
-        max_spread=max_spread,
-    )
+    try:
+        _validate_preview_quote_constraints(
+            quote_preview,
+            max_estimated_notional=max_estimated_notional,
+            max_spread=max_spread,
+        )
+    except OrderIntentPreviewError as exc:
+        if payload.contract_selection is not None:
+            _record_preview_quote_diagnostic(
+                db,
+                signal=signal,
+                selection_payload=selection_payload,
+                quote_preview=quote_preview,
+                selection=selection,
+                error=str(exc),
+                max_estimated_notional=max_estimated_notional,
+                max_spread=max_spread,
+            )
+        raise
 
     limit_price = payload.limit_price
     if payload.order_type == "limit" and limit_price is None:
         limit_price = _decimal_from_preview(quote_preview.get("suggested_limit_price"))
         if limit_price is None:
-            raise OrderIntentPreviewError(
+            exc = OrderIntentPreviewError(
                 "Unable to derive a limit price from the latest option quote"
             )
+            if payload.contract_selection is not None:
+                _record_preview_quote_diagnostic(
+                    db,
+                    signal=signal,
+                    selection_payload=selection_payload,
+                    quote_preview=quote_preview,
+                    selection=selection,
+                    error=str(exc),
+                    max_estimated_notional=max_estimated_notional,
+                    max_spread=max_spread,
+                )
+            raise exc
 
     order_intent = OrderIntent(
         strategy_id=signal.strategy_id,
@@ -230,6 +256,90 @@ def _record_option_selection_diagnostic(
         payload=summary,
     )
     db.commit()
+
+
+def _record_preview_quote_diagnostic(
+    db: Session,
+    *,
+    signal: Signal,
+    selection_payload: OptionContractSelectionCreate,
+    quote_preview: dict[str, object],
+    selection: object,
+    error: str,
+    max_estimated_notional: object,
+    max_spread: object,
+) -> None:
+    strategy = db.get(Strategy, signal.strategy_id) if signal.strategy_id else None
+    scanner_config = strategy.config.get("scanner") if strategy is not None else None
+    scanner_type = scanner_config.get("type") if isinstance(scanner_config, dict) else None
+    reason_code = _preview_quote_reason_code(error)
+    selected_contract = None
+    if selection is not None and getattr(selection, "selected_contract", None) is not None:
+        selected_contract = selection.selected_contract.model_dump(mode="json")
+    summary = {
+        "error": error,
+        "scanner_type": scanner_type,
+        "preview_profile": selection_payload.preview_profile,
+        "underlying_symbol": selection_payload.underlying_symbol,
+        "option_type": selection_payload.option_type,
+        "side": selection_payload.side,
+        "reason_counts": {reason_code: 1},
+        "candidate_count": 1,
+        "selected_contract": selected_contract,
+        "quote": quote_preview,
+        "limits": {
+            "max_estimated_notional": str(max_estimated_notional)
+            if max_estimated_notional is not None
+            else None,
+            "max_spread": str(max_spread) if max_spread is not None else None,
+        },
+        "signal": {
+            "id": str(signal.id),
+            "status": signal.status,
+            "signal_type": signal.signal_type,
+            "direction": signal.direction,
+            "confidence": str(signal.confidence) if signal.confidence is not None else None,
+        },
+    }
+    if strategy is not None:
+        summary["strategy"] = {
+            "id": str(strategy.id),
+            "name": strategy.name,
+        }
+
+    diagnostic = OptionSelectionDiagnostic(
+        signal_id=signal.id,
+        strategy_id=signal.strategy_id,
+        strategy_name=strategy.name if strategy is not None else None,
+        underlying_symbol=selection_payload.underlying_symbol,
+        scanner_type=scanner_type,
+        preview_profile=selection_payload.preview_profile,
+        candidate_count=1,
+        reason_counts={reason_code: 1},
+        summary=summary,
+        market_context=signal.market_context or {},
+    )
+    db.add(diagnostic)
+    record_audit_log(
+        db,
+        event_type="option_selection.preview_quote_failed",
+        entity_type="signal",
+        entity_id=signal.id,
+        message="Selected option contract failed preview quote constraints",
+        payload=summary,
+    )
+    db.commit()
+
+
+def _preview_quote_reason_code(error: str) -> str:
+    normalized = error.lower()
+    if "estimated notional" in normalized:
+        return "estimated_notional_above_max"
+    if "quote spread" in normalized:
+        return "spread_too_wide"
+    if "limit price" in normalized:
+        return "missing_limit_price"
+    return "preview_quote_constraint_failed"
 
 def _enrich_candidate_diagnostic(
     candidate: dict[str, object],

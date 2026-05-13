@@ -153,6 +153,7 @@ def evaluate_exits_route(
         no_exit_reasons=result.no_exit_reasons,
         position_ownership=result.position_ownership,
         order_intent_ids=result.order_intent_ids,
+        exit_evaluations=result.exit_evaluations,
     )
 
 
@@ -188,6 +189,7 @@ def preview_unmanaged_exits_route(
         no_exit_reasons=result.no_exit_reasons,
         position_ownership=result.position_ownership,
         order_intent_ids=result.order_intent_ids,
+        exit_evaluations=result.exit_evaluations,
     )
 
 

@@ -54,6 +54,7 @@ class PositionExitEvaluationRead(BaseModel):
     no_exit_reasons: list[str]
     position_ownership: list[dict[str, Any]]
     order_intent_ids: list[uuid.UUID]
+    exit_evaluations: list[dict[str, Any]] = []
 
 
 class NewsScanRead(BaseModel):

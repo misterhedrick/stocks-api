@@ -217,6 +217,40 @@ class WideQuoteMarketDataClient:
         )
 
 
+class TightThenEmptyMarketDataClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        self.calls += 1
+        if self.calls == 1:
+            return SuccessfulMarketDataClient().get_latest_option_quote(symbol, feed=feed)
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "0",
+                    "bs": "0",
+                    "ap": "0",
+                    "as": "0",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "0",
+                "bs": "0",
+                "ap": "0",
+                "as": "0",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
 class SuccessfulOptionContractTradingClient:
     def list_option_contracts(self, **_: object) -> AlpacaOptionContractsPage:
         return AlpacaOptionContractsPage(
@@ -576,6 +610,52 @@ class OrderIntentSubmissionTests(unittest.TestCase):
             )
 
         self.assertEqual(db.commit_count, 0)
+
+    def test_preview_selected_contract_quote_failure_records_diagnostic(self) -> None:
+        signal = build_signal()
+        strategy = Strategy(
+            id=signal.strategy_id,
+            name="Breakout Strategy",
+            config={"scanner": {"type": "breakout_price_threshold"}},
+        )
+        db = FakeSession(None, signal, strategy)
+
+        with self.assertRaises(OrderIntentPreviewError):
+            preview_order_intent_from_signal(
+                db,
+                OrderIntentPreviewCreate(
+                    signal_id=signal.id,
+                    contract_selection=OptionContractSelectionCreate(
+                        underlying_symbol="SPY",
+                        option_type="call",
+                        target_strike=Decimal("500"),
+                        preview_profile="breakout_price_threshold",
+                    ),
+                    side="buy",
+                    quantity=1,
+                    order_type="limit",
+                    time_in_force="day",
+                ),
+                trading_client=SuccessfulOptionContractTradingClient(),
+                market_data_client=TightThenEmptyMarketDataClient(),
+            )
+
+        diagnostics = [item for item in db.added if isinstance(item, OptionSelectionDiagnostic)]
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+        audit_logs = [item for item in db.added if isinstance(item, AuditLog)]
+
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(order_intents, [])
+        self.assertEqual(diagnostics[0].signal_id, signal.id)
+        self.assertEqual(diagnostics[0].scanner_type, "breakout_price_threshold")
+        self.assertEqual(diagnostics[0].preview_profile, "breakout_price_threshold")
+        self.assertEqual(diagnostics[0].reason_counts["missing_limit_price"], 1)
+        self.assertEqual(
+            diagnostics[0].summary["selected_contract"]["symbol"],
+            "SPY260417C00500000",
+        )
+        self.assertEqual(audit_logs[-1].event_type, "option_selection.preview_quote_failed")
+        self.assertEqual(db.commit_count, 1)
 
     def test_preview_order_intent_schema_requires_one_contract_source(self) -> None:
         signal_id = uuid.uuid4()

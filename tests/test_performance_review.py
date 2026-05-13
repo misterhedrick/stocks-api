@@ -363,6 +363,7 @@ class PerformanceReviewTests(unittest.TestCase):
                     no_signal_reasons=[
                         "Moving Average.SPY: moving average evaluator produced no signal",
                         "Moving Average.QQQ: no usable bars for moving average evaluator",
+                        "Moving Average.AAPL: scanner does not include symbol AAPL",
                     ]
                 )
             ],
@@ -378,6 +379,10 @@ class PerformanceReviewTests(unittest.TestCase):
         )
         self.assertEqual(result.option_selection_diagnostics["diagnostics_seen"], 1)
         self.assertEqual(result.no_signal_summary["reasons_seen"], 2)
+        self.assertNotIn(
+            "scanner does not include symbol AAPL",
+            result.no_signal_summary["top_reasons"],
+        )
         self.assertEqual(
             result.no_signal_summary["by_scanner_type"][0]["scanner_type"],
             "moving_average",
