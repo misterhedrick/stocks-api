@@ -154,6 +154,7 @@ def build_exit_evaluation_result(order_intent_id: uuid.UUID | None = None) -> Ex
             }
         ],
         order_intent_ids=[order_intent_id or uuid.uuid4()],
+        exit_evaluations=[],
     )
 
 
@@ -1572,6 +1573,7 @@ class MarketCycleTests(unittest.TestCase):
                 no_exit_reasons=["SPY: linked strategy does not have scanner.exit enabled"],
                 position_ownership=[],
                 order_intent_ids=[],
+                exit_evaluations=[],
             ),
         ):
             result = run_market_cycle(db)

@@ -27,6 +27,7 @@ from app.services.position_exit_orders import _create_exit_order_intent
 from app.services.position_exit_rules import (
     _default_unmanaged_exit_config,
     _entry_fill_time,
+    _exit_rule_diagnostics,
     _exit_trigger_reason,
     _position_recommendation,
 )
@@ -51,41 +52,64 @@ def evaluate_position_exits(
     no_exit_reasons: list[str] = []
     position_ownership: list[dict[str, Any]] = []
     order_intent_ids: list[uuid.UUID] = []
+    exit_evaluations: list[dict[str, Any]] = []
+    today = datetime.now(ZoneInfo("America/New_York")).date()
 
     for position in positions:
+        evaluation = _base_exit_evaluation(position)
+        exit_evaluations.append(evaluation)
         if position.quantity <= 0:
-            no_exit_reasons.append(f"{position.symbol}: quantity is not long")
+            reason = f"{position.symbol}: quantity is not long"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "skip", "reason": reason})
             continue
 
         ownership = resolve_position_ownership(db, position)
-        position_ownership.append(ownership.as_dict())
+        ownership_payload = ownership.as_dict()
+        position_ownership.append(ownership_payload)
+        evaluation["ownership"] = ownership_payload
         if not ownership.managed or ownership.strategy is None:
-            no_exit_reasons.append(f"{position.symbol}: {ownership.reason}")
+            reason = f"{position.symbol}: {ownership.reason}"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "skip", "reason": reason})
             continue
 
         strategy = ownership.strategy
         exit_config = _exit_config_for_strategy(strategy)
         if exit_config is None:
-            no_exit_reasons.append(
+            reason = (
                 f"{position.symbol}: linked strategy '{strategy.name}' scanner.exit is not enabled"
             )
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "skip", "reason": reason})
             continue
 
         positions_evaluated += 1
         entry_time = _entry_fill_time(db, ownership)
+        evaluation["rule_diagnostics"] = _exit_rule_diagnostics(
+            position,
+            exit_config,
+            today=today,
+            entry_time=entry_time,
+        )
         trigger_reason = _exit_trigger_reason(
             position,
             exit_config,
-            today=datetime.now(ZoneInfo("America/New_York")).date(),
+            today=today,
             entry_time=entry_time,
         )
+        evaluation["trigger_reason"] = trigger_reason
         if trigger_reason is None:
-            no_exit_reasons.append(f"{position.symbol}: no exit rule triggered")
+            reason = f"{position.symbol}: no exit rule triggered"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "hold", "reason": reason})
             continue
 
         if _has_active_exit_order(db, position.symbol):
             exits_skipped += 1
-            no_exit_reasons.append(f"{position.symbol}: active exit order already exists")
+            reason = f"{position.symbol}: active exit order already exists"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "exit_pending", "reason": reason})
             continue
 
         try:
@@ -99,7 +123,15 @@ def evaluate_position_exits(
             )
         except Exception as exc:
             exits_skipped += 1
-            errors.append(f"{position.symbol}: {exc.__class__.__name__}: {exc}")
+            error = f"{position.symbol}: {exc.__class__.__name__}: {exc}"
+            errors.append(error)
+            evaluation.update(
+                {
+                    "action": "error",
+                    "reason": error,
+                    "error_type": exc.__class__.__name__,
+                }
+            )
             logger.warning(
                 "Exit order creation failed for %s: %s: %s",
                 position.symbol,
@@ -110,6 +142,17 @@ def evaluate_position_exits(
 
         exits_created += 1
         order_intent_ids.append(order_intent.id)
+        evaluation.update(
+            {
+                "action": "exit_previewed",
+                "reason": trigger_reason,
+                "order_intent_id": str(order_intent.id),
+                "order_type": order_intent.order_type,
+                "limit_price": str(order_intent.limit_price)
+                if order_intent.limit_price is not None
+                else None,
+            }
+        )
 
     return ExitEvaluationResult(
         positions_seen=len(positions),
@@ -120,6 +163,7 @@ def evaluate_position_exits(
         no_exit_reasons=no_exit_reasons,
         position_ownership=position_ownership,
         order_intent_ids=order_intent_ids,
+        exit_evaluations=exit_evaluations,
     )
 
 def preview_unmanaged_position_exits(
@@ -146,22 +190,33 @@ def preview_unmanaged_position_exits(
     no_exit_reasons: list[str] = []
     position_ownership: list[dict[str, Any]] = []
     order_intent_ids: list[uuid.UUID] = []
+    exit_evaluations: list[dict[str, Any]] = []
 
     for position in positions:
+        evaluation = _base_exit_evaluation(position)
+        exit_evaluations.append(evaluation)
         if position.quantity <= 0:
-            no_exit_reasons.append(f"{position.symbol}: quantity is not long")
+            reason = f"{position.symbol}: quantity is not long"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "skip", "reason": reason})
             continue
 
         ownership = resolve_position_ownership(db, position)
-        position_ownership.append(ownership.as_dict())
+        ownership_payload = ownership.as_dict()
+        position_ownership.append(ownership_payload)
+        evaluation["ownership"] = ownership_payload
         if ownership.managed:
-            no_exit_reasons.append(f"{position.symbol}: position is already managed")
+            reason = f"{position.symbol}: position is already managed"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "skip", "reason": reason})
             continue
 
         positions_evaluated += 1
         if _has_active_exit_order(db, position.symbol):
             exits_skipped += 1
-            no_exit_reasons.append(f"{position.symbol}: active exit order already exists")
+            reason = f"{position.symbol}: active exit order already exists"
+            no_exit_reasons.append(reason)
+            evaluation.update({"action": "exit_pending", "reason": reason})
             continue
 
         try:
@@ -175,11 +230,30 @@ def preview_unmanaged_position_exits(
             )
         except Exception as exc:
             exits_skipped += 1
-            errors.append(f"{position.symbol}: {exc.__class__.__name__}: {exc}")
+            error = f"{position.symbol}: {exc.__class__.__name__}: {exc}"
+            errors.append(error)
+            evaluation.update(
+                {
+                    "action": "error",
+                    "reason": error,
+                    "error_type": exc.__class__.__name__,
+                }
+            )
             continue
 
         exits_created += 1
         order_intent_ids.append(order_intent.id)
+        evaluation.update(
+            {
+                "action": "exit_previewed",
+                "reason": order_intent.preview.get("trigger_reason"),
+                "order_intent_id": str(order_intent.id),
+                "order_type": order_intent.order_type,
+                "limit_price": str(order_intent.limit_price)
+                if order_intent.limit_price is not None
+                else None,
+            }
+        )
 
     return ExitEvaluationResult(
         positions_seen=len(positions),
@@ -190,6 +264,7 @@ def preview_unmanaged_position_exits(
         no_exit_reasons=no_exit_reasons,
         position_ownership=position_ownership,
         order_intent_ids=order_intent_ids,
+        exit_evaluations=exit_evaluations,
     )
 
 def get_position_management_statuses(
@@ -235,3 +310,20 @@ def get_position_management_statuses(
             ).as_dict()
         )
     return statuses
+
+
+def _base_exit_evaluation(position: object) -> dict[str, Any]:
+    return {
+        "symbol": position.symbol,
+        "quantity": str(position.quantity),
+        "market_value": str(position.market_value)
+        if position.market_value is not None
+        else None,
+        "cost_basis": str(position.cost_basis)
+        if position.cost_basis is not None
+        else None,
+        "unrealized_pl": str(position.unrealized_pl)
+        if position.unrealized_pl is not None
+        else None,
+        "captured_at": position.captured_at.isoformat(),
+    }

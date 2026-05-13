@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 import uuid
 
-from app.services.learning_report import _refinement_candidates
+from app.services.learning_report import _no_signal_reasons_from_job_runs, _refinement_candidates
 
 
 class FakeLearningReportSession:
@@ -78,6 +78,20 @@ class FakeLearningReportSession:
         return self.scalars_results.pop(0)
 
 
+class FakeNoSignalSession:
+    def scalars(self, _: object) -> list[object]:
+        return [
+            SimpleNamespace(
+                details={
+                    "no_signal_reasons": [
+                        "Moving Average.SPY: moving average evaluator produced no signal",
+                        "Moving Average.AAPL: scanner does not include symbol AAPL",
+                    ]
+                }
+            )
+        ]
+
+
 class LearningReportTests(unittest.TestCase):
     def test_refinement_candidates_consolidate_strategy_evidence(self) -> None:
         performance = SimpleNamespace(
@@ -133,6 +147,15 @@ class LearningReportTests(unittest.TestCase):
         self.assertIn(
             "review_signal_thresholds",
             all_symbols_candidate["recommended_focus"],
+        )
+
+    def test_non_trade_reasons_ignore_symbol_routing_misses(self) -> None:
+        reasons = _no_signal_reasons_from_job_runs(FakeNoSignalSession(), limit=10)
+
+        self.assertEqual(len(reasons), 1)
+        self.assertEqual(
+            reasons[0]["reason"],
+            "Moving Average.SPY: moving average evaluator produced no signal",
         )
 
 

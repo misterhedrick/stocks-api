@@ -68,6 +68,48 @@ def _exit_trigger_reason(
 
     return None
 
+
+def _exit_rule_diagnostics(
+    position: PositionSnapshot,
+    exit_config: dict[str, Any] | None,
+    *,
+    today: date,
+    entry_time: datetime | None = None,
+) -> dict[str, Any]:
+    pnl_percent = _unrealized_pl_percent(position)
+    expiration_date = _option_expiration_date(position.symbol)
+    days_to_expiration = (
+        (expiration_date - today).days if expiration_date is not None else None
+    )
+    hours_held = None
+    if isinstance(entry_time, datetime):
+        entry_utc = (
+            entry_time.astimezone(timezone.utc)
+            if entry_time.tzinfo is not None
+            else entry_time.replace(tzinfo=timezone.utc)
+        )
+        hours_held = (datetime.now(timezone.utc) - entry_utc).total_seconds() / 3600
+
+    config = exit_config if isinstance(exit_config, dict) else {}
+    thresholds = {
+        "profit_target_percent": _string_or_none(config.get("profit_target_percent")),
+        "stop_loss_percent": _string_or_none(config.get("stop_loss_percent")),
+        "max_days_to_expiration": _string_or_none(config.get("max_days_to_expiration")),
+        "max_hold_hours": _string_or_none(config.get("max_hold_hours")),
+        "max_spread": _string_or_none(config.get("max_spread")),
+        "limit_price_source": _string_or_none(config.get("limit_price_source")),
+    }
+    return {
+        "unrealized_pl_percent": str(pnl_percent) if pnl_percent is not None else None,
+        "expiration_date": expiration_date.isoformat()
+        if expiration_date is not None
+        else None,
+        "days_to_expiration": days_to_expiration,
+        "entry_time": entry_time.isoformat() if isinstance(entry_time, datetime) else None,
+        "hours_held": round(hours_held, 4) if hours_held is not None else None,
+        "thresholds": thresholds,
+    }
+
 def _default_unmanaged_exit_config() -> dict[str, Any]:
     return {
         "order_type": "limit",
@@ -202,3 +244,7 @@ def _string_config(
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"scanner.exit.{key} must be a non-empty string")
     return value.strip().lower()
+
+
+def _string_or_none(value: object) -> str | None:
+    return str(value) if value is not None else None

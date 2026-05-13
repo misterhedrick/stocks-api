@@ -784,6 +784,7 @@ class RouteBehaviorTests(unittest.TestCase):
                 }
             ],
             order_intent_ids=[uuid.uuid4()],
+            exit_evaluations=[{"symbol": "SPY260429C00500000", "action": "exit_previewed"}],
         )
 
         with patch(
@@ -799,6 +800,7 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["positions_seen"], 1)
         self.assertEqual(response.json()["exits_created"], 1)
         self.assertTrue(response.json()["position_ownership"][0]["managed"])
+        self.assertEqual(response.json()["exit_evaluations"][0]["action"], "exit_previewed")
         exits.assert_called_once_with(db, limit=25)
 
     def test_preview_unmanaged_exits_route_returns_service_result(self) -> None:
@@ -824,6 +826,7 @@ class RouteBehaviorTests(unittest.TestCase):
                 }
             ],
             order_intent_ids=[uuid.uuid4()],
+            exit_evaluations=[{"symbol": "SPY", "action": "exit_previewed"}],
         )
 
         with patch(

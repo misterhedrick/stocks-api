@@ -231,6 +231,14 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(result.exits_skipped, 0)
         self.assertTrue(result.position_ownership[0]["managed"])
         self.assertEqual(result.position_ownership[0]["strategy_name"], strategy.name)
+        self.assertEqual(result.exit_evaluations[0]["action"], "exit_previewed")
+        self.assertIn("profit_target_percent", result.exit_evaluations[0]["trigger_reason"])
+        self.assertEqual(
+            result.exit_evaluations[0]["rule_diagnostics"]["thresholds"][
+                "profit_target_percent"
+            ],
+            "30",
+        )
         order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
         self.assertEqual(order_intents[-1].side, "sell")
         self.assertEqual(order_intents[-1].limit_price, Decimal("1.20"))
@@ -260,6 +268,12 @@ class PositionExitTests(unittest.TestCase):
 
         self.assertEqual(result.exits_created, 0)
         self.assertEqual(result.no_exit_reasons, [f"{position.symbol}: no exit rule triggered"])
+        self.assertEqual(result.exit_evaluations[0]["action"], "hold")
+        self.assertEqual(
+            result.exit_evaluations[0]["rule_diagnostics"]["unrealized_pl_percent"],
+            "5.00",
+        )
+        self.assertGreater(result.exit_evaluations[0]["rule_diagnostics"]["days_to_expiration"], 1)
         self.assertEqual(db.commit_count, 0)
 
     def test_evaluate_position_exits_skips_duplicate_active_exit(self) -> None:
@@ -281,6 +295,7 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(result.exits_created, 0)
         self.assertEqual(result.exits_skipped, 1)
         self.assertIn("active exit order already exists", result.no_exit_reasons[0])
+        self.assertEqual(result.exit_evaluations[0]["action"], "exit_pending")
 
     def test_evaluate_position_exits_ignores_stale_positions_before_latest_reconcile(self) -> None:
         strategy = build_strategy()

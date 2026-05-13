@@ -55,15 +55,15 @@ def build_dashboard(db, *, limit: int = 100) -> dict[str, Any]:
         "positions": {
             "seen": len(positions),
             "by_action": _count_by(
-                [position.recommended_action for position in positions]
+                [_field(position, "recommended_action") for position in positions]
             ),
             "items": [
                 {
-                    "symbol": position.symbol,
-                    "quantity": position.quantity,
-                    "unrealized_pl": position.unrealized_pl,
-                    "action": position.recommended_action,
-                    "reason": position.reason,
+                    "symbol": _field(position, "symbol"),
+                    "quantity": _field(position, "quantity"),
+                    "unrealized_pl": _field(position, "unrealized_pl"),
+                    "action": _field(position, "recommended_action"),
+                    "reason": _field(position, "reason"),
                 }
                 for position in positions[:25]
             ],
@@ -147,8 +147,15 @@ def _exit_attention(db, *, limit: int) -> list[dict[str, Any]]:
 def _count_by(values: list[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for value in values:
-        counts[value] = counts.get(value, 0) + 1
+        key = str(value)
+        counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _field(item: object, name: str) -> object:
+    if isinstance(item, dict):
+        return item.get(name)
+    return getattr(item, name, None)
 
 
 def _print_text_dashboard(dashboard: dict[str, Any]) -> None:
