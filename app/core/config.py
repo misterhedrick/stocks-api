@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     volume_confirmed_breakout_evaluator_enabled: bool = True
     volatility_squeeze_evaluator_enabled: bool = True
     support_resistance_evaluator_enabled: bool = True
+    anthropic_api_key: str = ""
+    ai_review_enabled: bool = False
+    ai_review_model: str = "claude-haiku-4-5-20251001"
+    ai_review_max_per_run: int = 20
+
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

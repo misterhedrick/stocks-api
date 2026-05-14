@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import AiTradeReview, JobRun, StrategyChangeSuggestion, TradeCase
 from app.services.ai_trade_review_assessment import (
     _assessment_for_trade_case,
@@ -14,6 +16,8 @@ from app.services.ai_trade_review_assessment import (
 from app.services.ai_trade_review_stats import _trade_case_group_stats
 from app.services.ai_trade_review_types import AiTradeReviewWriterResult, LOCAL_REVIEW_MODEL
 from app.services.audit_logs import record_audit_log
+
+logger = logging.getLogger(__name__)
 
 
 def write_ai_trade_reviews_from_paper_evidence(
@@ -31,6 +35,10 @@ def write_ai_trade_reviews_from_paper_evidence(
     )
     db.add(job_run)
     db.flush()
+
+    use_llm = review_model != LOCAL_REVIEW_MODEL and settings.ai_review_enabled
+    llm_cap = settings.ai_review_max_per_run if use_llm else 0
+    llm_calls_made = 0
 
     try:
         latest_snapshot = _latest_snapshot(db)
@@ -67,19 +75,31 @@ def write_ai_trade_reviews_from_paper_evidence(
                     review_model=review_model,
                     group_stats=group_stats,
                 )
-                review = AiTradeReview(
-                    trade_case_id=trade_case.id,
-                    review_model=review_model,
-                    review_status="generated",
-                    assessment=assessment,
-                    raw_response={
+
+                call_llm = use_llm and llm_calls_made < llm_cap
+                if call_llm:
+                    assessment, raw_response = _call_llm_review(
+                        assessment, review_model=review_model
+                    )
+                    llm_calls_made += 1
+                    review_status = assessment.get("review_status", "llm_reviewed")
+                else:
+                    raw_response = {
                         "source": "local_rule_based_review",
                         "review_model": review_model,
                         "generated_at": started_at.isoformat(),
                         "paper_review_snapshot_id": str(latest_snapshot.id)
                         if latest_snapshot is not None
                         else None,
-                    },
+                    }
+                    review_status = "generated"
+
+                review = AiTradeReview(
+                    trade_case_id=trade_case.id,
+                    review_model=review_model,
+                    review_status=review_status,
+                    assessment=assessment,
+                    raw_response=raw_response,
                 )
                 db.add(review)
                 db.flush()
@@ -127,6 +147,9 @@ def write_ai_trade_reviews_from_paper_evidence(
             "suggestions_created": suggestions_created,
             "errors": errors,
             "review_model": review_model,
+            "llm_enabled": use_llm,
+            "llm_calls_made": llm_calls_made,
+            "llm_cap": llm_cap,
             "suggestion_grouping": "suggestions are deduplicated by type, scanner, and symbol per run",
             "paper_review_snapshot_id": str(latest_snapshot.id)
             if latest_snapshot is not None
@@ -172,3 +195,32 @@ def write_ai_trade_reviews_from_paper_evidence(
         db.commit()
         db.refresh(job_run)
         raise
+
+
+def _call_llm_review(
+    assessment: dict,
+    *,
+    review_model: str,
+) -> tuple[dict, dict]:
+    from app.services.ai_trade_review_llm import call_claude_trade_review
+    try:
+        return call_claude_trade_review(assessment, model=review_model)
+    except Exception as exc:
+        logger.warning(
+            "LLM review failed for trade_case %s: %s: %s",
+            assessment.get("trade_case_id"),
+            exc.__class__.__name__,
+            exc,
+        )
+        # Fall back to base assessment with an error note rather than crashing the run.
+        fallback = {
+            **assessment,
+            "review_status": "llm_error",
+            "llm_error": f"{exc.__class__.__name__}: {exc}",
+        }
+        raw = {
+            "source": "claude_llm_review",
+            "review_model": review_model,
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+        return fallback, raw

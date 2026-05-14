@@ -22,6 +22,7 @@ from app.services.ai_trade_review_stats import (
     _trade_case_group_stats,
 )
 from app.services.ai_trade_review_types import (
+    CLAUDE_REVIEW_MODEL,
     LOCAL_REVIEW_MODEL,
     AiTradeReviewWriterResult,
     SuggestionReviewResult,
