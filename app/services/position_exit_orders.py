@@ -10,7 +10,7 @@ from app.integrations.alpaca import AlpacaMarketDataClient
 
 from app.services.audit_logs import record_audit_log
 
-from app.services.order_intents import _build_quote_preview, _decimal_from_preview
+from app.services.order_intents import _build_quote_preview, _spread_exceeds_limits
 
 from app.services.position_exit_rules import (
     _exit_limit_price,
@@ -54,9 +54,13 @@ def _create_exit_order_intent(
     )
 
     max_spread = _optional_positive_decimal(exit_config.get("max_spread"))
-    spread = _decimal_from_preview(quote_preview.get("spread"))
-    if max_spread is not None and spread is not None and spread > max_spread:
-        raise ValueError(f"quote spread {spread} exceeds scanner.exit.max_spread")
+    max_spread_percent = _optional_positive_decimal(exit_config.get("max_spread_percent"))
+    if _spread_exceeds_limits(
+        quote_preview,
+        max_spread=max_spread,
+        max_spread_percent=max_spread_percent,
+    ):
+        raise ValueError("quote spread exceeds scanner.exit spread limits")
 
     order_type = _string_config(exit_config, "order_type", default="limit")
     if order_type not in {"limit", "market"}:

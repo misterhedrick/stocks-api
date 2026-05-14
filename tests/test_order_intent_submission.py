@@ -217,6 +217,34 @@ class WideQuoteMarketDataClient:
         )
 
 
+class HighPremiumWideAbsoluteMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "35.80",
+                    "bs": "3",
+                    "ap": "36.99",
+                    "as": "2",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "35.80",
+                "bs": "3",
+                "ap": "36.99",
+                "as": "2",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
 class TightThenEmptyMarketDataClient:
     def __init__(self) -> None:
         self.calls = 0
@@ -610,6 +638,30 @@ class OrderIntentSubmissionTests(unittest.TestCase):
             )
 
         self.assertEqual(db.commit_count, 0)
+
+    def test_preview_order_intent_accepts_high_premium_relative_spread(self) -> None:
+        signal = build_signal()
+        db = FakeSession(None, signal)
+
+        order_intent = preview_order_intent_from_signal(
+            db,
+            OrderIntentPreviewCreate(
+                signal_id=signal.id,
+                option_symbol="SPY260417C00500000",
+                side="buy",
+                quantity=1,
+                order_type="limit",
+                time_in_force="day",
+                max_estimated_notional=Decimal("5000"),
+                max_spread=Decimal("0.35"),
+            ),
+            market_data_client=HighPremiumWideAbsoluteMarketDataClient(),
+        )
+
+        self.assertEqual(order_intent.status, "previewed")
+        self.assertEqual(order_intent.preview["quote"]["spread"], "1.19")
+        self.assertEqual(order_intent.limit_price, Decimal("36.40"))
+        self.assertEqual(db.commit_count, 1)
 
     def test_preview_selected_contract_quote_failure_records_diagnostic(self) -> None:
         signal = build_signal()

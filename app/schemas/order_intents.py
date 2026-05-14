@@ -43,6 +43,7 @@ class OrderIntentPreviewCreate(BaseModel):
     data_feed: Literal["indicative", "opra"] = "indicative"
     max_estimated_notional: Decimal | None = Field(default=None, gt=0)
     max_spread: Decimal | None = Field(default=None, ge=0)
+    max_spread_percent: Decimal | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_preview_request(self) -> "OrderIntentPreviewCreate":

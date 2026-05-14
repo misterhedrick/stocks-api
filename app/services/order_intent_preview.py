@@ -89,6 +89,12 @@ def preview_order_intent_from_signal(
             quote_preview,
             max_estimated_notional=max_estimated_notional,
             max_spread=max_spread,
+            max_spread_percent=payload.max_spread_percent
+            or (
+                selection_payload.max_spread_percent
+                if payload.contract_selection is not None
+                else None
+            ),
         )
     except OrderIntentPreviewError as exc:
         if payload.contract_selection is not None:
@@ -101,6 +107,7 @@ def preview_order_intent_from_signal(
                 error=str(exc),
                 max_estimated_notional=max_estimated_notional,
                 max_spread=max_spread,
+                max_spread_percent=selection_payload.max_spread_percent,
             )
         raise
 
@@ -121,6 +128,7 @@ def preview_order_intent_from_signal(
                     error=str(exc),
                     max_estimated_notional=max_estimated_notional,
                     max_spread=max_spread,
+                    max_spread_percent=selection_payload.max_spread_percent,
                 )
             raise exc
 
@@ -268,6 +276,7 @@ def _record_preview_quote_diagnostic(
     error: str,
     max_estimated_notional: object,
     max_spread: object,
+    max_spread_percent: object,
 ) -> None:
     strategy = db.get(Strategy, signal.strategy_id) if signal.strategy_id else None
     scanner_config = strategy.config.get("scanner") if strategy is not None else None
@@ -292,6 +301,9 @@ def _record_preview_quote_diagnostic(
             if max_estimated_notional is not None
             else None,
             "max_spread": str(max_spread) if max_spread is not None else None,
+            "max_spread_percent": str(max_spread_percent)
+            if max_spread_percent is not None
+            else None,
         },
         "signal": {
             "id": str(signal.id),

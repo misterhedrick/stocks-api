@@ -84,6 +84,7 @@ def _validate_preview_quote_constraints(
     *,
     max_estimated_notional: Decimal | None,
     max_spread: Decimal | None,
+    max_spread_percent: Decimal | None = None,
 ) -> None:
     estimated_notional = _decimal_from_preview(quote_preview.get("estimated_notional"))
     spread = _decimal_from_preview(quote_preview.get("spread"))
@@ -97,10 +98,61 @@ def _validate_preview_quote_constraints(
             "Estimated notional "
             f"{estimated_notional} exceeds max {max_estimated_notional}"
         )
-    if max_spread is not None and spread is not None and spread > max_spread:
+    if _spread_exceeds_limits(
+        quote_preview,
+        max_spread=max_spread,
+        max_spread_percent=max_spread_percent,
+    ):
         raise OrderIntentPreviewError(
-            f"Quote spread {spread} exceeds max {max_spread}"
+            _spread_error_message(
+                spread=spread,
+                max_spread=max_spread,
+                max_spread_percent=max_spread_percent,
+            )
         )
+
+
+def _spread_exceeds_limits(
+    quote_preview: dict[str, object],
+    *,
+    max_spread: Decimal | None,
+    max_spread_percent: Decimal | None = None,
+) -> bool:
+    spread = _decimal_from_preview(quote_preview.get("spread"))
+    if spread is None:
+        return False
+    if max_spread is None and max_spread_percent is None:
+        return False
+
+    abs_ok = max_spread is None or spread <= max_spread
+    effective_pct = _effective_max_spread_pct(max_spread_percent)
+    pct_ok = True
+    midpoint = _decimal_from_preview(quote_preview.get("midpoint"))
+    if effective_pct is not None and midpoint is not None and midpoint > Decimal("0"):
+        pct_ok = (spread / midpoint) <= effective_pct
+    return not abs_ok and not pct_ok
+
+
+def _effective_max_spread_pct(
+    max_spread_percent: Decimal | None = None,
+) -> Decimal | None:
+    pct_candidates = [settings.options_max_spread_pct]
+    if max_spread_percent is not None:
+        pct_candidates.append(Decimal(str(max_spread_percent)) / Decimal("100"))
+    return min(pct_candidates) if pct_candidates else None
+
+
+def _spread_error_message(
+    *,
+    spread: Decimal | None,
+    max_spread: Decimal | None,
+    max_spread_percent: Decimal | None,
+) -> str:
+    effective_pct = _effective_max_spread_pct(max_spread_percent)
+    return (
+        f"Quote spread {spread} exceeds max {max_spread}"
+        f" and pct max {effective_pct}"
+    )
 
 def _selection_preview(
     selection: OptionContractSelectionRead | None,

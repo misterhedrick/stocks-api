@@ -48,8 +48,16 @@ class FakePositionExitSession:
             return self.latest_reconciliation
         if self.scalar_calls == 2:
             return self.entry_order_intent
-        if self.scalar_calls == 3 and self.active_exit_count is None:
+        if (
+            self.scalar_calls == 3
+            and self.active_exit_order is not None
+            and self.active_exit_count is None
+        ):
             return self.active_exit_order
+        if self.scalar_calls == 4 and self.active_exit_order is not None:
+            return self.active_exit_order
+        if self.scalar_calls == 4:
+            return None
         return self.active_exit_count
 
     def get(self, model: type, record_id: uuid.UUID) -> object | None:
@@ -97,6 +105,34 @@ class SuccessfulMarketDataClient:
                 "bs": "10",
                 "ap": "1.30",
                 "as": "12",
+                "t": "2026-04-23T16:00:00Z",
+            },
+        )
+
+
+class HighPremiumWideAbsoluteMarketDataClient:
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        return AlpacaLatestOptionQuote(
+            symbol=symbol,
+            quote=AlpacaOptionQuote.model_validate(
+                {
+                    "bp": "35.80",
+                    "bs": "3",
+                    "ap": "36.99",
+                    "as": "2",
+                    "t": "2026-04-23T16:00:00Z",
+                }
+            ),
+            raw_response={
+                "bp": "35.80",
+                "bs": "3",
+                "ap": "36.99",
+                "as": "2",
                 "t": "2026-04-23T16:00:00Z",
             },
         )
@@ -248,6 +284,25 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(audit_logs[-1].event_type, "order_intent.exit_previewed")
         self.assertEqual(db.commit_count, 1)
 
+    def test_evaluate_position_exits_accepts_high_premium_relative_spread(self) -> None:
+        strategy = build_strategy()
+        position = build_position(cost_basis=Decimal("3000"), unrealized_pl=Decimal("1000"))
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+        )
+
+        result = evaluate_position_exits(
+            db,
+            market_data_client=HighPremiumWideAbsoluteMarketDataClient(),
+        )
+
+        self.assertEqual(result.exits_created, 1)
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+        self.assertEqual(order_intents[-1].limit_price, Decimal("35.80"))
+        self.assertEqual(order_intents[-1].preview["quote"]["spread"], "1.19")
+
     def test_evaluate_position_exits_skips_when_no_rule_triggers(self) -> None:
         strategy = build_strategy()
         position = build_position(
@@ -280,11 +335,13 @@ class PositionExitTests(unittest.TestCase):
         strategy = build_strategy()
         position = build_position()
         entry_order_intent = build_entry_order_intent(strategy)
+        active_exit_order = build_exit_order_intent()
+        active_exit_order.status = "new"
         db = FakePositionExitSession(
             positions=[position],
             strategy=strategy,
             entry_order_intent=entry_order_intent,
-            active_exit_count=1,
+            active_exit_order=active_exit_order,
         )
 
         result = evaluate_position_exits(
@@ -296,6 +353,28 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(result.exits_skipped, 1)
         self.assertIn("active exit order already exists", result.no_exit_reasons[0])
         self.assertEqual(result.exit_evaluations[0]["action"], "exit_pending")
+
+    def test_evaluate_position_exits_retries_previewed_active_exit_submit(self) -> None:
+        strategy = build_strategy()
+        position = build_position()
+        exit_order = build_exit_order_intent()
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_order=exit_order,
+        )
+
+        result = evaluate_position_exits(
+            db,
+            market_data_client=SuccessfulMarketDataClient(),
+        )
+
+        self.assertEqual(result.exits_created, 0)
+        self.assertEqual(result.exits_skipped, 1)
+        self.assertEqual(result.order_intent_ids, [exit_order.id])
+        self.assertEqual(result.exit_evaluations[0]["action"], "exit_pending_submit")
+        self.assertEqual(result.exit_evaluations[0]["order_intent_id"], str(exit_order.id))
 
     def test_evaluate_position_exits_ignores_stale_positions_before_latest_reconcile(self) -> None:
         strategy = build_strategy()
