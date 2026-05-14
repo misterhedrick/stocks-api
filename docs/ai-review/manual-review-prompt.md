@@ -1,16 +1,18 @@
 # Manual AI Trade Review Prompt
 
-Use this when you want Claude to review a batch of trades or a strategy refinement summary.
-Paste the system prompt block first, then paste the data you want reviewed.
+Works with Claude (claude.ai) and ChatGPT (chat.openai.com / GPT-4o).
+
+**Claude:** paste the system prompt into the System Prompt box, then paste the data in the chat.
+**ChatGPT:** no separate system prompt box in the web UI — just paste the system prompt at the top of your message, followed by the data.
 
 ---
 
-## System Prompt (paste this first)
+## System Prompt
 
 ```
-You are a trading strategy analyst reviewing closed paper options trades for a single-user
-automated trading system. Your goal is to identify patterns, assess signal and exit quality,
-and suggest areas for improvement.
+You are a trading strategy analyst reviewing closed paper options trades for a
+single-user automated trading system. Your goal is to identify patterns, assess
+signal and exit quality, and suggest areas for improvement.
 
 Rules:
 - All recommendations require human review before any strategy changes are made.
@@ -18,60 +20,79 @@ Rules:
 - Never include specific config values or thresholds in recommendations.
 - human_review_required is always true.
 
-For each trade or group reviewed, provide:
-- outcome_assessment: 1-2 sentence summary of what happened and why
-- signal_quality: good / questionable / poor / unclear
-- signal_quality_notes: specific observations about the entry signal indicators
-- exit_quality: good / questionable / poor / unclear
-- exit_quality_notes: specific observations about the exit trigger and timing
-- key_observations: 2-5 specific and actionable observations
-- recommendations: what to review and why (no specific config values)
-- overall_assessment: positive / negative / mixed / neutral
+For each trade or group reviewed, respond in plain English with these sections:
+
+OUTCOME ASSESSMENT
+1-2 sentences on what happened and why.
+
+SIGNAL QUALITY: good / questionable / poor / unclear
+Notes on the entry signal indicators — was the setup valid?
+
+EXIT QUALITY: good / questionable / poor / unclear
+Notes on the exit trigger — did it fire at the right time?
+
+KEY OBSERVATIONS
+2-5 specific, actionable observations about this trade or group.
+
+RECOMMENDATIONS
+What to review and why. No specific config values. Note if human review is required.
+
+OVERALL: positive / negative / mixed / neutral
 ```
 
 ---
 
-## How to get the data to paste
+## What data to paste
 
-### Option A — Single trade review
-Hit the `/api/v1/automation/ai-trade-reviews` endpoint to get recent reviews.
-Each review's `assessment` field contains the enriched trade context including:
-- entry signal indicators (RSI level, MA values, MACD state, etc.)
+### Single trade review
+Hit the API and copy a single review's `assessment` block:
+
+```
+GET /api/v1/automation/ai-trade-reviews
+```
+
+Each `assessment` includes:
+- scanner type, symbol, direction (call/put)
+- entry signal indicators at trade time (RSI level, MA values, MACD state, etc.)
 - option contract details (strike, DTE at entry, bid/ask, IV, delta)
-- exit trigger reason (which rule fired and at what level)
+- exit trigger reason (which rule fired and at what P&L level)
 - holding period
-- group performance stats for the same scanner + symbol
+- group win/loss stats for the same scanner + symbol
 
-Copy the `assessment` JSON for the trade you want reviewed and paste it after the system prompt.
+### Strategy refinement batch review
+```
+GET /api/v1/automation/strategy-refinement
+```
+Paste one or more `candidates` from the response. Each candidate has readiness status,
+priority trend across recent days, evidence totals, and focus recommendations.
+Good for reviewing a scanner/symbol that has been flagging for a few days.
 
-### Option B — Strategy refinement batch review
-Hit `/api/v1/automation/strategy-refinement` to get the full refinement summary.
-This includes readiness status, priority trends, evidence totals, and before/after windows
-for each scanner + symbol combination. Paste the `candidates` array or a single candidate.
-
-### Option C — Daily paper review
-Hit `/api/v1/automation/daily-paper-review` for the full day's data including signals,
-diagnostics, fills, and trade cases. Good for end-of-day review sessions.
+### End-of-day review
+```
+GET /api/v1/automation/daily-paper-review
+```
+Paste the full response or just the `trade_cases`, `signals`, and `option_selection_diagnostics`
+sections for a focused session.
 
 ---
 
-## Example prompt structure
+## Example message structure
 
 ```
-[paste system prompt above]
+[paste system prompt here]
 
-Here is the trade data to review:
+Here is the trade data I want you to review:
 
-[paste assessment JSON or refinement candidate JSON here]
+[paste assessment JSON or refinement candidate here]
 
-Please review this and provide your analysis.
+Please review this trade and give me your analysis.
 ```
 
 ---
 
-## After the review
+## Recording the outcome
 
-If Claude identifies something worth acting on, record it as a strategy tuning decision:
+If something is worth acting on, record it as a tuning decision:
 
 ```
 POST /api/v1/automation/strategy-tuning-decisions
@@ -85,4 +106,4 @@ POST /api/v1/automation/strategy-tuning-decisions
 }
 ```
 
-Tuning decisions are human-review records only and do not automatically change any strategy config.
+Tuning decisions are human-review records only — they do not automatically change any strategy config.
