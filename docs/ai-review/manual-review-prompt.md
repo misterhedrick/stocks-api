@@ -1,89 +1,70 @@
-# Manual AI Trade Review — How To
+# AI Trade Review — IDE Task
 
-Works with Claude (claude.ai) and ChatGPT (chat.openai.com / GPT-4o).
+When told to run a trade review, execute these steps directly using the project tools.
+Do not ask the user to copy/paste anything.
 
 ---
 
 ## Steps
 
-**1. Open a new chat in Claude or ChatGPT.**
+1. **Load the auth token** from `.env` (`ADMIN_API_TOKEN`).
 
-**2. Paste the system prompt below.**
-- In Claude: paste it into the System Prompt box before starting the chat.
-- In ChatGPT: paste it at the very top of your first message, before the data.
+2. **Pull trade review data** from the running API. Use whichever fits the request:
+   - Recent trade reviews: `GET /api/v1/automation/ai-trade-reviews`
+   - Strategy refinement candidates: `GET /api/v1/automation/strategy-refinement`
+   - Full day: `GET /api/v1/automation/daily-paper-review`
 
-**3. Pull the data you want reviewed from the API.**
+   If no base URL is specified, use `http://127.0.0.1:8000`.
 
-Pick one depending on what you want to look at:
+3. **Analyze the data** using these criteria:
 
-- **Single trade** — `GET /api/v1/automation/ai-trade-reviews`
-  Copy one review's `assessment` block. It includes entry signal indicators, option details (strike, DTE, IV, delta), exit trigger reason, holding period, and group win/loss stats.
+   **Signal quality** — Was the entry setup valid? Look at the indicator values in `entry_signal.indicators`
+   (RSI level, MA crossover distance, MACD state, etc.) relative to the scanner type and direction.
 
-- **Strategy refinement** — `GET /api/v1/automation/strategy-refinement`
-  Copy one or more items from the `candidates` array. Good when a scanner/symbol has been flagging for several days.
+   **Exit quality** — Did the exit fire at the right time? Check `exit_trigger.trigger_reason`
+   (stop loss, profit target, DTE limit, hold time) and whether the holding period was too short or too long.
 
-- **End-of-day** — `GET /api/v1/automation/daily-paper-review`
-  Paste the `trade_cases`, `signals`, and `option_selection_diagnostics` sections for a full day session.
+   **Outcome vs. setup** — Did the result match what the signal suggested? A loss on a clean signal
+   is different from a loss on a weak signal.
 
-**4. Paste the data into the chat and ask for the review.**
+   **Group patterns** — Check `group_context` for the same scanner + symbol. A single bad trade in
+   a strong group is noise. Repeated losses in the same group are a pattern.
 
-```
-[system prompt — Claude: system box / ChatGPT: top of message]
+   **Option selection** — If `snapshot_context.diagnostic_reasons` is populated, flag whether
+   spread, liquidity, or moneyness filters are rejecting too many candidates.
 
-Here is the trade data I want you to review:
+4. **Summarize findings** — for each trade or group reviewed, cover:
+   - Outcome assessment (what happened and why)
+   - Signal quality: good / questionable / poor / unclear
+   - Exit quality: good / questionable / poor / unclear
+   - Key observations (2-5 specific points)
+   - Recommendations (what to look at, no specific config values)
+   - Overall: positive / negative / mixed / neutral
 
-[paste data here]
+5. **Record anything actionable** as a tuning decision:
 
-Please review this and give me your analysis.
-```
+   ```
+   POST /api/v1/automation/strategy-tuning-decisions
+   Authorization: Bearer <token>
+   Content-Type: application/json
 
-**5. If the review surfaces something worth acting on, record it as a tuning decision.**
+   {
+     "scanner_type": "<scanner>",
+     "symbol": "<symbol>",
+     "decision_type": "<review_signal_thresholds | review_option_selection_filters | review_exit_rules | monitor_strategy>",
+     "description": "<what was observed and what to review>",
+     "expected_effect": "<what improvement would look like>",
+     "status": "approved"
+   }
+   ```
 
-```
-POST /api/v1/automation/strategy-tuning-decisions
-{
-  "scanner_type": "rsi_reversal",
-  "symbol": "SPY",
-  "decision_type": "review_signal_thresholds",
-  "description": "...",
-  "expected_effect": "...",
-  "status": "approved"
-}
-```
-
-Tuning decisions are human-review records only — they do not automatically change any strategy config.
+   Only record decisions where there is a clear pattern or specific concern.
+   Do not record a decision for every trade. Tuning decisions do not automatically change any config.
 
 ---
 
-## System Prompt
+## Rules
 
-```
-You are a trading strategy analyst reviewing closed paper options trades for a
-single-user automated trading system. Your goal is to identify patterns, assess
-signal and exit quality, and suggest areas for improvement.
-
-Rules:
-- All recommendations require human review before any strategy changes are made.
-- Never suggest auto-applying changes.
-- Never include specific config values or thresholds in recommendations.
-- human_review_required is always true.
-
-For each trade or group reviewed, respond in plain English with these sections:
-
-OUTCOME ASSESSMENT
-1-2 sentences on what happened and why.
-
-SIGNAL QUALITY: good / questionable / poor / unclear
-Notes on the entry signal indicators — was the setup valid?
-
-EXIT QUALITY: good / questionable / poor / unclear
-Notes on the exit trigger — did it fire at the right time?
-
-KEY OBSERVATIONS
-2-5 specific, actionable observations about this trade or group.
-
-RECOMMENDATIONS
-What to review and why. No specific config values. Note if human review is required.
-
-OVERALL: positive / negative / mixed / neutral
-```
+- Never suggest auto-applying config changes.
+- Never include specific threshold values in recommendations.
+- All recommendations are for human review only.
