@@ -55,6 +55,7 @@ def _preview_payload_for_signal(
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
         max_estimated_notional=preview_config.get("max_estimated_notional"),
         max_spread=preview_config.get("max_spread"),
+        max_spread_percent=preview_config.get("max_spread_percent"),
     )
 
 

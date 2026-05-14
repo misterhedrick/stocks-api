@@ -105,8 +105,23 @@ def evaluate_position_exits(
             evaluation.update({"action": "hold", "reason": reason})
             continue
 
-        if _has_active_exit_order(db, position.symbol):
+        active_exit_order = _latest_active_exit_order(db, position.symbol)
+        if active_exit_order is not None:
             exits_skipped += 1
+            active_exit_id = active_exit_order.get("order_intent_id")
+            if active_exit_order.get("status") == "previewed" and active_exit_id:
+                order_intent_ids.append(uuid.UUID(str(active_exit_id)))
+                reason = (
+                    f"{position.symbol}: previewed exit order already exists and will be submitted"
+                )
+                evaluation.update(
+                    {
+                        "action": "exit_pending_submit",
+                        "reason": reason,
+                        "order_intent_id": str(active_exit_id),
+                    }
+                )
+                continue
             reason = f"{position.symbol}: active exit order already exists"
             no_exit_reasons.append(reason)
             evaluation.update({"action": "exit_pending", "reason": reason})

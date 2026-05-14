@@ -10,6 +10,7 @@ from app.services.order_intent_helpers import (
     _midpoint,
     _selection_preview,
     _side_price,
+    _spread_exceeds_limits,
     _usable_quote_price,
     _validate_preview_quote_constraints,
 )

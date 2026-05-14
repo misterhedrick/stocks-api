@@ -219,7 +219,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "0-55/5 14-18 * * 1-5"
+    schedule: "0-55/5 14-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -228,9 +228,9 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-entry-cycle?symbol=SPY&scan_limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=110
       - key: JOB_TIMEOUT_SECONDS
-        value: 120
+        value: 180
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES
@@ -245,7 +245,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "1-55/5 14-18 * * 1-5"
+    schedule: "1-55/5 14-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -254,9 +254,9 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-entry-cycle?symbol=QQQ&scan_limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=110
       - key: JOB_TIMEOUT_SECONDS
-        value: 120
+        value: 180
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES
@@ -271,7 +271,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "2-55/5 14-18 * * 1-5"
+    schedule: "2-55/5 14-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -280,9 +280,9 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=110
       - key: JOB_TIMEOUT_SECONDS
-        value: 120
+        value: 180
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES
@@ -297,7 +297,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "3-55/5 14-18 * * 1-5"
+    schedule: "3-55/5 14-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -306,9 +306,9 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=110
       - key: JOB_TIMEOUT_SECONDS
-        value: 120
+        value: 180
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES
@@ -323,7 +323,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "4-55/5 14-18 * * 1-5"
+    schedule: "4-55/5 14-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
@@ -332,9 +332,9 @@ services:
       - key: STOCKS_API_BASE_URL
         value: https://stocks-api-z11i.onrender.com
       - key: JOB_PATH
-        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100
+        value: /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=110
       - key: JOB_TIMEOUT_SECONDS
-        value: 120
+        value: 180
       - key: JOB_RETRY_DELAYS_SECONDS
         value: ""
       - key: JOB_SKIP_HTTP_STATUS_CODES
@@ -351,7 +351,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/1 13-19 * * 1-5"
+    schedule: "*/1 13-20 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
