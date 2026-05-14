@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     paper_strategy_max_spread_percent: Decimal = Decimal("35")
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
     paper_strategy_stop_loss_percent: Decimal = Decimal("15")
+    paper_strategy_trailing_profit_activation_percent: Decimal = Decimal("15")
+    paper_strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
+    paper_strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
     paper_strategy_preview_profiles_enabled: bool = True
     paper_review_snapshot_retention_days: int = 45
     options_min_dte: int = 7

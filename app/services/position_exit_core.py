@@ -29,6 +29,7 @@ from app.services.position_exit_rules import (
     _entry_fill_time,
     _exit_rule_diagnostics,
     _exit_trigger_reason,
+    _peak_unrealized_pl_percent,
     _position_recommendation,
 )
 
@@ -86,17 +87,24 @@ def evaluate_position_exits(
 
         positions_evaluated += 1
         entry_time = _entry_fill_time(db, ownership)
+        peak_unrealized_pl_percent = _peak_unrealized_pl_percent(
+            db,
+            position,
+            entry_time=entry_time,
+        )
         evaluation["rule_diagnostics"] = _exit_rule_diagnostics(
             position,
             exit_config,
             today=today,
             entry_time=entry_time,
+            peak_unrealized_pl_percent=peak_unrealized_pl_percent,
         )
         trigger_reason = _exit_trigger_reason(
             position,
             exit_config,
             today=today,
             entry_time=entry_time,
+            peak_unrealized_pl_percent=peak_unrealized_pl_percent,
         )
         evaluation["trigger_reason"] = trigger_reason
         if trigger_reason is None:

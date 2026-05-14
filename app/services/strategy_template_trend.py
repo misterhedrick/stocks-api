@@ -87,6 +87,7 @@ def build_momentum_rate_of_change_strategy_payload(
     change_below_percent: str = "-0.175",
     short_average_type: str = "ema",
     short_average_window: int = 9,
+    max_extension_percent: str | None = None,
     confidence: str = "0.6500",
     dedupe_minutes: int = 60,
 ) -> dict[str, Any]:
@@ -111,6 +112,8 @@ def build_momentum_rate_of_change_strategy_payload(
                 "change_below_percent": change_below_percent,
                 "short_average_type": short_average_type,
                 "short_average_window": short_average_window,
+                "max_extension_percent": max_extension_percent
+                or _decimal_string(settings.paper_strategy_momentum_max_extension_percent),
                 "require_latest_candle_confirmation": True,
                 "direction": direction,
                 "confidence": confidence,
@@ -223,7 +226,7 @@ def build_macd_crossover_strategy_payload(
                 "fast_period": fast_period,
                 "slow_period": slow_period,
                 "signal_period": signal_period,
-                "require_histogram_confirmation": False,
+                "require_histogram_confirmation": True,
                 "require_price_confirmation": True,
                 "direction": direction,
                 "confidence": confidence,

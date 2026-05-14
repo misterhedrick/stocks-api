@@ -131,6 +131,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["change_above_percent"], "0.20")
         self.assertEqual(scanner["change_below_percent"], "-0.20")
+        self.assertEqual(scanner["max_extension_percent"], "2.0")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertTrue(scanner["submit"]["enabled"])
 

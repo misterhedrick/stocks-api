@@ -19,8 +19,10 @@ class FakeTradeLifecycleSession:
         broker_orders: list[BrokerOrder],
         fills: list[Fill],
         latest_reconciliation: JobRun | None = None,
+        position_history: list[PositionSnapshot] | None = None,
     ) -> None:
         self.positions = positions
+        self.position_history = position_history or positions
         self.strategy = strategy
         self.entry_order_intent = entry_order_intent
         self.broker_orders = broker_orders
@@ -34,6 +36,8 @@ class FakeTradeLifecycleSession:
         if self.scalars_calls == 1:
             return self.positions
         if self.scalars_calls == 2:
+            return self.position_history
+        if self.scalars_calls == 3:
             return self.broker_orders
         return self.fills
 

@@ -8,6 +8,8 @@ from typing import Any
 
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from sqlalchemy.orm import Session
 
 from app.db.models import PositionSnapshot
@@ -26,6 +28,7 @@ def _exit_trigger_reason(
     *,
     today: date,
     entry_time: datetime | None = None,
+    peak_unrealized_pl_percent: Decimal | None = None,
 ) -> str | None:
     pnl_percent = _unrealized_pl_percent(position)
     stop_loss_percent = _optional_positive_decimal(exit_config.get("stop_loss_percent"))
@@ -45,6 +48,25 @@ def _exit_trigger_reason(
         and pnl_percent >= profit_target_percent
     ):
         return f"profit_target_percent triggered at {pnl_percent}%"
+
+    trailing_activation_percent = _optional_positive_decimal(
+        exit_config.get("trailing_profit_activation_percent")
+    )
+    trailing_giveback_percent = _optional_positive_decimal(
+        exit_config.get("trailing_profit_giveback_percent")
+    )
+    if (
+        pnl_percent is not None
+        and peak_unrealized_pl_percent is not None
+        and trailing_activation_percent is not None
+        and trailing_giveback_percent is not None
+        and peak_unrealized_pl_percent >= trailing_activation_percent
+        and peak_unrealized_pl_percent - pnl_percent >= trailing_giveback_percent
+    ):
+        return (
+            "trailing_profit_giveback_percent triggered at "
+            f"{pnl_percent}% after peak {peak_unrealized_pl_percent}%"
+        )
 
     max_days_to_expiration = _optional_int(exit_config.get("max_days_to_expiration"))
     expiration_date = _option_expiration_date(position.symbol)
@@ -75,6 +97,7 @@ def _exit_rule_diagnostics(
     *,
     today: date,
     entry_time: datetime | None = None,
+    peak_unrealized_pl_percent: Decimal | None = None,
 ) -> dict[str, Any]:
     pnl_percent = _unrealized_pl_percent(position)
     expiration_date = _option_expiration_date(position.symbol)
@@ -94,6 +117,12 @@ def _exit_rule_diagnostics(
     thresholds = {
         "profit_target_percent": _string_or_none(config.get("profit_target_percent")),
         "stop_loss_percent": _string_or_none(config.get("stop_loss_percent")),
+        "trailing_profit_activation_percent": _string_or_none(
+            config.get("trailing_profit_activation_percent")
+        ),
+        "trailing_profit_giveback_percent": _string_or_none(
+            config.get("trailing_profit_giveback_percent")
+        ),
         "max_days_to_expiration": _string_or_none(config.get("max_days_to_expiration")),
         "max_hold_hours": _string_or_none(config.get("max_hold_hours")),
         "max_spread": _string_or_none(config.get("max_spread")),
@@ -101,6 +130,9 @@ def _exit_rule_diagnostics(
     }
     return {
         "unrealized_pl_percent": str(pnl_percent) if pnl_percent is not None else None,
+        "peak_unrealized_pl_percent": str(peak_unrealized_pl_percent)
+        if peak_unrealized_pl_percent is not None
+        else None,
         "expiration_date": expiration_date.isoformat()
         if expiration_date is not None
         else None,
@@ -138,11 +170,17 @@ def _position_recommendation(
         return ("add_exit_config", "linked strategy does not have scanner.exit enabled")
 
     entry_time = _entry_fill_time(db, ownership)
+    peak_unrealized_pl_percent = _peak_unrealized_pl_percent(
+        db,
+        position,
+        entry_time=entry_time,
+    )
     trigger_reason = _exit_trigger_reason(
         position,
         exit_config,
         today=datetime.now(ZoneInfo("America/New_York")).date(),
         entry_time=entry_time,
+        peak_unrealized_pl_percent=peak_unrealized_pl_percent,
     )
     if trigger_reason is not None:
         return ("exit_rule_triggered", trigger_reason)
@@ -174,6 +212,35 @@ def _unrealized_pl_percent(position: PositionSnapshot) -> Decimal | None:
         )
     except (InvalidOperation, ZeroDivisionError):
         return None
+
+def _peak_unrealized_pl_percent(
+    db: Session,
+    position: PositionSnapshot,
+    *,
+    entry_time: datetime | None,
+) -> Decimal | None:
+    statement = select(PositionSnapshot).where(PositionSnapshot.symbol == position.symbol)
+    if isinstance(entry_time, datetime):
+        entry_utc = (
+            entry_time.astimezone(timezone.utc)
+            if entry_time.tzinfo is not None
+            else entry_time.replace(tzinfo=timezone.utc)
+        )
+        statement = statement.where(PositionSnapshot.captured_at >= entry_utc)
+    snapshots = [
+        snapshot
+        for snapshot in db.scalars(statement)
+        if isinstance(snapshot, PositionSnapshot)
+    ]
+    values = [
+        value
+        for value in (
+            _unrealized_pl_percent(snapshot)
+            for snapshot in [position, *snapshots]
+        )
+        if value is not None
+    ]
+    return max(values) if values else None
 
 def _option_expiration_date(symbol: str) -> date | None:
     match = OPTION_EXPIRATION_PATTERN.search(symbol)

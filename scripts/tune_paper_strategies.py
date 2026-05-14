@@ -75,6 +75,7 @@ def main() -> None:
     momentum_parser.add_argument("--change-below-percent", default="-0.175")
     momentum_parser.add_argument("--short-average-type", default="ema")
     momentum_parser.add_argument("--short-average-window", type=int, default=9)
+    momentum_parser.add_argument("--max-extension-percent")
     momentum_parser.add_argument("--confidence", default="0.6500")
     momentum_parser.add_argument("--target-strike")
     momentum_parser.add_argument("--sample-price")
@@ -287,6 +288,7 @@ def momentum_rate_of_change_payload_from_args(args: argparse.Namespace) -> dict[
         change_below_percent=args.change_below_percent,
         short_average_type=args.short_average_type,
         short_average_window=args.short_average_window,
+        max_extension_percent=getattr(args, "max_extension_percent", None),
         confidence=args.confidence,
     )
 

@@ -27,8 +27,10 @@ class FakePositionExitSession:
         active_exit_count: int | None = 0,
         active_exit_order: OrderIntent | None = None,
         latest_reconciliation: JobRun | None = None,
+        position_history: list[PositionSnapshot] | None = None,
     ) -> None:
         self.positions = positions
+        self.position_history = position_history or positions
         self.strategy = strategy
         self.entry_order_intent = entry_order_intent
         self.active_exit_count = active_exit_count
@@ -38,9 +40,13 @@ class FakePositionExitSession:
         self.commit_count = 0
         self.flush_count = 0
         self.scalar_calls = 0
+        self.scalars_calls = 0
 
     def scalars(self, _: object) -> list[PositionSnapshot]:
-        return self.positions
+        self.scalars_calls += 1
+        if self.scalars_calls == 1:
+            return self.positions
+        return self.position_history
 
     def scalar(self, _: object) -> object | None:
         self.scalar_calls += 1
@@ -171,6 +177,8 @@ def build_strategy() -> Strategy:
                     "enabled": True,
                     "profit_target_percent": "30",
                     "stop_loss_percent": "20",
+                    "trailing_profit_activation_percent": "15",
+                    "trailing_profit_giveback_percent": "10",
                     "max_days_to_expiration": 1,
                     "max_contracts_per_exit": 1,
                     "order_type": "limit",
@@ -330,6 +338,42 @@ class PositionExitTests(unittest.TestCase):
         )
         self.assertGreater(result.exit_evaluations[0]["rule_diagnostics"]["days_to_expiration"], 1)
         self.assertEqual(db.commit_count, 0)
+
+    def test_evaluate_position_exits_trails_profitable_giveback(self) -> None:
+        strategy = build_strategy()
+        position = build_position(
+            symbol="SPY260619C00500000",
+            unrealized_pl=Decimal("10"),
+            cost_basis=Decimal("100"),
+        )
+        peak_position = build_position(
+            symbol=position.symbol,
+            unrealized_pl=Decimal("25"),
+            cost_basis=Decimal("100"),
+        )
+        db = FakePositionExitSession(
+            positions=[position],
+            position_history=[peak_position, position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+        )
+
+        result = evaluate_position_exits(
+            db,
+            market_data_client=SuccessfulMarketDataClient(),
+        )
+
+        self.assertEqual(result.exits_created, 1)
+        self.assertIn("trailing_profit_giveback_percent", result.exit_evaluations[0]["trigger_reason"])
+        self.assertEqual(
+            result.exit_evaluations[0]["rule_diagnostics"]["peak_unrealized_pl_percent"],
+            "25.00",
+        )
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+        self.assertIn(
+            "trailing_profit_giveback_percent",
+            order_intents[-1].preview["trigger_reason"],
+        )
 
     def test_evaluate_position_exits_skips_duplicate_active_exit(self) -> None:
         strategy = build_strategy()

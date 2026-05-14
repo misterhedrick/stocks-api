@@ -95,6 +95,12 @@ def _exit_config(
         or _decimal_string(settings.paper_strategy_profit_target_percent),
         "stop_loss_percent": stop_loss_percent
         or _decimal_string(settings.paper_strategy_stop_loss_percent),
+        "trailing_profit_activation_percent": _decimal_string(
+            settings.paper_strategy_trailing_profit_activation_percent
+        ),
+        "trailing_profit_giveback_percent": _decimal_string(
+            settings.paper_strategy_trailing_profit_giveback_percent
+        ),
         "max_days_to_expiration": 1,
         "max_contracts_per_exit": 1,
         "order_type": "limit",

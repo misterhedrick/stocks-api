@@ -6,6 +6,7 @@ import uuid
 
 from app.db.models import AuditLog, Strategy
 from app.services.strategy_templates import (
+    build_macd_crossover_strategy_payload,
     build_moving_average_strategy_payload,
     build_momentum_rate_of_change_strategy_payload,
     build_preview_first_strategy_payloads,
@@ -101,12 +102,26 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["lookback_minutes"], 30)
         self.assertEqual(scanner["change_above_percent"], "0.175")
         self.assertEqual(scanner["change_below_percent"], "-0.175")
+        self.assertEqual(scanner["max_extension_percent"], "2.0")
         self.assertTrue(scanner["require_latest_candle_confirmation"])
         self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
+        self.assertEqual(scanner["exit"]["trailing_profit_activation_percent"], "15")
+        self.assertEqual(scanner["exit"]["trailing_profit_giveback_percent"], "10")
         self.assertTrue(scanner["submit"]["enabled"])
+
+    def test_build_macd_crossover_strategy_payload_requires_histogram_confirmation(self) -> None:
+        payload = build_macd_crossover_strategy_payload(
+            symbol="spy",
+            target_strike=Decimal("500"),
+        )
+
+        scanner = payload["config"]["scanner"]
+        self.assertEqual(scanner["type"], "macd_crossover")
+        self.assertTrue(scanner["require_price_confirmation"])
+        self.assertTrue(scanner["require_histogram_confirmation"])
 
     def test_submit_trade_windows_are_10_00_to_16_00_et(self) -> None:
         payload = build_moving_average_strategy_payload(
