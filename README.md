@@ -4,10 +4,10 @@ Single-user FastAPI backend for stock/options paper trading with Alpaca, Postgre
 
 ## Git workflow
 
-- All work is done on a feature branch. Feature branches are pushed to `develop` when ready.
-- **Never commit directly to `develop` or `master`.**
-- `master` is the deploy branch. All merges from `develop` → `master` require explicit human approval.
-- Claude Code must prompt for confirmation before any push or merge targeting `master` or `develop`.
+- All work is done on a feature branch. Feature branches are merged to `develop` when ready.
+- Never commit directly to `develop` or `master`.
+- All merges from `develop` → `master` require explicit human approval.
+- Claude Code must prompt for confirmation before any push or merge targeting `develop` or `master`.
 
 ## Current status
 
