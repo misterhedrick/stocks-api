@@ -47,6 +47,9 @@ class FakeSnapshotSession:
     def commit(self) -> None:
         self.commit_count += 1
 
+    def expunge(self, obj: object) -> None:
+        pass
+
     def refresh(self, obj: object) -> None:
         if getattr(obj, "id", None) is None:
             obj.id = uuid.uuid4()
