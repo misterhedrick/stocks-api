@@ -44,6 +44,7 @@ from app.services.paper_review_snapshots import (
     create_or_update_post_market_paper_review_snapshot,
     prune_old_paper_review_snapshots,
 )
+from app.services.performance_review import PerformanceReviewResult
 
 from app.services.performance_review import get_paper_performance_review
 
@@ -180,7 +181,8 @@ def run_post_market_maintenance(
             stale_before=started_at - timedelta(hours=stale_after_hours),
             source="post_market_maintenance",
         )
-        performance = _performance_summary(get_paper_performance_review(db, limit=5000))
+        perf_result = get_paper_performance_review(db, limit=500)
+        performance = _performance_summary(perf_result)
         readiness = _readiness_summary(db)
         settings_snapshot = _settings_snapshot()
 
@@ -200,18 +202,19 @@ def run_post_market_maintenance(
 
     # Populate trade cases after the maintenance job_run is safely committed.
     # Runs in its own transaction so a failure here never rolls back the maintenance record.
-    trade_cases = _populate_trade_cases_safely(db, limit=5000)
+    trade_cases = _populate_trade_cases_safely(db, limit=500)
     _write_trade_cases_audit_log(db, maintenance_job_run=job_run, trade_cases=trade_cases)
     paper_review_snapshot = _paper_review_snapshot_safely(
         db,
         maintenance_job_run=job_run,
         generated_at=started_at,
-        limit=5000,
+        limit=500,
+        performance=perf_result,
     )
     ai_trade_reviews = _ai_trade_reviews_safely(
         db,
         maintenance_job_run=job_run,
-        limit=5000,
+        limit=100,
     )
     paper_review_snapshot_retention = _paper_review_snapshot_retention_safely(
         db,
@@ -296,12 +299,14 @@ def _paper_review_snapshot_safely(
     maintenance_job_run: JobRun,
     generated_at: datetime,
     limit: int,
+    performance: PerformanceReviewResult | None = None,
 ) -> dict[str, Any]:
     try:
         result = create_or_update_post_market_paper_review_snapshot(
             db,
             generated_at=generated_at,
             limit=limit,
+            performance=performance,
         )
         payload = {
             "snapshot_id": str(result.snapshot.id),

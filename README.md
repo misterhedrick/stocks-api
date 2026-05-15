@@ -2,6 +2,12 @@
 
 Single-user FastAPI backend for stock/options paper trading with Alpaca, Postgres, and Render cron jobs.
 
+## Git workflow
+
+- All work is done on feature branches and merged into `develop`.
+- `master` is the deploy branch. **Never push directly to `master`.** Only merge `develop` → `master` after explicit approval.
+- Claude Code must prompt for confirmation before any push or merge targeting `master`.
+
 ## Current status
 
 - **Primary deploy branch:** `master`

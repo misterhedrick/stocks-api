@@ -380,7 +380,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.paper_review_snapshot["refinement_candidate_count"], 2)
         self.assertEqual(result.ai_trade_reviews["reviews_created"], 1)
         self.assertIsNone(result.news)
-        performance.assert_called_once_with(db, limit=5000)
+        performance.assert_called_once_with(db, limit=500)
 
     def test_post_market_maintenance_populates_trade_cases(self) -> None:
         signal = build_signal()
@@ -417,7 +417,7 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.paper_review_snapshot["diagnostic_count"], 1)
         self.assertEqual(result.paper_review_snapshot["learning_report_saved"], True)
         self.assertEqual(result.paper_review_snapshot_retention["deleted"], 1)
-        populate.assert_called_once_with(db, limit=5000)
+        populate.assert_called_once_with(db, limit=500)
         # Five commits: maintenance + trade case audit + snapshot audit + AI review audit + retention audit
         self.assertEqual(db.commit_count, 5)
         audit_logs = [item for item in db.added if isinstance(item, AuditLog)]

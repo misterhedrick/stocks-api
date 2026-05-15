@@ -20,7 +20,7 @@ from app.db.models import (
     Strategy,
 )
 from app.services.learning_report import build_learning_report
-from app.services.performance_review import get_paper_performance_review
+from app.services.performance_review import PerformanceReviewResult, get_paper_performance_review
 
 
 @dataclass(slots=True)
@@ -42,7 +42,8 @@ def create_or_update_post_market_paper_review_snapshot(
     *,
     review_date: date | None = None,
     generated_at: datetime | None = None,
-    limit: int = 5000,
+    limit: int = 500,
+    performance: PerformanceReviewResult | None = None,
 ) -> PaperReviewSnapshotResult:
     generated = generated_at or datetime.now(timezone.utc)
     if generated.tzinfo is None:
@@ -53,7 +54,8 @@ def create_or_update_post_market_paper_review_snapshot(
     window_start = datetime.combine(selected_date, time.min, tzinfo=timezone.utc)
     window_end = datetime.combine(selected_date, time.max, tzinfo=timezone.utc)
 
-    performance = get_paper_performance_review(db, limit=limit)
+    if performance is None:
+        performance = get_paper_performance_review(db, limit=limit)
     signals = _signal_details(db, window_start=window_start, window_end=window_end, limit=limit)
     previews = _order_intent_details(
         db,
@@ -78,65 +80,67 @@ def create_or_update_post_market_paper_review_snapshot(
     learning_report = _learning_report_payload(db, limit=limit)
     refinement_candidates = learning_report.get("refinement_candidates", [])
 
-    payload = {
+    summary = {
+        "performance": _performance_payload(performance),
+        "counts": {
+            "signals": len(signals),
+            "order_intents": len(previews),
+            "broker_orders": len(orders),
+            "fills": len(fills),
+            "option_selection_diagnostics": len(diagnostics),
+            "rejected_shadow_outcomes": len(rejected_shadow_outcomes),
+            "refinement_candidates": len(refinement_candidates)
+            if isinstance(refinement_candidates, list)
+            else 0,
+        },
+        "learning_report": {
+            "retention_days": settings.paper_review_snapshot_retention_days,
+            "refinement_candidate_count": len(refinement_candidates)
+            if isinstance(refinement_candidates, list)
+            else 0,
+        },
+    }
+    signals_col = {
+        "items": signals,
+        "summary": performance.signal_summary,
+        "no_signal_summary": performance.no_signal_summary,
+    }
+    previews_col = {
+        "items": previews,
+        "status_counts": _count_dict(item["status"] for item in previews),
+    }
+    orders_col = {
+        "items": orders,
+        "status_counts": _count_dict(item["status"] for item in orders),
+    }
+    fills_col = {
+        "items": fills,
+        "summary": {
+            "fills_seen": performance.fills_seen,
+            "matched_round_trips": performance.matched_round_trips,
+            "totals": performance.totals,
+            "by_strategy": performance.by_strategy,
+            "by_symbol": performance.by_symbol,
+            "open_positions": performance.open_positions,
+            "recent_round_trips": performance.recent_round_trips,
+        },
+    }
+    diagnostics_col = {
+        "items": diagnostics,
+        "summary": performance.option_selection_diagnostics,
+    }
+    rejected_outcomes_col = {
+        "trade_comparison": performance.rejected_preview_outcomes,
+        "shadow_market_movement": rejected_shadow_outcomes,
+    }
+    # raw_payload stores only what isn't in structured columns (learning_report + metadata).
+    # Keeping item arrays out of raw_payload avoids doubling the in-memory footprint.
+    raw_payload = {
         "review_date": selected_date.isoformat(),
         "review_type": "post_market",
         "generated_at": generated.isoformat(),
         "window_start": window_start.isoformat(),
         "window_end": window_end.isoformat(),
-        "summary": {
-            "performance": _performance_payload(performance),
-            "counts": {
-                "signals": len(signals),
-                "order_intents": len(previews),
-                "broker_orders": len(orders),
-                "fills": len(fills),
-                "option_selection_diagnostics": len(diagnostics),
-                "rejected_shadow_outcomes": len(rejected_shadow_outcomes),
-                "refinement_candidates": len(refinement_candidates)
-                if isinstance(refinement_candidates, list)
-                else 0,
-            },
-            "learning_report": {
-                "retention_days": settings.paper_review_snapshot_retention_days,
-                "refinement_candidate_count": len(refinement_candidates)
-                if isinstance(refinement_candidates, list)
-                else 0,
-            },
-        },
-        "signals": {
-            "items": signals,
-            "summary": performance.signal_summary,
-            "no_signal_summary": performance.no_signal_summary,
-        },
-        "previews": {
-            "items": previews,
-            "status_counts": _count_dict(item["status"] for item in previews),
-        },
-        "orders": {
-            "items": orders,
-            "status_counts": _count_dict(item["status"] for item in orders),
-        },
-        "fills": {
-            "items": fills,
-            "summary": {
-                "fills_seen": performance.fills_seen,
-                "matched_round_trips": performance.matched_round_trips,
-                "totals": performance.totals,
-                "by_strategy": performance.by_strategy,
-                "by_symbol": performance.by_symbol,
-                "open_positions": performance.open_positions,
-                "recent_round_trips": performance.recent_round_trips,
-            },
-        },
-        "diagnostics": {
-            "items": diagnostics,
-            "summary": performance.option_selection_diagnostics,
-        },
-        "rejected_outcomes": {
-            "trade_comparison": performance.rejected_preview_outcomes,
-            "shadow_market_movement": rejected_shadow_outcomes,
-        },
         "learning_report": learning_report,
     }
 
@@ -155,17 +159,19 @@ def create_or_update_post_market_paper_review_snapshot(
     snapshot.window_start = window_start
     snapshot.window_end = window_end
     snapshot.generated_at = generated
-    snapshot.summary = payload["summary"]
-    snapshot.signals = payload["signals"]
-    snapshot.previews = payload["previews"]
-    snapshot.orders = payload["orders"]
-    snapshot.fills = payload["fills"]
-    snapshot.diagnostics = payload["diagnostics"]
-    snapshot.rejected_outcomes = payload["rejected_outcomes"]
-    snapshot.raw_payload = payload
+    snapshot.summary = summary
+    snapshot.signals = signals_col
+    snapshot.previews = previews_col
+    snapshot.orders = orders_col
+    snapshot.fills = fills_col
+    snapshot.diagnostics = diagnostics_col
+    snapshot.rejected_outcomes = rejected_outcomes_col
+    snapshot.raw_payload = raw_payload
     db.add(snapshot)
     db.commit()
-    db.refresh(snapshot)
+    # Detach from the session so SQLAlchemy drops the large JSON columns from its identity map.
+    # Column values already loaded (including id) remain accessible on the detached object.
+    db.expunge(snapshot)
 
     return PaperReviewSnapshotResult(
         snapshot=snapshot,
