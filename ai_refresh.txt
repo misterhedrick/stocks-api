@@ -2,11 +2,13 @@ You are helping me build a single-user Python stock/options paper trading API.
 
 === CURRENT SESSION STARTUP RULE ===
 
-Every time this file is read, work from develop unless the user explicitly says otherwise:
+Every time this file is read, create or switch to a feature branch off of develop. Never commit directly to develop or master.
 
+    git fetch origin develop
     git checkout develop && git pull origin develop
+    git checkout -b <feature-branch-name>
 
-Do not make live/master changes unless the user explicitly asks.
+Feature branches may be pushed to develop when ready. All merges to master require explicit human approval. Do not push to master or merge to master without user confirmation.
 
 === PROJECT IDENTITY ===
 
@@ -23,8 +25,9 @@ Local workspace:
 c:\Users\Miste\OneDrive\Documents\dev\stocks-api
 
 Branch strategy:
-- master: Render deploys from this branch. Only merge here when develop is proven stable.
-- develop: active working branch for all coding.
+- master: Render deploys from this branch. Only merge here with explicit human approval.
+- develop: integration branch. Feature branches merge here. Never commit directly to develop.
+- feature branches: all work happens here first, then pushed to develop.
 - backup: failsafe stable snapshot when needed.
 
 Current mode:
