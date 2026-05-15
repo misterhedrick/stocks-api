@@ -17,6 +17,8 @@ engine = create_engine(
     settings.sqlalchemy_database_url,
     connect_args=get_connect_args(),
     pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
