@@ -193,6 +193,8 @@ Examples:
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 ```
@@ -261,6 +263,23 @@ dedupe_minutes=60
 ```
 
 This profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in the Alpaca paper sandbox.
+
+Momentum rate-of-change uses a stricter Render preview profile override:
+
+```text
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+```
+
+Current paper exit defaults:
+
+```text
+profit_target_percent=25
+stop_loss_percent=10
+stop_loss_min_dollars=20
+```
+
+The percent stop only triggers when the unrealized percent loss and the dollar loss floor are both met. This prevents tiny-dollar option positions from exiting solely because a small move is a large percentage loss.
 
 ## Reset paper account data
 
@@ -480,6 +499,14 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-maintenance?phase=auto&ne
 
 ```bash
 python scripts/print_paper_review_snapshot.py --limit 8
+```
+
+```bash
+python scripts/update_strategy_stop_loss.py --dry-run
+```
+
+```bash
+python scripts/update_strategy_stop_loss.py
 ```
 
 ```bash
