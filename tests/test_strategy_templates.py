@@ -68,7 +68,7 @@ class StrategyTemplateTests(unittest.TestCase):
                 Decimal("0.35"),
             )
             self.assertEqual(scanner["preview"]["max_spread_percent"], "35")
-            self.assertEqual(scanner["preview"]["min_open_interest"], 25)
+            self.assertEqual(scanner["preview"]["min_open_interest"], 50)
             if scanner["type"] == "moving_average":
                 self.assertTrue(scanner["market_regime"]["enabled"])
 
@@ -101,15 +101,15 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(payload["name"], "Paper SPY momentum rate-of-change call preview")
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["lookback_minutes"], 30)
-        self.assertEqual(scanner["change_above_percent"], "0.175")
-        self.assertEqual(scanner["change_below_percent"], "-0.175")
+        self.assertEqual(scanner["change_above_percent"], "0.25")
+        self.assertEqual(scanner["change_below_percent"], "-0.25")
         self.assertEqual(scanner["max_extension_percent"], "2.0")
         self.assertTrue(scanner["require_latest_candle_confirmation"])
         self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
         self.assertEqual(scanner["exit"]["stop_loss_percent"], "10")
-        self.assertEqual(scanner["exit"]["stop_loss_min_dollars"], "20")
+        self.assertEqual(scanner["exit"]["stop_loss_min_dollars"], "10")
         self.assertEqual(scanner["exit"]["trailing_profit_activation_percent"], "15")
         self.assertEqual(scanner["exit"]["trailing_profit_giveback_percent"], "10")
         self.assertTrue(scanner["submit"]["enabled"])
@@ -147,7 +147,7 @@ class StrategyTemplateTests(unittest.TestCase):
             max_notional_per_order="5000.00",
             max_spread="0.35",
             max_spread_percent="35",
-            min_open_interest=25,
+            min_open_interest=50,
             min_quote_size=1,
             max_orders_per_cycle=100,
             max_orders_per_day=500,

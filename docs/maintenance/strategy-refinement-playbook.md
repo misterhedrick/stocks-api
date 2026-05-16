@@ -623,7 +623,7 @@ Primary global settings:
 | `OPTIONS_MAX_DTE` | `45` | Default maximum DTE. |
 | `OPTIONS_CANDIDATE_LIMIT` | `100` | Candidate breadth. |
 | `OPTIONS_MAX_SPREAD_PCT` | `0.15` | Relative spread cap. |
-| `OPTIONS_MIN_OPEN_INTEREST` | `25` | Default OI floor. |
+| `OPTIONS_MIN_OPEN_INTEREST` | `50` | Default OI floor. |
 | `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Missing-OI allowlist. |
 
 Per-profile settings follow:
@@ -663,12 +663,12 @@ Default seeded exit config:
 
 - `profit_target_percent`: from `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, default `25`.
 - `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `10`.
-- `stop_loss_min_dollars`: from `PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `20`.
+- `stop_loss_min_dollars`: from `PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `10`.
 - `max_days_to_expiration`: `1`.
 - Limit price source: `bid`.
 - Exit submit is enabled for sell orders.
 
-The stop loss triggers only when both the percent loss threshold and minimum dollar loss floor are met. For example, a position down 50% but only down $5 does not trigger a stop when `stop_loss_min_dollars=20`.
+The stop loss triggers only when both the percent loss threshold and minimum dollar loss floor are met. For example, a position down 50% but only down $5 does not trigger a stop when `stop_loss_min_dollars=10`.
 
 Existing strategies can be patched manually:
 

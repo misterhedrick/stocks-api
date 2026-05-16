@@ -46,7 +46,7 @@ Tuning guidance:
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `OPTIONS_MIN_OPEN_INTEREST` | `25` | Default minimum open interest when a strategy/profile does not set a tighter value. |
+| `OPTIONS_MIN_OPEN_INTEREST` | `50` | Default minimum open interest when a strategy/profile does not set a tighter value. |
 | `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Comma-separated list of symbols that may skip the missing open interest rejection if quote quality passes. |
 
 SPY and QQQ often have `null` open interest on the Alpaca paper data feed even when the contract is actively quoted. Allowlisting them prevents unnecessary rejections. The allowlist only bypasses the *missing* OI check — if OI is present and below `MIN_OPEN_INTEREST` the candidate is still rejected.

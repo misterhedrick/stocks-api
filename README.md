@@ -265,13 +265,13 @@ Current paper data-gathering profile:
 strictness_level=0.50
 max_estimated_notional=5000
 max_notional_per_order=5000
-min_open_interest=25
+min_open_interest=50
 max_spread=0.35
 max_spread_percent=35
 dedupe_minutes=60
 ```
 
-This profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in the Alpaca paper sandbox.
+This profile collects paper-trade outcomes while keeping a 50-contract open-interest floor and Alpaca paper-mode guardrails.
 
 Momentum rate-of-change uses a stricter Render preview profile override:
 
@@ -285,10 +285,10 @@ Current paper exit defaults:
 ```text
 profit_target_percent=25
 stop_loss_percent=10
-stop_loss_min_dollars=20
+stop_loss_min_dollars=10
 ```
 
-The percent stop only triggers when the unrealized percent loss and the dollar loss floor are both met. This prevents tiny-dollar option positions from exiting solely because a small move is a large percentage loss.
+The percent stop only triggers when the unrealized percent loss and the dollar loss floor are both met. The $10 floor still avoids noise exits on tiny positions while letting weak small-premium trades stop sooner.
 
 ## Reset paper account data
 
