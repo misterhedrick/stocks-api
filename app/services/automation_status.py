@@ -30,6 +30,7 @@ SUBMIT_LIMIT_KEYS = (
 EXIT_LIMIT_KEYS = (
     "profit_target_percent",
     "stop_loss_percent",
+    "stop_loss_min_dollars",
     "trailing_profit_activation_percent",
     "trailing_profit_giveback_percent",
     "max_days_to_expiration",

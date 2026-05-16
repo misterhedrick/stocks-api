@@ -125,7 +125,7 @@ services:
       - key: PAPER_PREVIEW_PROFILE_TREND_CONFIRMATION_MAX_SPREAD_PERCENT
         value: 35
       - key: PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST
-        value: 25
+        value: 50
       - key: PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL
         value: 5000
       - key: PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_SPREAD_PERCENT
@@ -205,7 +205,9 @@ services:
       - key: PAPER_STRATEGY_PROFIT_TARGET_PERCENT
         value: 25
       - key: PAPER_STRATEGY_STOP_LOSS_PERCENT
-        value: 15
+        value: 10
+      - key: PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS
+        value: 20
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   # Symbol-specific entry crons use the same API and safety guards while keeping

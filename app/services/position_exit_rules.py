@@ -32,10 +32,12 @@ def _exit_trigger_reason(
 ) -> str | None:
     pnl_percent = _unrealized_pl_percent(position)
     stop_loss_percent = _optional_positive_decimal(exit_config.get("stop_loss_percent"))
+    stop_loss_min_dollars = _optional_positive_decimal(exit_config.get("stop_loss_min_dollars"))
     if (
         pnl_percent is not None
         and stop_loss_percent is not None
         and pnl_percent <= -stop_loss_percent
+        and _dollar_floor_met(position.unrealized_pl, stop_loss_min_dollars)
     ):
         return f"stop_loss_percent triggered at {pnl_percent}%"
 
@@ -117,6 +119,7 @@ def _exit_rule_diagnostics(
     thresholds = {
         "profit_target_percent": _string_or_none(config.get("profit_target_percent")),
         "stop_loss_percent": _string_or_none(config.get("stop_loss_percent")),
+        "stop_loss_min_dollars": _string_or_none(config.get("stop_loss_min_dollars")),
         "trailing_profit_activation_percent": _string_or_none(
             config.get("trailing_profit_activation_percent")
         ),
@@ -278,6 +281,15 @@ def _latest_quote_for_position(
     if quote is None:
         raise ValueError(f"no latest stock quote returned for {symbol}")
     return quote
+
+def _dollar_floor_met(unrealized_pl: object, stop_loss_min_dollars: Decimal | None) -> bool:
+    if stop_loss_min_dollars is None:
+        return True
+    try:
+        return Decimal(str(unrealized_pl)) <= -stop_loss_min_dollars
+    except (InvalidOperation, TypeError):
+        return True
+
 
 def _optional_positive_decimal(value: object) -> Decimal | None:
     if value is None:

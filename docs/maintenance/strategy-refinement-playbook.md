@@ -638,6 +638,8 @@ Examples:
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 ```
 
 Common diagnostic reasons:
@@ -660,10 +662,20 @@ Common diagnostic reasons:
 Default seeded exit config:
 
 - `profit_target_percent`: from `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, default `25`.
-- `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `15`.
+- `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `10`.
+- `stop_loss_min_dollars`: from `PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `20`.
 - `max_days_to_expiration`: `1`.
 - Limit price source: `bid`.
 - Exit submit is enabled for sell orders.
+
+The stop loss triggers only when both the percent loss threshold and minimum dollar loss floor are met. For example, a position down 50% but only down $5 does not trigger a stop when `stop_loss_min_dollars=20`.
+
+Existing strategies can be patched manually:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\update_strategy_stop_loss.py --dry-run
+.\.venv\Scripts\python.exe scripts\update_strategy_stop_loss.py
+```
 
 Exit tuning examples:
 

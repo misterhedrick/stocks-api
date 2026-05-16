@@ -173,6 +173,8 @@ Examples:
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 - PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 - PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 
@@ -210,6 +212,20 @@ Current paper data-gathering profile:
 - dedupe_minutes=60
 
 The profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in Alpaca paper mode.
+
+Current momentum rate-of-change Render preview override:
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+
+Current paper exit defaults:
+- PAPER_STRATEGY_PROFIT_TARGET_PERCENT=25
+- PAPER_STRATEGY_STOP_LOSS_PERCENT=10
+- PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS=20
+
+The stop loss fires only when both the percent loss threshold and the minimum dollar loss floor are met. Existing strategies can be patched with:
+
+    python scripts/update_strategy_stop_loss.py --dry-run
+    python scripts/update_strategy_stop_loss.py
 
 === RECENT IMPORTANT CODE CHANGES ON DEVELOP ===
 

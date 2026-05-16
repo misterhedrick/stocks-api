@@ -96,6 +96,13 @@ The global settings and per-profile settings work at different layers:
 
 Profile env vars (`PAPER_PREVIEW_PROFILE_<X>_MAX_SPREAD`, `MIN_OPEN_INTEREST`, etc.) remain the primary levers for per-strategy liquidity tuning. The global settings fill in defaults and add logic that was previously missing (DTE window, relative spread, OI allowlist).
 
+Current Render overrides keep momentum rate-of-change stricter than the global OI floor:
+
+```text
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+```
+
 ## Diagnosing Rejections
 
 When no contract passes, `option_selection_diagnostics` records a structured rejection summary grouped by reason:
