@@ -149,10 +149,13 @@ def _contract_selection_for_signal(
     underlying_symbol = preview_config.get("underlying_symbol")
     if not isinstance(underlying_symbol, str) or not underlying_symbol.strip():
         underlying_symbol = signal.underlying_symbol or signal.symbol
+    option_type = preview_config.get("option_type")
+    if not isinstance(option_type, str) or not option_type.strip():
+        option_type = _option_type_for_signal(signal)
 
     return OptionContractSelectionCreate(
         underlying_symbol=underlying_symbol,
-        option_type=_string_config(preview_config, "option_type"),
+        option_type=option_type,
         side=_string_config(preview_config, "side", default="buy"),
         expiration_date=preview_config.get("expiration_date"),
         expiration_date_gte=preview_config.get("expiration_date_gte"),
@@ -169,6 +172,15 @@ def _contract_selection_for_signal(
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
         limit=_options_candidate_limit(),
     )
+
+
+def _option_type_for_signal(signal: Signal) -> str:
+    direction = signal.direction.strip().lower()
+    if direction == "bullish":
+        return "call"
+    if direction == "bearish":
+        return "put"
+    raise ValueError("signal.direction must be bullish or bearish when scanner.preview.option_type is omitted")
 
 
 def _options_candidate_limit() -> int:

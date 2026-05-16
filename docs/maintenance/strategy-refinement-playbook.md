@@ -592,11 +592,11 @@ Do not lower dedupe to create volume if signal quality is weak.
 
 ### Direction
 
-Seeded call/put variants usually carry `direction` filters. If one side is underperforming:
+Seeded strategies are global per scanner type. They scan the configured symbol universe and let signal direction choose the option side:
 
-- Tune the directional variant independently.
-- Do not average call and put evidence together.
-- Record the symbol, scanner, and direction in the decision description.
+- Bullish signals preview calls.
+- Bearish signals preview puts.
+- Tune the scanner/profile first. Include direction in the evidence summary when one side is clearly underperforming.
 
 ## Option Selection Tuning
 
@@ -816,7 +816,7 @@ Before changing anything:
 - Are there recent `paper_review_snapshots`?
 - Does `strategy-refinement` show minimum evidence met?
 - Is the problem signal, option selection, exit/risk, or runtime?
-- Is the change one scanner/symbol/profile and one or two keys?
+- Is the change one scanner/profile and one or two keys?
 - Has a `strategy_tuning_decision` been recorded?
 - Is there a clear expected effect?
 

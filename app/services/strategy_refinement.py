@@ -222,7 +222,7 @@ def _aggregate_snapshot_candidates(
             if not isinstance(candidate, dict):
                 continue
             scanner_type = str(candidate.get("scanner_type") or "unknown")
-            symbol = str(candidate.get("symbol") or "unknown").upper()
+            symbol = "ALL_SYMBOLS"
             group = groups.setdefault(
                 (scanner_type, symbol),
                 {
@@ -267,12 +267,12 @@ def _attach_decisions(
     snapshots: list[PaperReviewSnapshot],
 ) -> None:
     for decision in decisions:
-        key = (decision.scanner_type, decision.symbol.upper())
+        key = (decision.scanner_type, "ALL_SYMBOLS")
         group = groups.setdefault(
             key,
             {
                 "scanner_type": decision.scanner_type,
-                "symbol": decision.symbol.upper(),
+                "symbol": "ALL_SYMBOLS",
                 "snapshots": [],
                 "focus_counts": {},
                 "decisions": [],
@@ -399,7 +399,7 @@ def _before_after_window(
         score = _candidate_score_for_snapshot(
             snapshot,
             scanner_type=decision.scanner_type,
-            symbol=decision.symbol,
+            symbol="ALL_SYMBOLS",
         )
         if score is None:
             continue
@@ -436,10 +436,10 @@ def _candidate_score_for_snapshot(
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
-        if (
-            str(candidate.get("scanner_type") or "unknown") == scanner_type
-            and str(candidate.get("symbol") or "unknown").upper() == symbol.upper()
-        ):
+        candidate_scanner = str(candidate.get("scanner_type") or "unknown")
+        candidate_symbol = str(candidate.get("symbol") or "ALL_SYMBOLS").upper()
+        symbol_matches = symbol.upper() == "ALL_SYMBOLS" or candidate_symbol == symbol.upper()
+        if candidate_scanner == scanner_type and symbol_matches:
             return int(candidate.get("priority_score") or 0)
     return None
 

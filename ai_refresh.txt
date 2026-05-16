@@ -62,7 +62,7 @@ Execution rule:
 === STRATEGY REFINEMENT CONSOLIDATION STATE ===
 
 Implemented on develop:
-- /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type and symbol.
+- /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type, not symbol-specific strategy rows.
 - Post-market maintenance saves the generated learning report inside paper_review_snapshots.raw_payload.learning_report.
 - PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS controls paper_review_snapshots retention; default is 45 days.
 - Post-market maintenance prunes old paper_review_snapshots after creating the latest snapshot and AI reviews.
@@ -188,7 +188,7 @@ SPY, QQQ, NVDA, AAPL, MSFT
 
 The GitHub Actions seed workflow defaults to the same five-symbol universe and accepts a comma-separated symbol override.
 
-The script now seeds call/put variants per symbol for:
+The script now seeds one active global strategy per scanner type. Each strategy scans the full configured symbol universe, and signal direction determines call/put preview side:
 - moving_average
 - momentum_rate_of_change
 - rsi_reversal
@@ -200,7 +200,9 @@ The script now seeds call/put variants per symbol for:
 - support_resistance
 
 Default seeded set:
-- 5 symbols x 9 scanner types x call/put = 90 strategies.
+- 9 scanner-type strategies.
+
+Reseeding deactivates legacy symbol-specific paper strategies such as `Paper MSFT momentum rate-of-change put preview` and replaces them with global scanner-type strategies such as `momentum_rate_of_change`.
 
 Current paper data-gathering profile:
 - strictness_level=0.50

@@ -684,6 +684,19 @@ class MarketCycleTests(unittest.TestCase):
         self.assertIsNotNone(payload.contract_selection)
         self.assertEqual(payload.contract_selection.limit, 100)
 
+    def test_preview_payload_derives_option_type_from_signal_direction(self) -> None:
+        from app.services.market_cycle import _preview_payload_for_signal
+
+        strategy = build_strategy()
+        strategy.config["scanner"]["preview"].pop("option_type")
+        signal = build_signal(strategy)
+        signal.direction = "bearish"
+
+        payload = _preview_payload_for_signal(signal, strategy)
+
+        self.assertIsNotNone(payload.contract_selection)
+        self.assertEqual(payload.contract_selection.option_type, "put")
+
     def test_run_market_cycle_delays_entry_preview_outside_submit_window(self) -> None:
         strategy = build_strategy()
         signal = build_signal(strategy)

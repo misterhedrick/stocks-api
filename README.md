@@ -227,7 +227,7 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-`seed_paper_trade_universe.py` seeds the paper trading strategy universe — it creates call and put strategies for each ticker across all scanner types, stores them in the `strategies` table, and sets their `scanner.preview` config (DTE range, spread, notional, and OI limits). It defaults to five core liquid symbols:
+`seed_paper_trade_universe.py` seeds the paper trading strategy universe. It creates one active strategy per scanner type, stores the ticker list in `scanner.symbols`, and sets shared `scanner.preview` config (DTE range, spread, notional, and OI limits). Bullish signals preview calls and bearish signals preview puts. It defaults to five core liquid symbols:
 
 ```text
 SPY, QQQ, NVDA, AAPL, MSFT
@@ -235,7 +235,7 @@ SPY, QQQ, NVDA, AAPL, MSFT
 
 The GitHub Actions workflow also defaults to the same five-symbol set, and both the script and workflow accept explicit symbol overrides.
 
-The seed script creates call/put variants for:
+The seed script creates one global strategy for each scanner type:
 
 ```text
 moving_average
@@ -250,6 +250,14 @@ support_resistance
 ```
 
 Each seeded strategy tags `scanner.preview.preview_profile` from the scanner type.
+
+Default seeded set:
+
+```text
+9 scanner-type strategies
+```
+
+When reseeded, legacy symbol-specific strategies such as `Paper MSFT momentum rate-of-change put preview` are deactivated and replaced by global scanner-type strategies such as `momentum_rate_of_change`.
 
 Current paper data-gathering profile:
 

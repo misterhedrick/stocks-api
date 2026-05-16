@@ -87,7 +87,7 @@ class StrategyRefinementTests(unittest.TestCase):
 
         candidate = result["candidates"][0]
         self.assertEqual(candidate["scanner_type"], "moving_average")
-        self.assertEqual(candidate["symbol"], "SPY")
+        self.assertEqual(candidate["symbol"], "ALL_SYMBOLS")
         self.assertEqual(candidate["readiness_status"], "needs_option_filter_review")
         self.assertTrue(candidate["minimum_evidence_met"])
         self.assertEqual(candidate["priority_trend"]["direction"], "worsening")

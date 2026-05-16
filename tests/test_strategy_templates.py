@@ -12,6 +12,7 @@ from app.services.strategy_templates import (
     build_preview_first_strategy_payloads,
 )
 from scripts.seed_paper_strategies import seed_strategies
+from scripts.seed_paper_trade_universe import _strategy_payloads as universe_strategy_payloads
 
 
 class FakeSeedSession:
@@ -107,7 +108,8 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertEqual(scanner["exit"]["profit_target_percent"], "25")
-        self.assertEqual(scanner["exit"]["stop_loss_percent"], "15")
+        self.assertEqual(scanner["exit"]["stop_loss_percent"], "10")
+        self.assertEqual(scanner["exit"]["stop_loss_min_dollars"], "20")
         self.assertEqual(scanner["exit"]["trailing_profit_activation_percent"], "15")
         self.assertEqual(scanner["exit"]["trailing_profit_giveback_percent"], "10")
         self.assertTrue(scanner["submit"]["enabled"])
@@ -133,6 +135,39 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(windows[0]["timezone"], "America/New_York")
         self.assertEqual(windows[0]["start"], "10:00")
         self.assertEqual(windows[0]["end"], "16:00")
+
+    def test_paper_universe_seed_builds_global_scanner_type_strategies(self) -> None:
+        payloads = universe_strategy_payloads(
+            ["SPY", "QQQ", "MSFT"],
+            prices={
+                "SPY": Decimal("500"),
+                "QQQ": Decimal("430"),
+                "MSFT": Decimal("420"),
+            },
+            max_notional_per_order="5000.00",
+            max_spread="0.35",
+            max_spread_percent="35",
+            min_open_interest=25,
+            min_quote_size=1,
+            max_orders_per_cycle=100,
+            max_orders_per_day=500,
+            max_open_contracts_per_symbol=100,
+            max_open_contracts_per_strategy=100,
+            trade_window_start="10:00",
+            trade_window_end="16:00",
+        )
+
+        self.assertEqual(len(payloads), 9)
+        names = {payload["name"] for payload in payloads}
+        self.assertIn("momentum_rate_of_change", names)
+        for payload in payloads:
+            scanner = payload["config"]["scanner"]
+            preview = scanner["preview"]
+            self.assertEqual(scanner["symbols"], ["SPY", "QQQ", "MSFT"])
+            self.assertNotIn("direction", scanner)
+            self.assertNotIn("underlying_symbol", preview)
+            self.assertNotIn("option_type", preview)
+            self.assertNotIn("target_strike", preview)
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(
