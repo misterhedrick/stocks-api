@@ -205,7 +205,9 @@ services:
       - key: PAPER_STRATEGY_PROFIT_TARGET_PERCENT
         value: 25
       - key: PAPER_STRATEGY_STOP_LOSS_PERCENT
-        value: 15
+        value: 10
+      - key: PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS
+        value: 20
       - key: SCHEDULED_JOBS_ENABLED
         value: true
   # Symbol-specific entry crons use the same API and safety guards while keeping
