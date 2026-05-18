@@ -95,6 +95,7 @@ def _exit_config(
         or _decimal_string(settings.paper_strategy_profit_target_percent),
         "stop_loss_percent": stop_loss_percent
         or _decimal_string(settings.paper_strategy_stop_loss_percent),
+        "stop_loss_min_dollars": _decimal_string(settings.paper_strategy_stop_loss_min_dollars),
         "trailing_profit_activation_percent": _decimal_string(
             settings.paper_strategy_trailing_profit_activation_percent
         ),

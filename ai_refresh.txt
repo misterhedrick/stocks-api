@@ -2,11 +2,17 @@ You are helping me build a single-user Python stock/options paper trading API.
 
 === CURRENT SESSION STARTUP RULE ===
 
-Every time this file is read, work from develop unless the user explicitly says otherwise:
+Every time this file is read, create or switch to a feature branch off of develop:
 
+    git fetch origin develop
     git checkout develop && git pull origin develop
+    git checkout -b <feature-branch-name>
 
-Do not make live/master changes unless the user explicitly asks.
+Git workflow rules (same as README):
+- All work is done on a feature branch. Feature branches are merged to develop when ready.
+- Never commit directly to develop or master.
+- All merges from develop -> master require explicit human approval.
+- Claude Code must prompt for confirmation before any push or merge targeting develop or master.
 
 === PROJECT IDENTITY ===
 
@@ -23,8 +29,9 @@ Local workspace:
 c:\Users\Miste\OneDrive\Documents\dev\stocks-api
 
 Branch strategy:
-- master: Render deploys from this branch. Only merge here when develop is proven stable.
-- develop: active working branch for all coding.
+- master: Render deploys from this branch. Merges here require explicit human approval.
+- develop: integration branch. Feature branches merge here. Never commit directly.
+- feature branches: all work happens here first, then merged to develop.
 - backup: failsafe stable snapshot when needed.
 
 Current mode:
@@ -55,7 +62,7 @@ Execution rule:
 === STRATEGY REFINEMENT CONSOLIDATION STATE ===
 
 Implemented on develop:
-- /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type and symbol.
+- /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type, not symbol-specific strategy rows.
 - Post-market maintenance saves the generated learning report inside paper_review_snapshots.raw_payload.learning_report.
 - PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS controls paper_review_snapshots retention; default is 45 days.
 - Post-market maintenance prunes old paper_review_snapshots after creating the latest snapshot and AI reviews.
@@ -166,6 +173,8 @@ Examples:
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 - PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 - PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 - PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 
@@ -179,7 +188,7 @@ SPY, QQQ, NVDA, AAPL, MSFT
 
 The GitHub Actions seed workflow defaults to the same five-symbol universe and accepts a comma-separated symbol override.
 
-The script now seeds call/put variants per symbol for:
+The script now seeds one active global strategy per scanner type. Each strategy scans the full configured symbol universe, and signal direction determines call/put preview side:
 - moving_average
 - momentum_rate_of_change
 - rsi_reversal
@@ -191,18 +200,34 @@ The script now seeds call/put variants per symbol for:
 - support_resistance
 
 Default seeded set:
-- 5 symbols x 9 scanner types x call/put = 90 strategies.
+- 9 scanner-type strategies.
+
+Reseeding deactivates legacy symbol-specific paper strategies such as `Paper MSFT momentum rate-of-change put preview` and replaces them with global scanner-type strategies such as `momentum_rate_of_change`.
 
 Current paper data-gathering profile:
 - strictness_level=0.50
 - max_estimated_notional=5000
 - max_notional_per_order=5000
-- min_open_interest=25
+- min_open_interest=50
 - max_spread=0.35
 - max_spread_percent=35
 - dedupe_minutes=60
 
-The profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in Alpaca paper mode.
+The profile collects paper-trade outcomes while keeping a 50-contract open-interest floor and Alpaca paper-mode guardrails.
+
+Current momentum rate-of-change Render preview override:
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+- PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+
+Current paper exit defaults:
+- PAPER_STRATEGY_PROFIT_TARGET_PERCENT=25
+- PAPER_STRATEGY_STOP_LOSS_PERCENT=10
+- PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS=10
+
+The stop loss fires only when both the percent loss threshold and the minimum dollar loss floor are met. Existing strategies can be patched with:
+
+    python scripts/update_strategy_stop_loss.py --dry-run
+    python scripts/update_strategy_stop_loss.py
 
 === RECENT IMPORTANT CODE CHANGES ON DEVELOP ===
 

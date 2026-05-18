@@ -592,11 +592,11 @@ Do not lower dedupe to create volume if signal quality is weak.
 
 ### Direction
 
-Seeded call/put variants usually carry `direction` filters. If one side is underperforming:
+Seeded strategies are global per scanner type. They scan the configured symbol universe and let signal direction choose the option side:
 
-- Tune the directional variant independently.
-- Do not average call and put evidence together.
-- Record the symbol, scanner, and direction in the decision description.
+- Bullish signals preview calls.
+- Bearish signals preview puts.
+- Tune the scanner/profile first. Include direction in the evidence summary when one side is clearly underperforming.
 
 ## Option Selection Tuning
 
@@ -623,7 +623,7 @@ Primary global settings:
 | `OPTIONS_MAX_DTE` | `45` | Default maximum DTE. |
 | `OPTIONS_CANDIDATE_LIMIT` | `100` | Candidate breadth. |
 | `OPTIONS_MAX_SPREAD_PCT` | `0.15` | Relative spread cap. |
-| `OPTIONS_MIN_OPEN_INTEREST` | `25` | Default OI floor. |
+| `OPTIONS_MIN_OPEN_INTEREST` | `50` | Default OI floor. |
 | `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Missing-OI allowlist. |
 
 Per-profile settings follow:
@@ -638,6 +638,8 @@ Examples:
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 ```
 
 Common diagnostic reasons:
@@ -660,10 +662,20 @@ Common diagnostic reasons:
 Default seeded exit config:
 
 - `profit_target_percent`: from `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, default `25`.
-- `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `15`.
+- `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `10`.
+- `stop_loss_min_dollars`: from `PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `10`.
 - `max_days_to_expiration`: `1`.
 - Limit price source: `bid`.
 - Exit submit is enabled for sell orders.
+
+The stop loss triggers only when both the percent loss threshold and minimum dollar loss floor are met. For example, a position down 50% but only down $5 does not trigger a stop when `stop_loss_min_dollars=10`.
+
+Existing strategies can be patched manually:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\update_strategy_stop_loss.py --dry-run
+.\.venv\Scripts\python.exe scripts\update_strategy_stop_loss.py
+```
 
 Exit tuning examples:
 
@@ -804,7 +816,7 @@ Before changing anything:
 - Are there recent `paper_review_snapshots`?
 - Does `strategy-refinement` show minimum evidence met?
 - Is the problem signal, option selection, exit/risk, or runtime?
-- Is the change one scanner/symbol/profile and one or two keys?
+- Is the change one scanner/profile and one or two keys?
 - Has a `strategy_tuning_decision` been recorded?
 - Is there a clear expected effect?
 

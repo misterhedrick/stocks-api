@@ -122,31 +122,26 @@ class LearningReportTests(unittest.TestCase):
             limit=10,
         )
 
-        spy_candidate = next(
-            item
-            for item in candidates
-            if item["scanner_type"] == "moving_average" and item["symbol"] == "SPY"
-        )
-        all_symbols_candidate = next(
+        candidate = next(
             item
             for item in candidates
             if item["scanner_type"] == "moving_average"
             and item["symbol"] == "ALL_SYMBOLS"
         )
 
-        self.assertTrue(spy_candidate["human_review_only"])
-        self.assertIn("review_strategy_risk_controls", spy_candidate["recommended_focus"])
-        self.assertIn("review_option_selection_filters", spy_candidate["recommended_focus"])
-        self.assertIn("review_rejected_signal_outcomes", spy_candidate["recommended_focus"])
-        self.assertEqual(spy_candidate["signals"]["preview_rejected"], 1)
-        self.assertEqual(spy_candidate["option_selection"]["reason_counts"]["wide_spread"], 3)
-        self.assertEqual(spy_candidate["trade_cases"]["losses"], 1)
-        self.assertEqual(spy_candidate["trade_cases"]["total_realized_pl"], "-25")
-        self.assertEqual(spy_candidate["suggestions"]["pending"], 1)
-        self.assertEqual(all_symbols_candidate["no_signal"]["reasons_seen"], 2)
+        self.assertTrue(candidate["human_review_only"])
+        self.assertIn("review_strategy_risk_controls", candidate["recommended_focus"])
+        self.assertIn("review_option_selection_filters", candidate["recommended_focus"])
+        self.assertIn("review_rejected_signal_outcomes", candidate["recommended_focus"])
+        self.assertEqual(candidate["signals"]["preview_rejected"], 1)
+        self.assertEqual(candidate["option_selection"]["reason_counts"]["wide_spread"], 3)
+        self.assertEqual(candidate["trade_cases"]["losses"], 1)
+        self.assertEqual(candidate["trade_cases"]["total_realized_pl"], "-25")
+        self.assertEqual(candidate["suggestions"]["pending"], 1)
+        self.assertEqual(candidate["no_signal"]["reasons_seen"], 2)
         self.assertIn(
             "review_signal_thresholds",
-            all_symbols_candidate["recommended_focus"],
+            candidate["recommended_focus"],
         )
 
     def test_non_trade_reasons_ignore_symbol_routing_misses(self) -> None:

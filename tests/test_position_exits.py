@@ -612,5 +612,103 @@ class PositionExitTests(unittest.TestCase):
         )
 
 
+class StopLossMinDollarsTest(unittest.TestCase):
+    def _strategy_with_exit(self, exit_overrides: dict) -> Strategy:
+        now = datetime.now(timezone.utc)
+        config = {
+            "scanner": {
+                "exit": {
+                    "enabled": True,
+                    "profit_target_percent": "30",
+                    "stop_loss_percent": "10",
+                    "max_days_to_expiration": 1,
+                    "max_contracts_per_exit": 1,
+                    "order_type": "limit",
+                    "limit_price_source": "bid",
+                    "time_in_force": "day",
+                    "data_feed": "indicative",
+                    "max_spread": "0.25",
+                    "submit": {
+                        "enabled": True,
+                        "max_orders_per_cycle": 1,
+                        "max_contracts_per_order": 1,
+                        "allowed_sides": ["sell"],
+                    },
+                    **exit_overrides,
+                }
+            }
+        }
+        return Strategy(
+            id=uuid.uuid4(),
+            name="Test",
+            description="Test",
+            is_active=True,
+            config=config,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def test_stop_fires_when_both_percent_and_dollar_floor_met(self) -> None:
+        # Position down 15% on $200 cost basis = $30 loss, floor is $20
+        strategy = self._strategy_with_exit({"stop_loss_min_dollars": "20"})
+        position = build_position(unrealized_pl=Decimal("-30"), cost_basis=Decimal("200"))
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+        statuses = get_position_management_statuses(db)
+        self.assertEqual(statuses[0]["recommended_action"], "exit_rule_triggered")
+
+    def test_stop_suppressed_when_dollar_floor_not_met(self) -> None:
+        # Position down 50% on $10 cost basis = $5 loss, floor is $20 — should hold
+        strategy = self._strategy_with_exit({"stop_loss_min_dollars": "20"})
+        position = build_position(
+            symbol="SPY260619C00500000",
+            unrealized_pl=Decimal("-5"),
+            cost_basis=Decimal("10"),
+        )
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+        statuses = get_position_management_statuses(db)
+        self.assertEqual(statuses[0]["recommended_action"], "hold")
+
+    def test_stop_fires_without_dollar_floor_set(self) -> None:
+        # No stop_loss_min_dollars — pure percent stop should behave as before
+        strategy = self._strategy_with_exit({})
+        position = build_position(unrealized_pl=Decimal("-20"), cost_basis=Decimal("100"))
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+        statuses = get_position_management_statuses(db)
+        self.assertEqual(statuses[0]["recommended_action"], "exit_rule_triggered")
+
+    def test_stop_suppressed_when_percent_not_met_even_if_dollar_floor_met(self) -> None:
+        # Position down only 3% on $1000 cost basis = $30 loss (> $20 floor),
+        # but 3% < 10% threshold — should hold
+        strategy = self._strategy_with_exit({"stop_loss_min_dollars": "20"})
+        position = build_position(
+            symbol="SPY260619C00500000",
+            unrealized_pl=Decimal("-30"),
+            cost_basis=Decimal("1000"),
+        )
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=build_entry_order_intent(strategy),
+            active_exit_count=None,
+        )
+        statuses = get_position_management_statuses(db)
+        self.assertEqual(statuses[0]["recommended_action"], "hold")
+
+
 if __name__ == "__main__":
     unittest.main()

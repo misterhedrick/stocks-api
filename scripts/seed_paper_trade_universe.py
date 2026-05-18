@@ -110,7 +110,7 @@ def main() -> None:
             results.append(
                 {
                     "name": payload["name"],
-                    "symbol": payload["config"]["scanner"]["symbols"][0],
+                    "symbols": payload["config"]["scanner"]["symbols"],
                     "created": created,
                     "preview_profile": payload["config"]["scanner"]["preview"].get(
                         "preview_profile"
@@ -121,6 +121,7 @@ def main() -> None:
                     ],
                 }
             )
+        deactivated = _deactivate_legacy_symbol_strategies(db, payloads)
         db.commit()
 
     print(
@@ -128,6 +129,7 @@ def main() -> None:
             {
                 "symbols": symbols,
                 "strategies_seeded": len(results),
+                "legacy_symbol_strategies_deactivated": deactivated,
                 "results": results,
             },
             indent=2,
@@ -154,121 +156,92 @@ def _strategy_payloads(
     min_days_to_expiration: int = 2,
     max_days_to_expiration: int = 30,
 ) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    for symbol in symbols:
-        target_strike = _whole_dollar(prices[symbol])
-        payloads.extend(
-            [
-                build_moving_average_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    trigger="bullish_trend",
-                ),
-                build_moving_average_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    trigger="bearish_trend",
-                ),
-                build_momentum_rate_of_change_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_momentum_rate_of_change_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_rsi_reversal_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_rsi_reversal_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_macd_crossover_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_macd_crossover_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_mean_reversion_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_mean_reversion_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_breakout_price_threshold_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_breakout_price_threshold_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_volume_confirmed_breakout_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_volume_confirmed_breakout_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_volatility_squeeze_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_volatility_squeeze_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-                build_support_resistance_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="call",
-                    direction="bullish",
-                ),
-                build_support_resistance_strategy_payload(
-                    symbol=symbol,
-                    target_strike=target_strike,
-                    option_type="put",
-                    direction="bearish",
-                ),
-            ]
-        )
+    seed_symbol = symbols[0]
+    target_strike = _whole_dollar(prices[seed_symbol])
+    payloads: list[dict[str, Any]] = [
+        _globalize_strategy_payload(
+            build_moving_average_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="moving_average",
+                trigger="trend_state",
+            ),
+            symbols=symbols,
+            display_name="moving average",
+        ),
+        _globalize_strategy_payload(
+            build_momentum_rate_of_change_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="momentum_rate_of_change",
+            ),
+            symbols=symbols,
+            display_name="momentum rate-of-change",
+        ),
+        _globalize_strategy_payload(
+            build_rsi_reversal_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="rsi_reversal",
+            ),
+            symbols=symbols,
+            display_name="RSI reversal",
+        ),
+        _globalize_strategy_payload(
+            build_macd_crossover_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="macd_crossover",
+            ),
+            symbols=symbols,
+            display_name="MACD crossover",
+        ),
+        _globalize_strategy_payload(
+            build_mean_reversion_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="mean_reversion",
+            ),
+            symbols=symbols,
+            display_name="mean reversion",
+        ),
+        _globalize_strategy_payload(
+            build_breakout_price_threshold_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="breakout_price_threshold",
+            ),
+            symbols=symbols,
+            display_name="breakout price threshold",
+        ),
+        _globalize_strategy_payload(
+            build_volume_confirmed_breakout_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="volume_confirmed_breakout",
+            ),
+            symbols=symbols,
+            display_name="volume confirmed breakout",
+        ),
+        _globalize_strategy_payload(
+            build_volatility_squeeze_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="volatility_squeeze",
+            ),
+            symbols=symbols,
+            display_name="volatility squeeze",
+        ),
+        _globalize_strategy_payload(
+            build_support_resistance_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="support_resistance",
+            ),
+            symbols=symbols,
+            display_name="support resistance",
+        ),
+    ]
 
     submit_config = _submit_config(
         max_notional_per_order=max_notional_per_order,
@@ -294,6 +267,35 @@ def _strategy_payloads(
         scanner["preview"]["max_days_to_expiration"] = max_days_to_expiration
         scanner["submit"] = deepcopy(submit_config)
     return payloads
+
+
+def _globalize_strategy_payload(
+    payload: dict[str, Any],
+    *,
+    symbols: list[str],
+    display_name: str,
+) -> dict[str, Any]:
+    payload = deepcopy(payload)
+    scanner = payload["config"]["scanner"]
+    scanner["symbols"] = symbols
+    scanner.pop("direction", None)
+    scanner["rationale"] = f"{display_name} scanner triggered"
+
+    market_regime = scanner.get("market_regime")
+    if isinstance(market_regime, dict):
+        market_regime.pop("direction", None)
+
+    preview = scanner["preview"]
+    preview.pop("underlying_symbol", None)
+    preview.pop("option_type", None)
+    preview.pop("target_strike", None)
+    preview["rationale"] = f"{payload['name']}: auto-submit enabled."
+
+    payload["description"] = (
+        f"Global {display_name} paper strategy scanning "
+        f"{', '.join(symbols)}. Bullish signals preview calls; bearish signals preview puts."
+    )
+    return payload
 
 
 def _submit_config(
@@ -359,6 +361,69 @@ def _upsert_strategy(db: Session, payload: dict[str, Any]) -> bool:
         db.rollback()
         raise
     return created
+
+
+def _deactivate_legacy_symbol_strategies(
+    db: Session,
+    payloads: list[dict[str, Any]],
+) -> int:
+    seed_names = {str(payload["name"]) for payload in payloads}
+    scanner_types = {
+        str(payload["config"]["scanner"]["type"])
+        for payload in payloads
+        if isinstance(payload.get("config"), dict)
+        and isinstance(payload["config"].get("scanner"), dict)
+    }
+    strategies = list(
+        db.scalars(
+            select(Strategy)
+            .where(Strategy.is_active == True)  # noqa: E712
+            .where(Strategy.name.not_in(seed_names))
+        )
+    )
+    deactivated = 0
+    for strategy in strategies:
+        scanner = strategy.config.get("scanner") if isinstance(strategy.config, dict) else None
+        if not isinstance(scanner, dict):
+            continue
+        if scanner.get("type") not in scanner_types:
+            continue
+        if not _looks_like_legacy_symbol_strategy(strategy):
+            continue
+        strategy.is_active = False
+        db.add(strategy)
+        record_audit_log(
+            db,
+            event_type="strategy.deactivated",
+            entity_type="strategy",
+            entity_id=strategy.id,
+            message="Legacy symbol-specific paper strategy deactivated by universe seed",
+            payload={
+                "source": "seed_paper_trade_universe",
+                "name": strategy.name,
+                "replacement": "global scanner-type strategy",
+            },
+        )
+        deactivated += 1
+    return deactivated
+
+
+def _looks_like_legacy_symbol_strategy(strategy: Strategy) -> bool:
+    name = strategy.name.strip()
+    if not (name.startswith("Paper ") and name.endswith(" preview")):
+        return False
+    scanner = strategy.config.get("scanner") if isinstance(strategy.config, dict) else None
+    if not isinstance(scanner, dict):
+        return False
+    symbols = scanner.get("symbols")
+    preview = scanner.get("preview")
+    return (
+        isinstance(symbols, list)
+        and len(symbols) == 1
+        and isinstance(preview, dict)
+        and isinstance(preview.get("underlying_symbol"), str)
+        and isinstance(preview.get("option_type"), str)
+    )
 
 
 def _prices_for_symbols(

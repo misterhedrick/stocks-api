@@ -273,7 +273,11 @@ def _refinement_candidates(
         getattr(performance, "rejected_preview_outcomes", []),
     )
 
-    candidates = [_finalize_refinement_group(group) for group in groups.values()]
+    candidates = [
+        _finalize_refinement_group(group)
+        for group in groups.values()
+        if group["scanner_type"] != "unknown"
+    ]
     return sorted(
         candidates,
         key=lambda item: (
@@ -291,7 +295,7 @@ def _refinement_group(
     symbol: str | None,
 ) -> dict[str, Any]:
     scanner_key = str(scanner_type or "unknown")
-    symbol_key = str(symbol or "unknown").upper()
+    symbol_key = "ALL_SYMBOLS"
     key = (scanner_key, symbol_key)
     if key not in groups:
         groups[key] = {

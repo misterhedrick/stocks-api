@@ -55,13 +55,14 @@ class Settings(BaseSettings):
     max_contracts_per_order: int = 1
     max_estimated_premium_per_order: Decimal = Decimal("250")
     paper_strategy_min_change_percent: Decimal = Decimal("0.05")
-    paper_strategy_trend_min_change_percent: Decimal = Decimal("0.175")
+    paper_strategy_trend_min_change_percent: Decimal = Decimal("0.25")
     paper_strategy_max_estimated_notional: Decimal = Decimal("5000")
-    paper_strategy_min_open_interest: int = 25
+    paper_strategy_min_open_interest: int = 50
     paper_strategy_max_spread: Decimal = Decimal("0.35")
     paper_strategy_max_spread_percent: Decimal = Decimal("35")
     paper_strategy_profit_target_percent: Decimal = Decimal("25")
-    paper_strategy_stop_loss_percent: Decimal = Decimal("15")
+    paper_strategy_stop_loss_percent: Decimal = Decimal("10")
+    paper_strategy_stop_loss_min_dollars: Decimal = Decimal("10")
     paper_strategy_trailing_profit_activation_percent: Decimal = Decimal("15")
     paper_strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
     paper_strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
@@ -70,7 +71,7 @@ class Settings(BaseSettings):
     options_min_dte: int = 7
     options_target_dte: int = 14
     options_max_dte: int = 45
-    options_min_open_interest: int = 25
+    options_min_open_interest: int = 50
     options_max_contract_notional: Decimal = Decimal("5000")
     options_max_candidates: int = Field(
         default=100,

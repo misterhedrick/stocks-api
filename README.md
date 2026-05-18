@@ -4,9 +4,10 @@ Single-user FastAPI backend for stock/options paper trading with Alpaca, Postgre
 
 ## Git workflow
 
-- All work is done on feature branches and merged into `develop`.
-- `master` is the deploy branch. **Never push directly to `master`.** Only merge `develop` → `master` after explicit approval.
-- Claude Code must prompt for confirmation before any push or merge targeting `master`.
+- All work is done on a feature branch. Feature branches are merged to `develop` when ready.
+- Never commit directly to `develop` or `master`.
+- All merges from `develop` → `master` require explicit human approval.
+- Claude Code must prompt for confirmation before any push or merge targeting `develop` or `master`.
 
 ## Current status
 
@@ -193,6 +194,8 @@ Examples:
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
 PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
 ```
@@ -224,7 +227,7 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-`seed_paper_trade_universe.py` seeds the paper trading strategy universe — it creates call and put strategies for each ticker across all scanner types, stores them in the `strategies` table, and sets their `scanner.preview` config (DTE range, spread, notional, and OI limits). It defaults to five core liquid symbols:
+`seed_paper_trade_universe.py` seeds the paper trading strategy universe. It creates one active strategy per scanner type, stores the ticker list in `scanner.symbols`, and sets shared `scanner.preview` config (DTE range, spread, notional, and OI limits). Bullish signals preview calls and bearish signals preview puts. It defaults to five core liquid symbols:
 
 ```text
 SPY, QQQ, NVDA, AAPL, MSFT
@@ -232,7 +235,7 @@ SPY, QQQ, NVDA, AAPL, MSFT
 
 The GitHub Actions workflow also defaults to the same five-symbol set, and both the script and workflow accept explicit symbol overrides.
 
-The seed script creates call/put variants for:
+The seed script creates one global strategy for each scanner type:
 
 ```text
 moving_average
@@ -248,19 +251,44 @@ support_resistance
 
 Each seeded strategy tags `scanner.preview.preview_profile` from the scanner type.
 
+Default seeded set:
+
+```text
+9 scanner-type strategies
+```
+
+When reseeded, legacy symbol-specific strategies such as `Paper MSFT momentum rate-of-change put preview` are deactivated and replaced by global scanner-type strategies such as `momentum_rate_of_change`.
+
 Current paper data-gathering profile:
 
 ```text
 strictness_level=0.50
 max_estimated_notional=5000
 max_notional_per_order=5000
-min_open_interest=25
+min_open_interest=50
 max_spread=0.35
 max_spread_percent=35
 dedupe_minutes=60
 ```
 
-This profile is intentionally loose enough to collect paper-trade outcomes, including losing trades, while keeping execution in the Alpaca paper sandbox.
+This profile collects paper-trade outcomes while keeping a 50-contract open-interest floor and Alpaca paper-mode guardrails.
+
+Momentum rate-of-change uses a stricter Render preview profile override:
+
+```text
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+```
+
+Current paper exit defaults:
+
+```text
+profit_target_percent=25
+stop_loss_percent=10
+stop_loss_min_dollars=10
+```
+
+The percent stop only triggers when the unrealized percent loss and the dollar loss floor are both met. The $10 floor still avoids noise exits on tiny positions while letting weak small-premium trades stop sooner.
 
 ## Reset paper account data
 
@@ -480,6 +508,14 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-maintenance?phase=auto&ne
 
 ```bash
 python scripts/print_paper_review_snapshot.py --limit 8
+```
+
+```bash
+python scripts/update_strategy_stop_loss.py --dry-run
+```
+
+```bash
+python scripts/update_strategy_stop_loss.py
 ```
 
 ```bash

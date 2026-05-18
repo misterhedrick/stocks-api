@@ -46,7 +46,7 @@ Tuning guidance:
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `OPTIONS_MIN_OPEN_INTEREST` | `25` | Default minimum open interest when a strategy/profile does not set a tighter value. |
+| `OPTIONS_MIN_OPEN_INTEREST` | `50` | Default minimum open interest when a strategy/profile does not set a tighter value. |
 | `OPTIONS_ALLOW_MISSING_OI_SYMBOLS` | `SPY,QQQ` | Comma-separated list of symbols that may skip the missing open interest rejection if quote quality passes. |
 
 SPY and QQQ often have `null` open interest on the Alpaca paper data feed even when the contract is actively quoted. Allowlisting them prevents unnecessary rejections. The allowlist only bypasses the *missing* OI check — if OI is present and below `MIN_OPEN_INTEREST` the candidate is still rejected.
@@ -95,6 +95,13 @@ The global settings and per-profile settings work at different layers:
 ```
 
 Profile env vars (`PAPER_PREVIEW_PROFILE_<X>_MAX_SPREAD`, `MIN_OPEN_INTEREST`, etc.) remain the primary levers for per-strategy liquidity tuning. The global settings fill in defaults and add logic that was previously missing (DTE window, relative spread, OI allowlist).
+
+Current Render overrides keep momentum rate-of-change stricter than the global OI floor:
+
+```text
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+```
 
 ## Diagnosing Rejections
 
