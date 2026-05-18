@@ -146,7 +146,7 @@ Entry jobs run symbol-specific `market-entry-cycle` calls. Exit and maintenance 
 Expected current EDT behavior:
 
 - Entry cycles: about 10:00am through 3:55pm Eastern, staggered by symbol.
-- Exit cycle: about 9:00am through 4:59pm Eastern.
+- Exit cycle: about 9:00am through 3:59pm Eastern during EDT, stopping before the 4:00pm market close.
 - Maintenance: pre-market and post-market.
 
 Render cron schedules are UTC-only and need review around DST changes.

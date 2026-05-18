@@ -6,8 +6,8 @@
 # MARKET_CYCLE_SUBMIT_ENABLED=false to halt entry submits while keeping scan/reconcile,
 # or SCHEDULED_JOBS_ENABLED=false to stop cron execution entirely.
 # Cron schedules are UTC. They approximate Eastern market hours but are NOT
-# DST-safe: during EST (Nov-Mar) the 13-20 UTC window maps to 8am-3pm EST,
-# missing the 3pm-4pm close. Review and shift schedules around DST transitions.
+# DST-safe: during EST (Nov-Mar), shift market-hour cron windows one hour later
+# to preserve the intended Eastern-time coverage.
 services:
   - type: web
     name: stocks-api
@@ -343,8 +343,8 @@ services:
         value: 429
       - key: ADMIN_API_TOKEN
         sync: false
-  # Exit-only cron: reconcile+exit-eval every 1 min for fast position protection.
-  # Same UTC window and DST caveat as the entry cron above.
+  # Exit-only cron: reconcile+exit-eval every 1 min until 3:59pm Eastern.
+  # During EST, shift this from 13-19 UTC to 14-20 UTC.
   - type: cron
     name: stocks-api-market-exits
     env: python
@@ -353,7 +353,7 @@ services:
     branch: master
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/run_render_job.py
-    schedule: "*/1 13-20 * * 1-5"
+    schedule: "*/1 13-19 * * 1-5"
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.13
