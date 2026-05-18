@@ -115,9 +115,10 @@ Render cron services:
    - Endpoint:
      /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45
    - Current cron:
-     */1 13-20 * * 1-5
-   - During EDT this runs every minute from about 9:00am through 4:59pm Eastern.
-   - This remains separate from entry; entries stop before 4pm, exits can keep managing positions.
+     */1 13-19 * * 1-5
+   - During EDT this runs every minute from about 9:00am through 3:59pm Eastern.
+   - This remains separate from entry; entries and exits stop before the 4:00pm market close.
+   - Render cron is UTC-only and not DST-aware. When Eastern switches to EST, change the hour window from 13-19 UTC to 14-20 UTC.
 
 3. stocks-api-market-maintenance
    - Pre/post-market maintenance.

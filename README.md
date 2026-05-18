@@ -123,13 +123,13 @@ Render cron schedules are UTC and are not DST-aware.
 | `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100` | `2-55/5 14-19 * * 1-5` |
 | `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100` | `3-55/5 14-19 * * 1-5` |
 | `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100` | `4-55/5 14-19 * * 1-5` |
-| `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
+| `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-19 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 
 - Symbol entry cycles (`market-entry-cycle`) run from 10:00am through 3:55pm Eastern, staggered by minute, while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
-- Exit cycle (`market-exits`) runs every minute from about **9:00am through 4:59pm Eastern**.
+- Exit cycle (`market-exits`) runs every minute from about **9:00am through 3:59pm Eastern** during EDT, so it stops before the 4:00pm market close. When Eastern switches to EST, change the exit hour window from `13-19` UTC to `14-20` UTC.
 - Maintenance runs pre-market (8:30am ET) and post-market (5:30pm EDT / 4:30pm EST).
 
 Entry splitting is meant to keep expanded option candidate searches smaller per invocation. The five symbol-specific entry cron jobs should use `scan_limit=100`, `order_limit=100`, and `fill_page_size=100` to match the current option candidate budget. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional.
