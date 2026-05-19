@@ -3,6 +3,15 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from app.services.strategy_template_advanced import (
+    build_market_regime_filter_strategy_payload,
+    build_opening_range_breakout_strategy_payload,
+    build_options_spread_candidate_strategy_payload,
+    build_pairs_relative_value_strategy_payload,
+    build_relative_strength_strategy_payload,
+    build_time_series_momentum_strategy_payload,
+    build_vwap_reclaim_strategy_payload,
+)
 from app.services.strategy_template_breakout import (
     build_breakout_price_threshold_strategy_payload,
     build_support_resistance_strategy_payload,

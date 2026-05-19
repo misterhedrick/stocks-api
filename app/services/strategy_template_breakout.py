@@ -23,10 +23,10 @@ def build_breakout_price_threshold_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 480,
     range_lookback_candles: int = 20,
-    breakout_buffer_percent: str = "0.05",
-    max_breakout_distance_percent: str = "3.0",
-    confidence: str = "0.6200",
-    dedupe_minutes: int = 60,
+    breakout_buffer_percent: str = "0.10",
+    max_breakout_distance_percent: str = "2.0",
+    confidence: str = "0.6800",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -79,11 +79,11 @@ def build_volume_confirmed_breakout_strategy_payload(
     lookback_minutes: int = 480,
     range_lookback_candles: int = 20,
     volume_lookback_candles: int = 20,
-    min_relative_volume: str = "1.25",
-    breakout_buffer_percent: str = "0.05",
-    max_breakout_distance_percent: str = "3.0",
-    confidence: str = "0.6500",
-    dedupe_minutes: int = 60,
+    min_relative_volume: str = "1.50",
+    breakout_buffer_percent: str = "0.10",
+    max_breakout_distance_percent: str = "2.0",
+    confidence: str = "0.7000",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -140,11 +140,11 @@ def build_volatility_squeeze_strategy_payload(
     bollinger_stddev: str = "2.0",
     squeeze_lookback_candles: int = 20,
     range_lookback_candles: int = 20,
-    compression_ratio_threshold: str = "0.90",
-    breakout_buffer_percent: str = "0.05",
-    max_breakout_distance_percent: str = "4.0",
-    confidence: str = "0.6500",
-    dedupe_minutes: int = 60,
+    compression_ratio_threshold: str = "0.75",
+    breakout_buffer_percent: str = "0.10",
+    max_breakout_distance_percent: str = "2.5",
+    confidence: str = "0.7000",
+    dedupe_minutes: int = 180,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -202,12 +202,12 @@ def build_support_resistance_strategy_payload(
     mode: str = "both",
     swing_window: int = 3,
     lookback_candles: int = 60,
-    min_touches: int = 2,
-    level_tolerance_percent: str = "0.20",
-    breakout_buffer_percent: str = "0.075",
-    max_distance_percent: str = "1.0",
-    confidence: str = "0.6000",
-    dedupe_minutes: int = 60,
+    min_touches: int = 3,
+    level_tolerance_percent: str = "0.15",
+    breakout_buffer_percent: str = "0.10",
+    max_distance_percent: str = "0.75",
+    confidence: str = "0.6800",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:

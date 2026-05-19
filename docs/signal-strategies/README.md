@@ -23,9 +23,16 @@ breakout_price_threshold
 volume_confirmed_breakout
 volatility_squeeze
 support_resistance
+vwap_reclaim
+opening_range_breakout
+relative_strength
+time_series_momentum
+market_regime_filter
+pairs_relative_value
+options_spread_candidate
 ```
 
-New strategy configs should use one of those evaluator-backed `scanner.type` values.
+New strategy configs should use one of those evaluator-backed `scanner.type` values. The advanced strategy types are currently documented through the shared evaluator code and README until each gets a full folder.
 
 ## Folder Layout
 
@@ -52,6 +59,13 @@ Strategy folders:
 | `support-resistance/` | `support_resistance` | Includes implementation note |
 | `volume-confirmed-breakout/` | `volume_confirmed_breakout` | Includes implementation note |
 | `volatility-squeeze/` | `volatility_squeeze` | Includes implementation note |
+| advanced evaluator module | `vwap_reclaim` | VWAP reclaim/rejection |
+| advanced evaluator module | `opening_range_breakout` | Opening range breakout/breakdown |
+| advanced evaluator module | `relative_strength` | Cross-sectional universe leader/laggard |
+| advanced evaluator module | `time_series_momentum` | Longer-horizon trend following |
+| advanced evaluator module | `market_regime_filter` | Broad-market regime alignment signal |
+| advanced evaluator module | `pairs_relative_value` | Peer benchmark relative-value signal |
+| advanced evaluator module | `options_spread_candidate` | Spread-worthy signal, single-leg execution for now |
 | `shared/` | shared | Shared indicator engine and option selection notes |
 
 Use `tuning.md` when making human-reviewed or AI-assisted strategy adjustments. The tuning files are written to support small, evidence-driven changes and include AI adjustment contracts that can be reviewed before applying any config change.

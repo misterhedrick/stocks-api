@@ -91,6 +91,13 @@ class Settings(BaseSettings):
     volume_confirmed_breakout_evaluator_enabled: bool = True
     volatility_squeeze_evaluator_enabled: bool = True
     support_resistance_evaluator_enabled: bool = True
+    vwap_reclaim_evaluator_enabled: bool = True
+    opening_range_breakout_evaluator_enabled: bool = True
+    relative_strength_evaluator_enabled: bool = True
+    time_series_momentum_evaluator_enabled: bool = True
+    market_regime_filter_evaluator_enabled: bool = True
+    pairs_relative_value_evaluator_enabled: bool = True
+    options_spread_candidate_evaluator_enabled: bool = True
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

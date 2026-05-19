@@ -19,6 +19,7 @@ from app.integrations.alpaca import (
 from app.services.audit_logs import record_audit_log
 from app.services import signal_scanner_evaluator_breakout as _breakout_evaluators
 from app.services import signal_scanner_evaluator_trend as _trend_evaluators
+from app.services import signal_scanner_evaluator_advanced as _advanced_evaluators
 from app.services.signal_scanner_helpers import (
     _filter_signal_specs_for_symbol,
     _has_recent_duplicate_signal,
@@ -32,6 +33,7 @@ from app.services.signal_scanner_helpers import (
 def _sync_evaluator_settings() -> None:
     _trend_evaluators.settings = settings
     _breakout_evaluators.settings = settings
+    _advanced_evaluators.settings = settings
 
 
 def _moving_average_evaluator_signal_specs(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -77,6 +79,11 @@ def _volatility_squeeze_signal_specs(*args: Any, **kwargs: Any) -> list[dict[str
 def _support_resistance_signal_specs(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
     _sync_evaluator_settings()
     return _breakout_evaluators._support_resistance_signal_specs(*args, **kwargs)
+
+
+def _advanced_evaluator_signal_specs(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+    _sync_evaluator_settings()
+    return _advanced_evaluators._advanced_evaluator_signal_specs(*args, **kwargs)
 
 
 _candle_frame_from_stock_bars = _trend_evaluators._candle_frame_from_stock_bars

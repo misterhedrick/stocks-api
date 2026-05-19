@@ -130,6 +130,12 @@ def main() -> None:
     )
     submit_parser.add_argument("--dry-run", action="store_true")
 
+    batch_parser = subparsers.add_parser(
+        "apply-2026-05-18-strategy-type-batch",
+        help="Apply the 2026-05-18 paper evidence tuning batch by scanner type.",
+    )
+    batch_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -189,6 +195,18 @@ def main() -> None:
             db.commit()
             state = "enabled" if submit_config["enabled"] else "disabled"
             print(f"Scanner submit {state} for: {strategy.name}")
+            return
+
+        if args.command == "apply-2026-05-18-strategy-type-batch":
+            results = apply_strategy_type_batch(
+                db,
+                dry_run=args.dry_run,
+            )
+            if args.dry_run:
+                print(json.dumps(results, indent=2, sort_keys=True, default=str))
+                return
+            db.commit()
+            print(json.dumps(results, indent=2, sort_keys=True, default=str))
 
 
 def list_strategy_summaries(
@@ -422,6 +440,142 @@ def set_strategy_submit_config(
         db.rollback()
         raise
     return strategy
+
+
+STRATEGY_TYPE_BATCH_2026_05_18: dict[str, dict[str, Any]] = {
+    "support_resistance": {
+        "min_touches": 3,
+        "level_tolerance_percent": "0.15",
+        "max_distance_percent": "0.75",
+        "dedupe_minutes": 120,
+    },
+    "momentum_rate_of_change": {
+        "lookback_minutes": 45,
+        "change_above_percent": "0.35",
+        "change_below_percent": "-0.35",
+        "max_extension_percent": "1.25",
+        "dedupe_minutes": 120,
+        "exit": {
+            "stop_loss_percent": "15",
+            "stop_loss_min_dollars": "10",
+        },
+    },
+    "moving_average": {
+        "min_change_percent": "0.15",
+        "min_average_separation_percent": "0.05",
+        "max_price_distance_percent": "0.75",
+        "dedupe_minutes": 360,
+    },
+    "mean_reversion": {
+        "bollinger_stddev": "2.25",
+        "max_distance_to_middle_percent": "1.50",
+        "dedupe_minutes": 120,
+        "exit": {
+            "stop_loss_percent": "15",
+            "stop_loss_min_dollars": "10",
+        },
+    },
+    "rsi_reversal": {
+        "oversold_level": "30",
+        "overbought_level": "70",
+        "trend_average_type": "ema",
+        "trend_average_window": 20,
+        "reject_trend_conflict": True,
+        "dedupe_minutes": 120,
+    },
+    "volume_confirmed_breakout": {
+        "min_relative_volume": "1.50",
+        "breakout_buffer_percent": "0.10",
+        "max_breakout_distance_percent": "2.00",
+        "dedupe_minutes": 120,
+    },
+}
+
+
+def apply_strategy_type_batch(
+    db: Session,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    strategies = list(
+        db.scalars(select(Strategy).where(Strategy.is_active == True))  # noqa: E712
+    )
+    results: list[dict[str, Any]] = []
+    for strategy in strategies:
+        scanner = (
+            strategy.config.get("scanner")
+            if isinstance(strategy.config, dict)
+            and isinstance(strategy.config.get("scanner"), dict)
+            else None
+        )
+        if scanner is None:
+            continue
+        scanner_type = scanner.get("type")
+        if not isinstance(scanner_type, str):
+            continue
+        patch = STRATEGY_TYPE_BATCH_2026_05_18.get(scanner_type)
+        if patch is None:
+            results.append(
+                {
+                    "name": strategy.name,
+                    "scanner_type": scanner_type,
+                    "status": "watch",
+                    "reason": "No scanner-config patch in this evidence batch.",
+                }
+            )
+            continue
+
+        before = deepcopy(scanner)
+        patched = patch_strategy_scanner(
+            db,
+            name=strategy.name,
+            scanner_patch=patch,
+            dry_run=dry_run,
+        )
+        after_config = (
+            patched.config.get("scanner")
+            if isinstance(patched.config, dict)
+            and isinstance(patched.config.get("scanner"), dict)
+            else {}
+        )
+        results.append(
+            {
+                "name": strategy.name,
+                "scanner_type": scanner_type,
+                "status": "would_update" if dry_run else "updated",
+                "patch": patch,
+                "changed": _changed_scanner_keys(before, after_config, patch),
+            }
+        )
+    return results
+
+
+def _changed_scanner_keys(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    patch: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> dict[str, dict[str, Any]]:
+    changes: dict[str, dict[str, Any]] = {}
+    for key, patch_value in patch.items():
+        path = f"{prefix}.{key}" if prefix else key
+        before_value = before.get(key)
+        after_value = after.get(key)
+        if isinstance(patch_value, dict):
+            nested_before = before_value if isinstance(before_value, dict) else {}
+            nested_after = after_value if isinstance(after_value, dict) else {}
+            changes.update(
+                _changed_scanner_keys(
+                    nested_before,
+                    nested_after,
+                    patch_value,
+                    prefix=path,
+                )
+            )
+        elif before_value != after_value:
+            changes[path] = {"from": before_value, "to": after_value}
+    return changes
 
 
 def _strategy_summary(strategy: Strategy) -> dict[str, Any]:

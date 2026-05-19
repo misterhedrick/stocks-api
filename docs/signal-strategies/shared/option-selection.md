@@ -96,12 +96,30 @@ The global settings and per-profile settings work at different layers:
 
 Profile env vars (`PAPER_PREVIEW_PROFILE_<X>_MAX_SPREAD`, `MIN_OPEN_INTEREST`, etc.) remain the primary levers for per-strategy liquidity tuning. The global settings fill in defaults and add logic that was previously missing (DTE window, relative spread, OI allowlist).
 
-Current Render overrides keep momentum rate-of-change stricter than the global OI floor:
+Current Render overrides use strategy-type notional caps to limit loss size without pausing a symbol cron:
 
 ```text
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_MACD_CROSSOVER_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_MEAN_REVERSION_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_BREAKOUT_PRICE_THRESHOLD_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_VOLATILITY_SQUEEZE_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_SUPPORT_RESISTANCE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_VWAP_RECLAIM_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_OPENING_RANGE_BREAKOUT_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_RELATIVE_STRENGTH_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_TIME_SERIES_MOMENTUM_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_MARKET_REGIME_FILTER_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_PAIRS_RELATIVE_VALUE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_OPTIONS_SPREAD_CANDIDATE_MAX_ESTIMATED_NOTIONAL=2500
 ```
+
+The May 18 tuning policy keeps SPY in the universe and treats SPY losses as evidence for scanner/profile tuning, not as an automatic reason to pause the SPY entry cron.
+
+`options_spread_candidate` currently marks a signal as suitable for a spread, but contract preview and submission still use the single-leg long option pipeline. Do not treat it as true multi-leg spread execution until order-intent, preview, submit, and reconciliation support multi-leg orders.
 
 ## Diagnosing Rejections
 
