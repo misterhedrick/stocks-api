@@ -636,11 +636,69 @@ Examples:
 
 ```text
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
 PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
 ```
+
+Current paper profile notional caps by strategy type:
+
+| Profile | Max estimated notional |
+|---|---:|
+| `moving_average` | `2500` |
+| `momentum_rate_of_change` | `2500` |
+| `rsi_reversal` | `3000` |
+| `macd_crossover` | `5000` |
+| `mean_reversion` | `3000` |
+| `breakout_price_threshold` | `5000` |
+| `volume_confirmed_breakout` | `3000` |
+| `volatility_squeeze` | `5000` |
+| `support_resistance` | `2500` |
+| `vwap_reclaim` | `3000` |
+| `opening_range_breakout` | `3000` |
+| `relative_strength` | `3000` |
+| `time_series_momentum` | `3000` |
+| `market_regime_filter` | `2500` |
+| `pairs_relative_value` | `2500` |
+| `options_spread_candidate` | `2500` |
+
+The May 18 strategy-type batch tunes scanner behavior before removing symbols from the universe. SPY remains enabled; use SPY outcomes as evidence for scanner/profile tuning unless a future decision explicitly approves a symbol removal.
+
+The current seeded posture is `strictness_profile=selective_winner_bias` with `strictness_level=0.70`. New or reseeded strategies should prefer stronger thresholds and longer dedupe over raw signal volume, while keeping seeded submit caps high enough to allow good signals through. Use runtime env caps for global paper-safety limits.
+
+New strategy types added after the May 18 review:
+
+| Scanner | Tuning focus |
+|---|---|
+| `vwap_reclaim` | Reclaim/rejection distance from VWAP and dedupe. |
+| `opening_range_breakout` | Opening range length, breakout buffer, and max distance. |
+| `relative_strength` | Cross-sectional edge versus the active paper universe. |
+| `time_series_momentum` | Longer lookback trend return and trend-average filter. |
+| `market_regime_filter` | Benchmark alignment using SPY/QQQ regime returns. |
+| `pairs_relative_value` | Spread threshold versus configured peer benchmark. |
+| `options_spread_candidate` | Spread-worthy directional setup; still previews one long option leg until multi-leg order support exists. |
+
+Apply the current strategy-type batch manually after recording the approved decisions:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch
+```
+
+Batch scope:
+
+| Scanner | Patch intent |
+|---|---|
+| `support_resistance` | Require better level quality and closer entries. |
+| `momentum_rate_of_change` | Reduce chase entries and test a wider stop after lower notional. |
+| `moving_average` | Tighten trend quality and reduce duplicate entries. |
+| `mean_reversion` | Require cleaner band setup and test a wider stop after lower notional. |
+| `rsi_reversal` | Use stricter RSI extremes and reject trend conflicts. |
+| `volume_confirmed_breakout` | Require stronger volume and less extended breakouts. |
+| `macd_crossover` | Watch only for now. |
+| `breakout_price_threshold` | Watch only for now. |
+| `volatility_squeeze` | Watch only for now. |
 
 Common diagnostic reasons:
 

@@ -23,13 +23,20 @@ from app.integrations.alpaca import AlpacaMarketDataClient
 from app.services.audit_logs import record_audit_log
 from app.services.strategy_templates import (
     build_breakout_price_threshold_strategy_payload,
+    build_market_regime_filter_strategy_payload,
     build_macd_crossover_strategy_payload,
     build_mean_reversion_strategy_payload,
     build_momentum_rate_of_change_strategy_payload,
     build_moving_average_strategy_payload,
+    build_opening_range_breakout_strategy_payload,
+    build_options_spread_candidate_strategy_payload,
+    build_pairs_relative_value_strategy_payload,
+    build_relative_strength_strategy_payload,
     build_rsi_reversal_strategy_payload,
     build_support_resistance_strategy_payload,
+    build_time_series_momentum_strategy_payload,
     build_volatility_squeeze_strategy_payload,
+    build_vwap_reclaim_strategy_payload,
     build_volume_confirmed_breakout_strategy_payload,
 )
 
@@ -241,6 +248,69 @@ def _strategy_payloads(
             symbols=symbols,
             display_name="support resistance",
         ),
+        _globalize_strategy_payload(
+            build_vwap_reclaim_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="vwap_reclaim",
+            ),
+            symbols=symbols,
+            display_name="VWAP reclaim",
+        ),
+        _globalize_strategy_payload(
+            build_opening_range_breakout_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="opening_range_breakout",
+            ),
+            symbols=symbols,
+            display_name="opening range breakout",
+        ),
+        _globalize_strategy_payload(
+            build_relative_strength_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="relative_strength",
+            ),
+            symbols=symbols,
+            display_name="relative strength",
+        ),
+        _globalize_strategy_payload(
+            build_time_series_momentum_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="time_series_momentum",
+            ),
+            symbols=symbols,
+            display_name="time-series momentum",
+        ),
+        _globalize_strategy_payload(
+            build_market_regime_filter_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="market_regime_filter",
+            ),
+            symbols=symbols,
+            display_name="market regime filter",
+        ),
+        _globalize_strategy_payload(
+            build_pairs_relative_value_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="pairs_relative_value",
+            ),
+            symbols=symbols,
+            display_name="pairs relative value",
+        ),
+        _globalize_strategy_payload(
+            build_options_spread_candidate_strategy_payload(
+                symbol=seed_symbol,
+                target_strike=target_strike,
+                name="options_spread_candidate",
+            ),
+            symbols=symbols,
+            display_name="options spread candidate",
+        ),
     ]
 
     submit_config = _submit_config(
@@ -255,8 +325,8 @@ def _strategy_payloads(
     for payload in payloads:
         scanner = payload["config"]["scanner"]
         scanner_type = scanner.get("type")
-        scanner["strictness_level"] = "0.50"
-        scanner["strictness_profile"] = "balanced_data_gathering"
+        scanner["strictness_level"] = "0.70"
+        scanner["strictness_profile"] = "selective_winner_bias"
         scanner["preview"]["preview_profile"] = _preview_profile_for_type(scanner_type)
         scanner["preview"]["max_estimated_notional"] = max_notional_per_order
         scanner["preview"]["max_spread"] = max_spread

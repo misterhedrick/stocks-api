@@ -123,13 +123,13 @@ Render cron schedules are UTC and are not DST-aware.
 | `stocks-api-market-entry-aapl` | AAPL-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=AAPL&scan_limit=100&order_limit=100&fill_page_size=100` | `2-55/5 14-19 * * 1-5` |
 | `stocks-api-market-entry-msft` | MSFT-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=MSFT&scan_limit=100&order_limit=100&fill_page_size=100` | `3-55/5 14-19 * * 1-5` |
 | `stocks-api-market-entry-nvda` | NVDA-only entry cycle: scan -> preview -> submit | `POST /api/v1/jobs/market-entry-cycle?symbol=NVDA&scan_limit=100&order_limit=100&fill_page_size=100` | `4-55/5 14-19 * * 1-5` |
-| `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-20 * * 1-5` |
+| `stocks-api-market-exits` | Exit protection: reconcile -> exit-eval -> exit-submit | `POST /api/v1/jobs/market-cycle-exits?limit=100&order_limit=100&fill_page_size=100&phase_timeout_seconds=45` | `*/1 13-19 * * 1-5` |
 | `stocks-api-market-maintenance` | Pre/post-market maintenance and trade-case population | `POST /api/v1/jobs/market-maintenance?phase=auto&fill_page_size=100&news_enabled=false` | `30 12,21 * * 1-5` |
 
 Current EDT behavior:
 
 - Symbol entry cycles (`market-entry-cycle`) run from 10:00am through 3:55pm Eastern, staggered by minute, while reusing the same FastAPI app, duplicate-signal suppression, option filters, and global automation guards.
-- Exit cycle (`market-exits`) runs every minute from about **9:00am through 4:59pm Eastern**.
+- Exit cycle (`market-exits`) runs every minute from about **9:00am through 3:59pm Eastern** during EDT, so it stops before the 4:00pm market close. When Eastern switches to EST, change the exit hour window from `13-19` UTC to `14-20` UTC.
 - Maintenance runs pre-market (8:30am ET) and post-market (5:30pm EDT / 4:30pm EST).
 
 Entry splitting is meant to keep expanded option candidate searches smaller per invocation. The five symbol-specific entry cron jobs should use `scan_limit=100`, `order_limit=100`, and `fill_page_size=100` to match the current option candidate budget. The `market-entry-cycle` endpoint does not run exits or post-market maintenance; exits and maintenance stay global. Each Render cron job may have its own minimum monthly cost, so keep the symbol list intentional.
@@ -180,6 +180,13 @@ breakout_price_threshold
 volume_confirmed_breakout
 volatility_squeeze
 support_resistance
+vwap_reclaim
+opening_range_breakout
+relative_strength
+time_series_momentum
+market_regime_filter
+pairs_relative_value
+options_spread_candidate
 ```
 
 Env format:
@@ -192,12 +199,12 @@ Examples:
 
 ```text
 PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=3000
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
 PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
-PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=2500
-PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_SPREAD_PERCENT=20
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
+PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=3000
+PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_ESTIMATED_NOTIONAL=3000
 ```
 
 The existing production strategies were patched with `scanner.preview.preview_profile` using the GitHub Actions workflow and the result was:
@@ -247,6 +254,13 @@ breakout_price_threshold
 volume_confirmed_breakout
 volatility_squeeze
 support_resistance
+vwap_reclaim
+opening_range_breakout
+relative_strength
+time_series_momentum
+market_regime_filter
+pairs_relative_value
+options_spread_candidate
 ```
 
 Each seeded strategy tags `scanner.preview.preview_profile` from the scanner type.
@@ -254,7 +268,7 @@ Each seeded strategy tags `scanner.preview.preview_profile` from the scanner typ
 Default seeded set:
 
 ```text
-9 scanner-type strategies
+16 scanner-type strategies
 ```
 
 When reseeded, legacy symbol-specific strategies such as `Paper MSFT momentum rate-of-change put preview` are deactivated and replaced by global scanner-type strategies such as `momentum_rate_of_change`.
@@ -262,22 +276,68 @@ When reseeded, legacy symbol-specific strategies such as `Paper MSFT momentum ra
 Current paper data-gathering profile:
 
 ```text
-strictness_level=0.50
+strictness_level=0.70
+strictness_profile=selective_winner_bias
 max_estimated_notional=5000
 max_notional_per_order=5000
 min_open_interest=50
 max_spread=0.35
 max_spread_percent=35
-dedupe_minutes=60
+seeded submit caps remain high enough to allow good signals through:
+max_orders_per_cycle=100
+max_orders_per_trading_day=500
+max_open_contracts_per_strategy=100
 ```
 
-This profile collects paper-trade outcomes while keeping a 50-contract open-interest floor and Alpaca paper-mode guardrails.
+This profile is intentionally semi-picky at the signal level: it favors stronger setups and slower duplicate cadence, but it does not throttle good signals merely to reduce count. Runtime env caps still provide global paper-safety limits.
 
-Momentum rate-of-change uses a stricter Render preview profile override:
+Current Render risk caps reduce runaway paper exposure while keeping each symbol cron enabled:
+
+```text
+MAX_AUTO_ORDERS_PER_DAY=60
+MAX_OPEN_POSITIONS=30
+```
+
+Current Render preview profile notional caps are tuned by strategy type:
+
+```text
+moving_average=2500
+momentum_rate_of_change=2500
+rsi_reversal=3000
+macd_crossover=5000
+mean_reversion=3000
+breakout_price_threshold=5000
+volume_confirmed_breakout=3000
+volatility_squeeze=5000
+support_resistance=2500
+vwap_reclaim=3000
+opening_range_breakout=3000
+relative_strength=3000
+time_series_momentum=3000
+market_regime_filter=2500
+pairs_relative_value=2500
+options_spread_candidate=2500
+```
+
+The options spread scanner currently creates spread-candidate signals but still uses the existing single-leg long call/put preview pipeline. Multi-leg option orders need separate execution plumbing before it can submit true spreads.
+
+The strongest loss sources are tuned at the strategy/profile level rather than pausing a single symbol cron. SPY remains in the paper universe unless a future review explicitly removes it.
+
+Apply the 2026-05-18 strategy-type tuning batch with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch
+```
+
+The batch patches scanner config for `support_resistance`, `momentum_rate_of_change`, `moving_average`, `mean_reversion`, `rsi_reversal`, and `volume_confirmed_breakout`. It leaves `macd_crossover`, `breakout_price_threshold`, and `volatility_squeeze` in watch mode because the current evidence is not strong enough to tighten them.
+
+Momentum rate-of-change and mean reversion use a controlled wider-stop test in that batch:
 
 ```text
 PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
+scanner.exit.stop_loss_percent=15
 ```
 
 Current paper exit defaults:
@@ -340,6 +400,7 @@ app/services/signals/evaluators/breakout.py
 app/services/signals/evaluators/volume_breakout.py
 app/services/signals/evaluators/volatility_squeeze.py
 app/services/signals/evaluators/support_resistance.py
+app/services/signals/evaluators/advanced.py
 ```
 
 Tests:
@@ -355,6 +416,7 @@ tests/services/signals/test_breakout_evaluator.py
 tests/services/signals/test_volume_breakout_evaluator.py
 tests/services/signals/test_volatility_squeeze_evaluator.py
 tests/services/signals/test_support_resistance_evaluator.py
+tests/services/signals/test_advanced_evaluators.py
 tests/services/signals/test_signal_scanner_evaluator.py
 ```
 
@@ -382,6 +444,13 @@ BreakoutPriceThresholdEvaluator
 VolumeConfirmedBreakoutEvaluator
 VolatilitySqueezeEvaluator
 SupportResistanceEvaluator
+VwapReclaimEvaluator
+OpeningRangeBreakoutEvaluator
+RelativeStrengthEvaluator
+TimeSeriesMomentumEvaluator
+MarketRegimeFilterEvaluator
+PairsRelativeValueEvaluator
+OptionsSpreadCandidateEvaluator
 ```
 
 The evaluator registry currently includes:
@@ -396,6 +465,13 @@ breakout_price_threshold
 volume_confirmed_breakout
 volatility_squeeze
 support_resistance
+vwap_reclaim
+opening_range_breakout
+relative_strength
+time_series_momentum
+market_regime_filter
+pairs_relative_value
+options_spread_candidate
 ```
 
 The live scanner routes all of those `scanner.type` values through evaluator-backed scan paths.
@@ -413,6 +489,13 @@ BREAKOUT_PRICE_THRESHOLD_EVALUATOR_ENABLED
 VOLUME_CONFIRMED_BREAKOUT_EVALUATOR_ENABLED
 VOLATILITY_SQUEEZE_EVALUATOR_ENABLED
 SUPPORT_RESISTANCE_EVALUATOR_ENABLED
+VWAP_RECLAIM_EVALUATOR_ENABLED
+OPENING_RANGE_BREAKOUT_EVALUATOR_ENABLED
+RELATIVE_STRENGTH_EVALUATOR_ENABLED
+TIME_SERIES_MOMENTUM_EVALUATOR_ENABLED
+MARKET_REGIME_FILTER_EVALUATOR_ENABLED
+PAIRS_RELATIVE_VALUE_EVALUATOR_ENABLED
+OPTIONS_SPREAD_CANDIDATE_EVALUATOR_ENABLED
 ```
 
 Review note: `app/services/signal_scanner.py` is a large file. Some GitHub connector reads may truncate it before the evaluator helper implementations. When reviewing or editing scanner routing, use a local checkout or otherwise verify the complete file before making full-file replacements.

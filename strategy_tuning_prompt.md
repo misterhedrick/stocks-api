@@ -61,6 +61,7 @@ Research goals:
    - each change should modify only one or two knobs
    - separate config/env tuning from code changes
    - do not bundle unrelated changes together
+   - prefer scanner/profile tuning before removing a symbol from the paper universe unless the user explicitly approves a symbol pause
 
 5. For each proposed change, include:
    - scanner_type
@@ -136,6 +137,7 @@ Do not propose new changes until the existing decisions are judged.
 - Automatic application is not allowed.
 - Strategy logic changes require explicit human approval.
 - Prefer env/config tuning before code changes unless the evidence shows a code defect.
+- Do not recommend pausing SPY by default. Treat SPY losses as evidence for strategy-type tuning unless a later human decision explicitly approves a SPY pause.
 - If the data pipeline is unhealthy, fix that first.
 - Do not optimize for trade count alone. Optimize for measurable, explainable paper outcomes.
 

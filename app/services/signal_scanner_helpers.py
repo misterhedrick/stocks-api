@@ -51,6 +51,7 @@ def _signal_specs_from_scanner(
         if not isinstance(raw_symbol, str) or not raw_symbol.strip():
             raise ValueError("scanner.symbols must contain only non-empty strings")
         clean_symbols.append(raw_symbol.strip().upper())
+    original_symbols = list(clean_symbols)
     if symbol_filter is not None:
         if symbol_filter not in clean_symbols:
             no_signal_reasons.append(
@@ -131,10 +132,38 @@ def _signal_specs_from_scanner(
             market_data_client=market_data_client,
             no_signal_reasons=no_signal_reasons,
         )
+    if scanner_type in {
+        "vwap_reclaim",
+        "opening_range_breakout",
+        "relative_strength",
+        "time_series_momentum",
+        "market_regime_filter",
+        "pairs_relative_value",
+        "options_spread_candidate",
+    }:
+        advanced_config = dict(scanner_config)
+        context_symbols = clean_symbols
+        if scanner_type in {
+            "relative_strength",
+            "market_regime_filter",
+            "pairs_relative_value",
+        }:
+            context_symbols = original_symbols
+            advanced_config["_emit_symbols"] = clean_symbols
+        return _advanced_evaluator_signal_specs(
+            strategy.name,
+            advanced_config,
+            context_symbols,
+            market_data_client=market_data_client,
+            no_signal_reasons=no_signal_reasons,
+        )
     raise ValueError(
         "scanner.type must be moving_average, momentum_rate_of_change, "
         "rsi_reversal, macd_crossover, mean_reversion, breakout_price_threshold, "
-        "volume_confirmed_breakout, volatility_squeeze, or support_resistance"
+        "volume_confirmed_breakout, volatility_squeeze, support_resistance, "
+        "vwap_reclaim, opening_range_breakout, relative_strength, "
+        "time_series_momentum, market_regime_filter, pairs_relative_value, "
+        "or options_spread_candidate"
     )
 
 
@@ -160,6 +189,7 @@ def _filter_signal_specs_for_symbol(
 
 
 from app.services.signal_scanner_evaluator_specs import (
+    _advanced_evaluator_signal_specs,
     _breakout_price_threshold_signal_specs,
     _macd_crossover_signal_specs,
     _mean_reversion_signal_specs,

@@ -24,7 +24,7 @@ def build_moving_average_strategy_payload(
     long_window: int = 20,
     lookback_minutes: int = 1440,
     timeframe: str = "5Min",
-    confidence: str = "0.6200",
+    confidence: str = "0.6800",
     min_change_percent: str | None = None,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
@@ -82,14 +82,14 @@ def build_momentum_rate_of_change_strategy_payload(
     option_type: str = "call",
     direction: str = "bullish",
     timeframe: str = "1Min",
-    lookback_minutes: int = 30,
-    change_above_percent: str = "0.25",
-    change_below_percent: str = "-0.25",
+    lookback_minutes: int = 45,
+    change_above_percent: str = "0.35",
+    change_below_percent: str = "-0.35",
     short_average_type: str = "ema",
     short_average_window: int = 9,
     max_extension_percent: str | None = None,
-    confidence: str = "0.6500",
-    dedupe_minutes: int = 60,
+    confidence: str = "0.7000",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -144,11 +144,11 @@ def build_rsi_reversal_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 480,
     rsi_period: int = 14,
-    oversold_level: str = "35",
-    overbought_level: str = "65",
+    oversold_level: str = "30",
+    overbought_level: str = "70",
     confirmation_mode: str = "cross_back_inside",
-    confidence: str = "0.6000",
-    dedupe_minutes: int = 60,
+    confidence: str = "0.6600",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -172,6 +172,9 @@ def build_rsi_reversal_strategy_payload(
                 "overbought_level": overbought_level,
                 "confirmation_mode": confirmation_mode,
                 "require_price_confirmation": True,
+                "trend_average_type": "ema",
+                "trend_average_window": 20,
+                "reject_trend_conflict": True,
                 "direction": direction,
                 "confidence": confidence,
                 "rationale": (
@@ -203,8 +206,8 @@ def build_macd_crossover_strategy_payload(
     fast_period: int = 12,
     slow_period: int = 26,
     signal_period: int = 9,
-    confidence: str = "0.6200",
-    dedupe_minutes: int = 60,
+    confidence: str = "0.6800",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
@@ -257,10 +260,10 @@ def build_mean_reversion_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 720,
     bollinger_period: int = 20,
-    bollinger_stddev: str = "2.0",
-    confidence: str = "0.6200",
-    max_distance_to_middle_percent: str = "2.0",
-    dedupe_minutes: int = 60,
+    bollinger_stddev: str = "2.25",
+    confidence: str = "0.6800",
+    max_distance_to_middle_percent: str = "1.50",
+    dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:

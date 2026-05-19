@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from app.services.signals.evaluators.base import SignalEvaluator
+from app.services.signals.evaluators.advanced import (
+    MarketRegimeFilterEvaluator,
+    OpeningRangeBreakoutEvaluator,
+    OptionsSpreadCandidateEvaluator,
+    PairsRelativeValueEvaluator,
+    RelativeStrengthEvaluator,
+    TimeSeriesMomentumEvaluator,
+    VwapReclaimEvaluator,
+)
 from app.services.signals.evaluators.breakout import BreakoutPriceThresholdEvaluator
 from app.services.signals.evaluators.macd import MacdCrossoverEvaluator
 from app.services.signals.evaluators.mean_reversion import MeanReversionEvaluator
@@ -21,6 +30,13 @@ _REGISTRY: dict[str, SignalEvaluator] = {
     VolumeConfirmedBreakoutEvaluator.strategy_type: VolumeConfirmedBreakoutEvaluator(),
     VolatilitySqueezeEvaluator.strategy_type: VolatilitySqueezeEvaluator(),
     SupportResistanceEvaluator.strategy_type: SupportResistanceEvaluator(),
+    VwapReclaimEvaluator.strategy_type: VwapReclaimEvaluator(),
+    OpeningRangeBreakoutEvaluator.strategy_type: OpeningRangeBreakoutEvaluator(),
+    RelativeStrengthEvaluator.strategy_type: RelativeStrengthEvaluator(),
+    TimeSeriesMomentumEvaluator.strategy_type: TimeSeriesMomentumEvaluator(),
+    MarketRegimeFilterEvaluator.strategy_type: MarketRegimeFilterEvaluator(),
+    PairsRelativeValueEvaluator.strategy_type: PairsRelativeValueEvaluator(),
+    OptionsSpreadCandidateEvaluator.strategy_type: OptionsSpreadCandidateEvaluator(),
 }
 
 
