@@ -1,8 +1,17 @@
-"""Rename paper_review_snapshots to review_snapshots.
+"""Expose review_snapshots for new code regardless of DB state.
 
 Revision ID: 0012_rename_paper_review_snapshots
 Revises: 0011_strategy_tuning_decisions
 Create Date: 2026-05-20
+
+Handles three possible DB states after the failed rename attempts:
+  1. paper_review_snapshots exists, review_snapshots does not
+     → create view review_snapshots pointing to paper_review_snapshots
+  2. review_snapshots already exists as a table (rename committed in a
+     prior attempt despite exit-3 crash after commit)
+     → no-op; model already maps to the table
+  3. review_snapshots already exists as a view
+     → no-op; idempotent re-run
 """
 
 from collections.abc import Sequence
@@ -18,35 +27,41 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Terminate competing connections before acquiring the ACCESS EXCLUSIVE lock
-    # needed for the table rename. In Render zero-downtime deploys the old
-    # instance stays alive until the new one passes health checks, but the new
-    # instance can't start until this migration finishes — a deadlock. Evicting
-    # those connections from within the migration breaks the cycle.
     op.execute(sa.text("""
         DO $$
         BEGIN
-            BEGIN
-                PERFORM pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = current_database()
-                  AND pid <> pg_backend_pid();
-            EXCEPTION WHEN OTHERS THEN
-                NULL;
-            END;
-            PERFORM pg_sleep(0.25);
+            -- Already done (table renamed or view created by a prior attempt)
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name   = 'review_snapshots'
+            ) THEN
+                RETURN;
+            END IF;
+
+            -- Normal path: create view over the original table
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name   = 'paper_review_snapshots'
+            ) THEN
+                CREATE VIEW review_snapshots
+                    AS SELECT * FROM paper_review_snapshots;
+            END IF;
         END $$
     """))
-    op.rename_table("paper_review_snapshots", "review_snapshots")
-    op.execute(
-        "ALTER TABLE review_snapshots RENAME CONSTRAINT "
-        "uq_paper_review_snapshots_date_type TO uq_review_snapshots_date_type"
-    )
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE review_snapshots RENAME CONSTRAINT "
-        "uq_review_snapshots_date_type TO uq_paper_review_snapshots_date_type"
-    )
-    op.rename_table("review_snapshots", "paper_review_snapshots")
+    op.execute(sa.text("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.views
+                WHERE table_schema = 'public'
+                  AND table_name   = 'review_snapshots'
+            ) THEN
+                DROP VIEW review_snapshots;
+            END IF;
+        END $$
+    """))
