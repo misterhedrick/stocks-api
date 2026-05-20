@@ -27,41 +27,12 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(sa.text("""
-        DO $$
-        BEGIN
-            -- Already done (table renamed or view created by a prior attempt)
-            IF EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_name   = 'review_snapshots'
-            ) THEN
-                RETURN;
-            END IF;
-
-            -- Normal path: create view over the original table
-            IF EXISTS (
-                SELECT 1 FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_name   = 'paper_review_snapshots'
-            ) THEN
-                CREATE VIEW review_snapshots
-                    AS SELECT * FROM paper_review_snapshots;
-            END IF;
-        END $$
-    """))
+    # TODO: rename paper_review_snapshots → review_snapshots during a maintenance window.
+    # Run manually: ALTER TABLE paper_review_snapshots RENAME TO review_snapshots;
+    # then update __tablename__ in ReviewSnapshot and the constraint name, and re-enable
+    # the rename logic here. Skipped now due to lock contention on Render's managed Postgres.
+    pass
 
 
 def downgrade() -> None:
-    op.execute(sa.text("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.views
-                WHERE table_schema = 'public'
-                  AND table_name   = 'review_snapshots'
-            ) THEN
-                DROP VIEW review_snapshots;
-            END IF;
-        END $$
-    """))
+    pass
