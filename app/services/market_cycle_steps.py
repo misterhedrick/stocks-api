@@ -1,42 +1,11 @@
 from __future__ import annotations
 
-import logging
-from collections import Counter
-from dataclasses import dataclass
-from datetime import datetime, time, timezone
-from decimal import Decimal, InvalidOperation
 from time import perf_counter
 from typing import Any
-import uuid
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-logger = logging.getLogger(__name__)
-
-from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.core.utils import current_trading_day_start_utc
-from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
-from app.schemas.options import OptionContractSelectionCreate
-from app.schemas.order_intents import OrderIntentPreviewCreate
-from app.services.automation_guard import can_auto_submit_order_intent
-from app.services.audit_logs import record_audit_log
 from app.services.broker_reconciliation import reconcile_broker_state
-from app.services.news_scanner import scan_market_news
-from app.services.order_intents import preview_order_intent_from_signal, submit_order_intent
-from app.services.position_exits import evaluate_position_exits
-from app.services.signal_scanner import scan_signals
-
-
-EXPOSURE_BROKER_ORDER_STATUSES = (
-    "new",
-    "accepted",
-    "pending_new",
-    "partially_filled",
-    "filled",
-    "submitted",
-)
 
 
 def _normalize_symbol(symbol: str | None) -> str | None:

@@ -25,7 +25,7 @@ from app.services.signals.evaluators.registry import get_evaluator
 from app.services.signals.indicators import IndicatorFrame
 
 DEFAULT_DEDUPE_MINUTES = 240
-DEDUPE_STATUSES = ("new", "previewed", "submitted")
+
 
 def _mean_reversion_signal_specs(
     strategy_name: str,
