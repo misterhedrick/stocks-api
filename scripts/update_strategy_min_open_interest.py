@@ -1,5 +1,5 @@
 """
-Idempotent script to update paper strategy minimum open-interest filters.
+Idempotent script to update strategy minimum open-interest filters.
 
 This patches existing database strategy rows. It is intended for cases where the
 code/templates have changed but already-seeded strategies still carry an older,
@@ -95,7 +95,7 @@ def _patch_min_open_interest(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Update paper strategy minimum open-interest filters."
+        description="Update strategy minimum open-interest filters."
     )
     parser.add_argument(
         "--dry-run",
@@ -111,7 +111,7 @@ def main() -> None:
     parser.add_argument(
         "--new-value",
         type=int,
-        default=settings.paper_strategy_min_open_interest,
+        default=settings.strategy_min_open_interest,
         help="Target minimum open interest. Defaults to PAPER_STRATEGY_MIN_OPEN_INTEREST.",
     )
     args = parser.parse_args()

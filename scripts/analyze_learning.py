@@ -16,7 +16,7 @@ from app.services.learning_report import build_learning_report
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Summarize paper trades and non-trades for strategy tuning."
+        description="Summarize trades and non-trades for strategy tuning."
     )
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()

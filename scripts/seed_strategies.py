@@ -26,7 +26,7 @@ from app.services.strategy_templates import (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Seed preview-first paper strategies into the configured database."
+        description="Seed preview-first strategies into the configured database."
     )
     parser.add_argument(
         "--dry-run",
@@ -66,7 +66,7 @@ def main() -> None:
         db.commit()
 
     print(
-        "Seeded paper strategies "
+        "Seeded strategies "
         f"(created={created}, updated={updated}, deactivated={deactivated})"
     )
 
@@ -96,7 +96,7 @@ def seed_strategies(
                     event_type="strategy.created",
                     entity_type="strategy",
                     entity_id=strategy.id,
-                    message="Strategy created by paper seed script",
+                    message="Strategy created by seed script",
                     payload=_audit_payload(strategy),
                 )
                 created += 1
@@ -111,7 +111,7 @@ def seed_strategies(
                 event_type="strategy.updated",
                 entity_type="strategy",
                 entity_id=existing.id,
-                message="Strategy updated by paper seed script",
+                message="Strategy updated by seed script",
                 payload=_audit_payload(existing),
             )
             updated += 1
@@ -130,7 +130,7 @@ def seed_strategies(
                     event_type="strategy.updated",
                     entity_type="strategy",
                     entity_id=strategy.id,
-                    message="Strategy deactivated by paper seed script",
+                    message="Strategy deactivated by seed script",
                     payload=_audit_payload(strategy),
                 )
                 deactivated += 1

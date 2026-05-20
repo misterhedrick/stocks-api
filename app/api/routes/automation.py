@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.schemas.automation import (
     AutomationStatusRead,
     LearningReportRead,
-    PaperPerformanceRead,
+    PerformanceRead,
     PositionManagementStatusRead,
     StrategySuggestionReviewUpdate,
     StrategyTuningDecisionCreate,
@@ -25,10 +25,10 @@ from app.services.ai_trade_review import (
     update_strategy_change_suggestion_review,
 )
 from app.services.automation_status import get_automation_status
-from app.services.daily_paper_review import build_daily_paper_review
+from app.services.daily_review import build_daily_review
 from app.services.learning_report import build_learning_report
-from app.services.performance_review import get_paper_performance_review
-from app.services.paper_review_snapshots import get_paper_review_snapshots
+from app.services.performance_review import get_performance_review
+from app.services.review_snapshots import get_review_snapshots
 from app.services.position_exits import get_position_management_statuses
 from app.services.strategy_refinement import (
     build_strategy_refinement_summary,
@@ -70,27 +70,27 @@ def position_management_status_route(
 
 @router.get(
     "/performance",
-    response_model=PaperPerformanceRead,
+    response_model=PerformanceRead,
     status_code=status.HTTP_200_OK,
 )
-def paper_performance_route(
+def performance_route(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
-) -> PaperPerformanceRead:
-    return get_paper_performance_review(db, limit=limit)
+) -> PerformanceRead:
+    return get_performance_review(db, limit=limit)
 
 
 @router.get(
-    "/daily-paper-review",
+    "/daily-review",
     response_model=dict[str, Any],
     status_code=status.HTTP_200_OK,
 )
-def daily_paper_review_route(
+def daily_review_route(
     db: Annotated[Session, Depends(get_db)],
     review_date: Annotated[date | None, Query(alias="date")] = None,
     limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
 ) -> dict[str, Any]:
-    return build_daily_paper_review(db, review_date=review_date, limit=limit)
+    return build_daily_review(db, review_date=review_date, limit=limit)
 
 
 @router.get(
@@ -130,15 +130,15 @@ def learning_report_route(
 
 
 @router.get(
-    "/paper-review-snapshots",
+    "/review-snapshots",
     response_model=list[dict[str, Any]],
     status_code=status.HTTP_200_OK,
 )
-def paper_review_snapshots_route(
+def review_snapshots_route(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[dict[str, Any]]:
-    return get_paper_review_snapshots(db, limit=limit)
+    return get_review_snapshots(db, limit=limit)
 
 
 @router.get(

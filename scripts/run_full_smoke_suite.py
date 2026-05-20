@@ -15,12 +15,12 @@ def main() -> None:
     parser.add_argument(
         "--skip-paper-submit",
         action="store_true",
-        help="Skip the broker-touching paper submit/cancel smoke.",
+        help="Skip the broker-touching submit/cancel smoke.",
     )
     parser.add_argument(
         "--skip-seed",
         action="store_true",
-        help="Skip preview-first paper strategy seeding.",
+        help="Skip preview-first strategy seeding.",
     )
     parser.add_argument(
         "--skip-market-cycle",
@@ -32,13 +32,13 @@ def main() -> None:
     _run("preflight", ["scripts/smoke_preflight.py"])
 
     if not args.skip_seed:
-        _run("seed_paper_strategies", ["scripts/seed_paper_strategies.py"])
+        _run("seed_strategies", ["scripts/seed_strategies.py"])
 
     if not args.skip_market_cycle:
         _run("market_cycle", ["scripts/run_market_cycle_smoke.py"])
 
     if not args.skip_paper_submit:
-        _run("paper_submit_cancel", ["scripts/run_paper_submit_smoke.py"])
+        _run("paper_submit_cancel", ["scripts/run_submit_smoke.py"])
 
     _run(
         "unit_tests",

@@ -26,7 +26,7 @@ def build_vwap_reclaim_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} VWAP reclaim {option_type} preview",
+        name=name or f"{symbol.strip().upper()} VWAP reclaim {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "vwap_reclaim",
@@ -58,7 +58,7 @@ def build_opening_range_breakout_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} opening range breakout {option_type} preview",
+        name=name or f"{symbol.strip().upper()} opening range breakout {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "opening_range_breakout",
@@ -89,7 +89,7 @@ def build_relative_strength_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} relative strength {option_type} preview",
+        name=name or f"{symbol.strip().upper()} relative strength {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "relative_strength",
@@ -99,7 +99,7 @@ def build_relative_strength_strategy_payload(
             "confidence": confidence,
             "dedupe_minutes": dedupe_minutes,
         },
-        description="Cross-sectional relative-strength strategy comparing each symbol against the active paper universe.",
+        description="Cross-sectional relative-strength strategy comparing each symbol against the active trading universe.",
     )
 
 
@@ -120,7 +120,7 @@ def build_time_series_momentum_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} time-series momentum {option_type} preview",
+        name=name or f"{symbol.strip().upper()} time-series momentum {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "time_series_momentum",
@@ -150,7 +150,7 @@ def build_market_regime_filter_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} market regime filter {option_type} preview",
+        name=name or f"{symbol.strip().upper()} market regime filter {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "market_regime_filter",
@@ -180,7 +180,7 @@ def build_pairs_relative_value_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} pairs relative value {option_type} preview",
+        name=name or f"{symbol.strip().upper()} pairs relative value {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "pairs_relative_value",
@@ -211,7 +211,7 @@ def build_options_spread_candidate_strategy_payload(
     return _advanced_payload(
         symbol=symbol,
         target_strike=target_strike,
-        name=name or f"Paper {symbol.strip().upper()} options spread candidate {option_type} preview",
+        name=name or f"{symbol.strip().upper()} options spread candidate {option_type} preview",
         option_type=option_type,
         scanner={
             "type": "options_spread_candidate",

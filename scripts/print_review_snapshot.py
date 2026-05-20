@@ -12,13 +12,13 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.db.models import PaperReviewSnapshot
+from app.db.models import ReviewSnapshot
 from app.db.session import SessionLocal
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Print a readable report for the latest paper review snapshot."
+        description="Print a readable report for the latest review snapshot."
     )
     parser.add_argument(
         "--limit",
@@ -30,26 +30,26 @@ def main() -> None:
 
     with SessionLocal() as db:
         snapshot = db.scalar(
-            select(PaperReviewSnapshot)
-            .order_by(PaperReviewSnapshot.generated_at.desc())
+            select(ReviewSnapshot)
+            .order_by(ReviewSnapshot.generated_at.desc())
             .limit(1)
         )
 
     if snapshot is None:
-        print("No paper review snapshots found.")
+        print("No review snapshots found.")
         return
 
     print(format_snapshot_report(snapshot, limit=args.limit))
 
 
-def format_snapshot_report(snapshot: PaperReviewSnapshot, *, limit: int = 8) -> str:
+def format_snapshot_report(snapshot: ReviewSnapshot, *, limit: int = 8) -> str:
     summary = _as_dict(snapshot.summary)
     signals = _as_dict(snapshot.signals)
     diagnostics = _as_dict(snapshot.diagnostics)
     rejected = _as_dict(snapshot.rejected_outcomes)
 
     lines = [
-        "Paper Review Snapshot",
+        "Review Snapshot",
         "=====================",
         f"ID:           {snapshot.id}",
         f"Review date:  {snapshot.review_date}",

@@ -49,13 +49,13 @@ def _preview_config(
         "time_in_force": "day",
         "data_feed": "indicative",
         "max_estimated_notional": max_estimated_notional
-        or _decimal_string(settings.paper_strategy_max_estimated_notional),
-        "max_spread": max_spread or _decimal_string(settings.paper_strategy_max_spread),
+        or _decimal_string(settings.strategy_max_estimated_notional),
+        "max_spread": max_spread or _decimal_string(settings.strategy_max_spread),
         "max_spread_percent": max_spread_percent
-        or _decimal_string(settings.paper_strategy_max_spread_percent),
+        or _decimal_string(settings.strategy_max_spread_percent),
         "min_open_interest": min_open_interest
         if min_open_interest is not None
-        else settings.paper_strategy_min_open_interest,
+        else settings.strategy_min_open_interest,
         "min_quote_size": min_quote_size,
         "limit": 20,
         "rationale": rationale,
@@ -68,7 +68,7 @@ def _submit_config(*, max_notional_per_order: str | None = None) -> dict[str, An
         "max_contracts_per_order": 1,
         "max_contracts_per_cycle": 1,
         "max_notional_per_order": max_notional_per_order
-        or _decimal_string(settings.paper_strategy_max_estimated_notional),
+        or _decimal_string(settings.strategy_max_estimated_notional),
         "max_open_contracts_per_symbol": 1,
         "max_open_contracts_per_strategy": 2,
         "max_orders_per_trading_day": 1,
@@ -92,15 +92,15 @@ def _exit_config(
     return {
         "enabled": True,
         "profit_target_percent": profit_target_percent
-        or _decimal_string(settings.paper_strategy_profit_target_percent),
+        or _decimal_string(settings.strategy_profit_target_percent),
         "stop_loss_percent": stop_loss_percent
-        or _decimal_string(settings.paper_strategy_stop_loss_percent),
-        "stop_loss_min_dollars": _decimal_string(settings.paper_strategy_stop_loss_min_dollars),
+        or _decimal_string(settings.strategy_stop_loss_percent),
+        "stop_loss_min_dollars": _decimal_string(settings.strategy_stop_loss_min_dollars),
         "trailing_profit_activation_percent": _decimal_string(
-            settings.paper_strategy_trailing_profit_activation_percent
+            settings.strategy_trailing_profit_activation_percent
         ),
         "trailing_profit_giveback_percent": _decimal_string(
-            settings.paper_strategy_trailing_profit_giveback_percent
+            settings.strategy_trailing_profit_giveback_percent
         ),
         "max_days_to_expiration": 1,
         "max_contracts_per_exit": 1,

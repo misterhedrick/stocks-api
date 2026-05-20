@@ -32,7 +32,7 @@ class DailyPaperReviewRouteTests(unittest.TestCase):
                 "job_runs": 3,
                 "signals": 2,
                 "order_intents": 1,
-                "paper_review_snapshot_found": True,
+                "review_snapshot_found": True,
             },
             "jobs": {},
             "signals": {},
@@ -42,21 +42,21 @@ class DailyPaperReviewRouteTests(unittest.TestCase):
             "option_selection_diagnostics": {},
             "trade_cases": {},
             "ai_reviews": {},
-            "paper_review_snapshot": {"id": "snapshot-1"},
+            "review_snapshot": {"id": "snapshot-1"},
         }
 
         with patch(
-            "app.api.routes.automation.build_daily_paper_review",
+            "app.api.routes.automation.build_daily_review",
             return_value=service_result,
         ) as daily_review:
             response = client.get(
-                "/api/v1/automation/daily-paper-review?date=2026-05-11&limit=250",
+                "/api/v1/automation/daily-review?date=2026-05-11&limit=250",
                 headers=_AUTH,
             )
 
         assert response.status_code == 200
         assert response.json()["review_date"] == "2026-05-11"
-        assert response.json()["summary"]["paper_review_snapshot_found"] is True
+        assert response.json()["summary"]["review_snapshot_found"] is True
         daily_review.assert_called_once()
         _, kwargs = daily_review.call_args
         assert kwargs["review_date"].isoformat() == "2026-05-11"
@@ -65,7 +65,7 @@ class DailyPaperReviewRouteTests(unittest.TestCase):
     def test_daily_paper_review_route_requires_auth(self) -> None:
         client = TestClient(app)
 
-        response = client.get("/api/v1/automation/daily-paper-review")
+        response = client.get("/api/v1/automation/daily-review")
 
         assert response.status_code == 401
 
