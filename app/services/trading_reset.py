@@ -30,7 +30,7 @@ RUNTIME_TABLES = (
     (StrategyTuningDecision, "strategy_tuning_decisions"),
     (StrategyChangeSuggestion, "strategy_change_suggestions"),
     (AiTradeReview, "ai_trade_reviews"),
-    (ReviewSnapshot, "review_snapshots"),
+    (ReviewSnapshot, "paper_review_snapshots"),
     (TradeCase, "trade_cases"),
     (OptionSelectionDiagnostic, "option_selection_diagnostics"),
     (Fill, "fills"),
