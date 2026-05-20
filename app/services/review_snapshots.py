@@ -15,17 +15,17 @@ from app.db.models import (
     Fill,
     OptionSelectionDiagnostic,
     OrderIntent,
-    PaperReviewSnapshot,
+    ReviewSnapshot,
     Signal,
     Strategy,
 )
 from app.services.learning_report import build_learning_report
-from app.services.performance_review import PerformanceReviewResult, get_paper_performance_review
+from app.services.performance_review import PerformanceReviewResult, get_performance_review
 
 
 @dataclass(slots=True)
-class PaperReviewSnapshotResult:
-    snapshot: PaperReviewSnapshot
+class ReviewSnapshotResult:
+    snapshot: ReviewSnapshot
     created: bool
     review_date: date
     review_type: str
@@ -37,14 +37,14 @@ class PaperReviewSnapshotResult:
     refinement_candidate_count: int
 
 
-def create_or_update_post_market_paper_review_snapshot(
+def create_or_update_post_market_review_snapshot(
     db: Session,
     *,
     review_date: date | None = None,
     generated_at: datetime | None = None,
     limit: int = 500,
     performance: PerformanceReviewResult | None = None,
-) -> PaperReviewSnapshotResult:
+) -> ReviewSnapshotResult:
     generated = generated_at or datetime.now(timezone.utc)
     if generated.tzinfo is None:
         generated = generated.replace(tzinfo=timezone.utc)
@@ -55,7 +55,7 @@ def create_or_update_post_market_paper_review_snapshot(
     window_end = datetime.combine(selected_date, time.max, tzinfo=timezone.utc)
 
     if performance is None:
-        performance = get_paper_performance_review(db, limit=limit)
+        performance = get_performance_review(db, limit=limit)
     signals = _signal_details(db, window_start=window_start, window_end=window_end, limit=limit)
     previews = _order_intent_details(
         db,
@@ -94,7 +94,7 @@ def create_or_update_post_market_paper_review_snapshot(
             else 0,
         },
         "learning_report": {
-            "retention_days": settings.paper_review_snapshot_retention_days,
+            "retention_days": settings.review_snapshot_retention_days,
             "refinement_candidate_count": len(refinement_candidates)
             if isinstance(refinement_candidates, list)
             else 0,
@@ -145,13 +145,13 @@ def create_or_update_post_market_paper_review_snapshot(
     }
 
     existing = db.scalar(
-        select(PaperReviewSnapshot)
-        .where(PaperReviewSnapshot.review_date == selected_date)
-        .where(PaperReviewSnapshot.review_type == "post_market")
+        select(ReviewSnapshot)
+        .where(ReviewSnapshot.review_date == selected_date)
+        .where(ReviewSnapshot.review_type == "post_market")
         .limit(1)
     )
     created = existing is None
-    snapshot = existing or PaperReviewSnapshot(
+    snapshot = existing or ReviewSnapshot(
         review_date=selected_date,
         review_type="post_market",
     )
@@ -173,7 +173,7 @@ def create_or_update_post_market_paper_review_snapshot(
     # Column values already loaded (including id) remain accessible on the detached object.
     db.expunge(snapshot)
 
-    return PaperReviewSnapshotResult(
+    return ReviewSnapshotResult(
         snapshot=snapshot,
         created=created,
         review_date=selected_date,
@@ -189,20 +189,20 @@ def create_or_update_post_market_paper_review_snapshot(
     )
 
 
-def get_paper_review_snapshots(
+def get_review_snapshots(
     db: Session,
     *,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     statement = (
-        select(PaperReviewSnapshot)
-        .order_by(PaperReviewSnapshot.generated_at.desc())
+        select(ReviewSnapshot)
+        .order_by(ReviewSnapshot.generated_at.desc())
         .limit(limit)
     )
     return [_snapshot_read_item(snapshot) for snapshot in db.scalars(statement)]
 
 
-def _snapshot_read_item(snapshot: PaperReviewSnapshot) -> dict[str, Any]:
+def _snapshot_read_item(snapshot: ReviewSnapshot) -> dict[str, Any]:
     return {
         "id": str(snapshot.id),
         "review_date": snapshot.review_date.isoformat(),
@@ -226,7 +226,7 @@ def _snapshot_read_item(snapshot: PaperReviewSnapshot) -> dict[str, Any]:
     }
 
 
-def prune_old_paper_review_snapshots(
+def prune_old_review_snapshots(
     db: Session,
     *,
     before_date: date,
@@ -234,9 +234,9 @@ def prune_old_paper_review_snapshots(
 ) -> dict[str, Any]:
     snapshots = list(
         db.scalars(
-            select(PaperReviewSnapshot)
-            .where(PaperReviewSnapshot.review_date < before_date)
-            .order_by(PaperReviewSnapshot.review_date.asc())
+            select(ReviewSnapshot)
+            .where(ReviewSnapshot.review_date < before_date)
+            .order_by(ReviewSnapshot.review_date.asc())
             .limit(limit)
         )
     )
@@ -246,7 +246,7 @@ def prune_old_paper_review_snapshots(
     return {
         "before_date": before_date.isoformat(),
         "deleted": len(snapshots),
-        "retention_days": settings.paper_review_snapshot_retention_days,
+        "retention_days": settings.review_snapshot_retention_days,
         "snapshot_ids": [str(snapshot.id) for snapshot in snapshots],
     }
 
@@ -263,13 +263,13 @@ def _learning_report_payload(db: Session, *, limit: int) -> dict[str, Any]:
         "refinement_candidates": report.refinement_candidates,
         "job_failures": report.job_failures,
         "retention": {
-            "storage": "paper_review_snapshots.raw_payload.learning_report",
-            "retention_days": settings.paper_review_snapshot_retention_days,
+            "storage": "review_snapshots.raw_payload.learning_report",
+            "retention_days": settings.review_snapshot_retention_days,
         },
     }
 
 
-def _snapshot_learning_report(snapshot: PaperReviewSnapshot) -> dict[str, Any] | None:
+def _snapshot_learning_report(snapshot: ReviewSnapshot) -> dict[str, Any] | None:
     raw_payload = snapshot.raw_payload if isinstance(snapshot.raw_payload, dict) else {}
     learning_report = raw_payload.get("learning_report")
     return learning_report if isinstance(learning_report, dict) else None

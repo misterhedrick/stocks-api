@@ -4,8 +4,8 @@ from datetime import date, datetime, timezone
 import unittest
 import uuid
 
-from app.db.models import PaperReviewSnapshot
-from scripts.export_paper_tuning_dataset import (
+from app.db.models import ReviewSnapshot
+from scripts.export_tuning_dataset import (
     EvidenceThresholds,
     build_tuning_dataset,
     render_dataset,
@@ -79,8 +79,8 @@ def _snapshot(
     no_signal_reasons_seen: int = 0,
     closed_trade_cases: int = 0,
     losses: int = 0,
-) -> PaperReviewSnapshot:
-    return PaperReviewSnapshot(
+) -> ReviewSnapshot:
+    return ReviewSnapshot(
         id=uuid.uuid4(),
         review_date=review_date,
         review_type="post_market",

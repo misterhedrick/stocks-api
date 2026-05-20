@@ -214,7 +214,7 @@ class RelativeStrengthEvaluator:
             signal_type=signal_type,
             direction=direction,
             confidence=confidence(Decimal("0.60") + Decimal(str(min(abs(edge), 1.5))) / Decimal("20"), maximum=Decimal("0.80")),
-            rationale=f"{symbol.upper()} is a {direction} relative-strength outlier versus the paper universe",
+            rationale=f"{symbol.upper()} is a {direction} relative-strength outlier versus the trading universe",
             features={
                 "timeframe": candles.timeframe,
                 "lookback_minutes": int(config.get("lookback_minutes") or 240),

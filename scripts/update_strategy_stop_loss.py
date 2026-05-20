@@ -1,5 +1,5 @@
 """
-Idempotent script to patch exit stop-loss config on existing paper strategies.
+Idempotent script to patch exit stop-loss config on existing strategies.
 
 Patches scanner.exit.stop_loss_percent and scanner.exit.stop_loss_min_dollars
 on all active strategies (or all strategies with --all). Strategies with exit
@@ -96,17 +96,17 @@ def _patch_stop_loss(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Patch stop-loss exit config on paper strategies."
+        description="Patch stop-loss exit config on strategies."
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--all", action="store_true", dest="include_inactive")
     parser.add_argument(
         "--stop-loss-percent",
-        default=str(settings.paper_strategy_stop_loss_percent),
+        default=str(settings.strategy_stop_loss_percent),
     )
     parser.add_argument(
         "--stop-loss-min-dollars",
-        default=str(settings.paper_strategy_stop_loss_min_dollars),
+        default=str(settings.strategy_stop_loss_min_dollars),
     )
     args = parser.parse_args()
 

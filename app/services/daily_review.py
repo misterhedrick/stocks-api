@@ -16,7 +16,7 @@ from app.db.models import (
     JobRun,
     OptionSelectionDiagnostic,
     OrderIntent,
-    PaperReviewSnapshot,
+    ReviewSnapshot,
     Signal,
     Strategy,
     StrategyChangeSuggestion,
@@ -26,7 +26,7 @@ from app.db.models import (
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 
 
-def build_daily_paper_review(
+def build_daily_review(
     db: Session,
     *,
     review_date: date | None = None,
@@ -54,7 +54,7 @@ def build_daily_paper_review(
         window_end=window_end,
         limit=limit,
     )
-    snapshot = _paper_review_snapshot(db, selected_date)
+    snapshot = _review_snapshot(db, selected_date)
 
     return {
         "review_date": selected_date.isoformat(),
@@ -72,7 +72,7 @@ def build_daily_paper_review(
             "trade_cases": len(trade_cases),
             "ai_trade_reviews": len(ai_reviews),
             "strategy_change_suggestions": len(suggestions),
-            "paper_review_snapshot_found": snapshot is not None,
+            "review_snapshot_found": snapshot is not None,
         },
         "jobs": _job_summary(job_runs),
         "signals": _signal_summary(signals),
@@ -82,7 +82,7 @@ def build_daily_paper_review(
         "option_selection_diagnostics": _diagnostic_summary(diagnostics),
         "trade_cases": _trade_case_summary(trade_cases),
         "ai_reviews": _ai_review_summary(ai_reviews, suggestions),
-        "paper_review_snapshot": _snapshot_summary(snapshot),
+        "review_snapshot": _snapshot_summary(snapshot),
     }
 
 
@@ -246,11 +246,11 @@ def _strategy_change_suggestions(
     return list(db.scalars(statement))
 
 
-def _paper_review_snapshot(db: Session, selected_date: date) -> PaperReviewSnapshot | None:
+def _review_snapshot(db: Session, selected_date: date) -> ReviewSnapshot | None:
     return db.scalar(
-        select(PaperReviewSnapshot)
-        .where(PaperReviewSnapshot.review_date == selected_date)
-        .order_by(PaperReviewSnapshot.generated_at.desc())
+        select(ReviewSnapshot)
+        .where(ReviewSnapshot.review_date == selected_date)
+        .order_by(ReviewSnapshot.generated_at.desc())
         .limit(1)
     )
 
@@ -412,7 +412,7 @@ def _ai_review_summary(
     }
 
 
-def _snapshot_summary(snapshot: PaperReviewSnapshot | None) -> dict[str, Any] | None:
+def _snapshot_summary(snapshot: ReviewSnapshot | None) -> dict[str, Any] | None:
     if snapshot is None:
         return None
     summary = snapshot.summary if isinstance(snapshot.summary, dict) else {}

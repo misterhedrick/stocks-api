@@ -64,7 +64,7 @@ class PositionManagementStatusRead(BaseModel):
     reason: str
 
 
-class PaperPerformanceRead(BaseModel):
+class PerformanceRead(BaseModel):
     generated_at: datetime
     fills_seen: int
     matched_round_trips: int

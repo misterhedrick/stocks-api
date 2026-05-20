@@ -27,4 +27,4 @@ from app.services.ai_trade_review_types import (
     AiTradeReviewWriterResult,
     SuggestionReviewResult,
 )
-from app.services.ai_trade_review_writer import write_ai_trade_reviews_from_paper_evidence
+from app.services.ai_trade_review_writer import write_ai_trade_reviews

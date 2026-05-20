@@ -4,13 +4,13 @@ from datetime import date, datetime, timezone
 import unittest
 import uuid
 
-from app.db.models import PaperReviewSnapshot
-from scripts.print_paper_review_snapshot import format_snapshot_report
+from app.db.models import ReviewSnapshot
+from scripts.print_review_snapshot import format_snapshot_report
 
 
 class PaperReviewSnapshotReportTests(unittest.TestCase):
     def test_format_snapshot_report_prints_review_sections(self) -> None:
-        snapshot = PaperReviewSnapshot(
+        snapshot = ReviewSnapshot(
             id=uuid.uuid4(),
             review_date=date(2026, 5, 8),
             review_type="post_market",
@@ -74,7 +74,7 @@ class PaperReviewSnapshotReportTests(unittest.TestCase):
 
         report = format_snapshot_report(snapshot, limit=5)
 
-        self.assertIn("Paper Review Snapshot", report)
+        self.assertIn("Review Snapshot", report)
         self.assertIn("Performance Totals", report)
         self.assertIn("Moving Average", report)
         self.assertIn("insufficient candles: 3", report)

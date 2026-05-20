@@ -8,19 +8,19 @@ import uuid
 from app.db.models import (
     AiTradeReview,
     JobRun,
-    PaperReviewSnapshot,
+    ReviewSnapshot,
     StrategyChangeSuggestion,
     TradeCase,
 )
 from app.services.ai_trade_review import (
     _assessment_for_trade_case,
     _suggestions_for_assessment,
-    write_ai_trade_reviews_from_paper_evidence,
+    write_ai_trade_reviews,
 )
 
 
 class FakeAiReviewSession:
-    def __init__(self, *, snapshot: PaperReviewSnapshot, trade_case: TradeCase) -> None:
+    def __init__(self, *, snapshot: ReviewSnapshot, trade_case: TradeCase) -> None:
         self.scalar_results = [snapshot, None]
         self.scalars_results = [[trade_case]]
         self.added: list[object] = []
@@ -63,7 +63,7 @@ class AiTradeReviewTests(unittest.TestCase):
         snapshot = _snapshot()
         db = FakeAiReviewSession(snapshot=snapshot, trade_case=trade_case)
 
-        result = write_ai_trade_reviews_from_paper_evidence(db, limit=10)
+        result = write_ai_trade_reviews(db, limit=10)
 
         self.assertEqual(result.trade_cases_seen, 1)
         self.assertEqual(result.reviews_created, 1)
@@ -147,9 +147,9 @@ def _trade_case(
     )
 
 
-def _snapshot() -> PaperReviewSnapshot:
+def _snapshot() -> ReviewSnapshot:
     now = datetime.now(timezone.utc)
-    return PaperReviewSnapshot(
+    return ReviewSnapshot(
         id=uuid.uuid4(),
         review_date=date(2026, 5, 8),
         review_type="post_market",

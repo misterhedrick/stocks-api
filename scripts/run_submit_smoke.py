@@ -30,7 +30,7 @@ from app.services.order_intents import (
 )
 
 
-STRATEGY_NAME = "Paper E2E Submit Smoke"
+STRATEGY_NAME = "E2E Submit Smoke"
 UNDERLYING = "SPY"
 MAX_ASK = Decimal("1.00")
 MAX_SPREAD = Decimal("0.50")
@@ -43,7 +43,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-cancel",
         action="store_true",
-        help="Leave the accepted paper order open instead of requesting cancel.",
+        help="Leave the accepted order open instead of requesting cancel.",
     )
     parser.add_argument(
         "--skip-reconcile",
@@ -68,7 +68,7 @@ def main() -> None:
             signal_type="paper_submit_smoke",
             direction="bullish",
             confidence=Decimal("0.5000"),
-            rationale="Paper submit smoke test",
+            rationale="Submit smoke test",
             market_context={
                 "source": "scripts/run_paper_submit_smoke.py",
                 "selected_option_symbol": option_symbol,
@@ -105,7 +105,7 @@ def main() -> None:
                 time_in_force="day",
                 max_estimated_notional=Decimal("150.00"),
                 max_spread=MAX_SPREAD,
-                rationale="Paper submit smoke test",
+                rationale="Submit smoke test",
             ),
             market_data_client=market_data_client,
         )
@@ -186,7 +186,7 @@ def _get_or_create_strategy(db) -> Strategy:
 
     strategy = Strategy(
         name=STRATEGY_NAME,
-        description="One-contract paper smoke test for the submit path.",
+        description="One-contract smoke test for the submit path.",
         is_active=False,
         config={
             "purpose": "paper_submit_smoke",
@@ -204,7 +204,7 @@ def _get_or_create_strategy(db) -> Strategy:
         event_type="strategy.created",
         entity_type="strategy",
         entity_id=strategy.id,
-        message="Strategy created by paper submit smoke test",
+        message="Strategy created by submit smoke test",
         payload={
             "name": strategy.name,
             "description": strategy.description,
@@ -267,7 +267,7 @@ def _find_cheap_option_symbol(
         )
 
     raise RuntimeError(
-        "No cheap option contract found for paper smoke test: "
+        "No cheap option contract found for smoke test: "
         + "; ".join(rejection_reasons[:10])
     )
 

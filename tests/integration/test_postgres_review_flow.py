@@ -36,7 +36,7 @@ from app.db.models import (  # noqa: E402
     JobRun,
     OptionSelectionDiagnostic,
     OrderIntent,
-    PaperReviewSnapshot,
+    ReviewSnapshot,
     PositionSnapshot,
     Signal,
     Strategy,
@@ -45,10 +45,10 @@ from app.db.models import (  # noqa: E402
 )
 from app.services.ai_trade_review import (  # noqa: E402
     update_strategy_change_suggestion_review,
-    write_ai_trade_reviews_from_paper_evidence,
+    write_ai_trade_reviews,
 )
-from app.services.paper_review_snapshots import (  # noqa: E402
-    create_or_update_post_market_paper_review_snapshot,
+from app.services.review_snapshots import (  # noqa: E402
+    create_or_update_post_market_review_snapshot,
 )
 from app.services.trading_reset import (  # noqa: E402
     RESET_TRADING_DATA_CONFIRMATION,
@@ -94,16 +94,16 @@ def test_alembic_upgrade_head_creates_review_tables(migrated_engine) -> None:
 def test_paper_review_snapshot_upserts_one_daily_post_market_row(db, monkeypatch) -> None:
     generated_at = datetime(2026, 5, 8, 21, 30, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        "app.services.paper_review_snapshots.get_paper_performance_review",
+        "app.services.review_snapshots.get_performance_review",
         lambda _db, limit: _performance_result(generated_at),
     )
 
-    first = create_or_update_post_market_paper_review_snapshot(
+    first = create_or_update_post_market_review_snapshot(
         db,
         review_date=date(2026, 5, 8),
         generated_at=generated_at,
     )
-    second = create_or_update_post_market_paper_review_snapshot(
+    second = create_or_update_post_market_review_snapshot(
         db,
         review_date=date(2026, 5, 8),
         generated_at=generated_at,
@@ -112,12 +112,12 @@ def test_paper_review_snapshot_upserts_one_daily_post_market_row(db, monkeypatch
     assert first.created is True
     assert second.created is False
     assert first.snapshot.id == second.snapshot.id
-    assert db.scalar(select(func.count(PaperReviewSnapshot.id))) == 1
+    assert db.scalar(select(func.count(ReviewSnapshot.id))) == 1
 
 
 def test_ai_review_writer_and_suggestion_review_metadata_persist(db) -> None:
     trade_case = _insert_trade_case(db, realized_pl=Decimal("-25"))
-    snapshot = PaperReviewSnapshot(
+    snapshot = ReviewSnapshot(
         review_date=date(2026, 5, 8),
         review_type="post_market",
         status="completed",
@@ -137,7 +137,7 @@ def test_ai_review_writer_and_suggestion_review_metadata_persist(db) -> None:
     db.add(snapshot)
     db.commit()
 
-    result = write_ai_trade_reviews_from_paper_evidence(db, limit=10)
+    result = write_ai_trade_reviews(db, limit=10)
 
     assert result.trade_cases_seen == 1
     assert result.reviews_created == 1
@@ -179,7 +179,7 @@ def test_trading_reset_deletes_review_tables_in_real_postgres(db) -> None:
         )
     )
     db.add(
-        PaperReviewSnapshot(
+        ReviewSnapshot(
             review_date=date(2026, 5, 8),
             review_type="post_market",
             status="completed",
@@ -201,7 +201,7 @@ def test_trading_reset_deletes_review_tables_in_real_postgres(db) -> None:
     assert result.deleted["trade_cases"] == 1
     assert db.scalar(select(func.count(StrategyChangeSuggestion.id))) == 0
     assert db.scalar(select(func.count(AiTradeReview.id))) == 0
-    assert db.scalar(select(func.count(PaperReviewSnapshot.id))) == 0
+    assert db.scalar(select(func.count(ReviewSnapshot.id))) == 0
     assert db.scalar(select(func.count(TradeCase.id))) == 0
 
 
@@ -257,7 +257,7 @@ def _clear_runtime_tables(db) -> None:
     for model in [
         StrategyChangeSuggestion,
         AiTradeReview,
-        PaperReviewSnapshot,
+        ReviewSnapshot,
         TradeCase,
         OptionSelectionDiagnostic,
         Fill,

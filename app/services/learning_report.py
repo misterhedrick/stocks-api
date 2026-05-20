@@ -21,7 +21,7 @@ from app.db.models import (
     StrategyChangeSuggestion,
     TradeCase,
 )
-from app.services.performance_review import get_paper_performance_review
+from app.services.performance_review import get_performance_review
 
 
 @dataclass(slots=True)
@@ -37,7 +37,7 @@ class LearningReportResult:
 
 
 def build_learning_report(db: Session, *, limit: int = 500) -> LearningReportResult:
-    performance = get_paper_performance_review(db, limit=limit)
+    performance = get_performance_review(db, limit=limit)
     return LearningReportResult(
         generated_at=datetime.now(timezone.utc),
         totals=_totals(db),

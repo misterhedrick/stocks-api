@@ -54,20 +54,20 @@ class Settings(BaseSettings):
     max_open_positions_per_symbol: int = 50
     max_contracts_per_order: int = 1
     max_estimated_premium_per_order: Decimal = Decimal("250")
-    paper_strategy_min_change_percent: Decimal = Decimal("0.05")
-    paper_strategy_trend_min_change_percent: Decimal = Decimal("0.25")
-    paper_strategy_max_estimated_notional: Decimal = Decimal("5000")
-    paper_strategy_min_open_interest: int = 50
-    paper_strategy_max_spread: Decimal = Decimal("0.35")
-    paper_strategy_max_spread_percent: Decimal = Decimal("35")
-    paper_strategy_profit_target_percent: Decimal = Decimal("25")
-    paper_strategy_stop_loss_percent: Decimal = Decimal("10")
-    paper_strategy_stop_loss_min_dollars: Decimal = Decimal("10")
-    paper_strategy_trailing_profit_activation_percent: Decimal = Decimal("15")
-    paper_strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
-    paper_strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
-    paper_strategy_preview_profiles_enabled: bool = True
-    paper_review_snapshot_retention_days: int = 45
+    strategy_min_change_percent: Decimal = Decimal("0.05")
+    strategy_trend_min_change_percent: Decimal = Decimal("0.25")
+    strategy_max_estimated_notional: Decimal = Decimal("5000")
+    strategy_min_open_interest: int = 50
+    strategy_max_spread: Decimal = Decimal("0.35")
+    strategy_max_spread_percent: Decimal = Decimal("35")
+    strategy_profit_target_percent: Decimal = Decimal("25")
+    strategy_stop_loss_percent: Decimal = Decimal("10")
+    strategy_stop_loss_min_dollars: Decimal = Decimal("10")
+    strategy_trailing_profit_activation_percent: Decimal = Decimal("15")
+    strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
+    strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
+    strategy_preview_profiles_enabled: bool = True
+    review_snapshot_retention_days: int = 45
     options_min_dte: int = 7
     options_target_dte: int = 14
     options_max_dte: int = 45
@@ -181,7 +181,7 @@ class Settings(BaseSettings):
             return None
         clean_profile = _env_token(profile)
         clean_setting = _env_token(setting_name)
-        return os.getenv(f"PAPER_PREVIEW_PROFILE_{clean_profile}_{clean_setting}")
+        return os.getenv(f"PREVIEW_PROFILE_{clean_profile}_{clean_setting}")
 
 
 def _env_token(value: str) -> str:

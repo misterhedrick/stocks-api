@@ -1,5 +1,5 @@
 """
-Idempotent script to update paper strategy days-to-expiration windows.
+Idempotent script to update strategy days-to-expiration windows.
 
 Patches existing database strategy rows so the option-contract scanner searches
 a wider expiry range. The default window (2-7 days) produces low/no open interest
@@ -98,7 +98,7 @@ def _patch_dte(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Update paper strategy days-to-expiration windows."
+        description="Update strategy days-to-expiration windows."
     )
     parser.add_argument(
         "--dry-run",

@@ -1,5 +1,5 @@
 """
-Idempotent script to update paper strategy entry notional limits.
+Idempotent script to update strategy entry notional limits.
 
 This patches existing database strategy rows. It is intended for cases where the
 code/templates have changed but already-seeded strategies still carry an older,
@@ -114,7 +114,7 @@ def _patch_notional_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Update paper strategy entry notional limits."
+        description="Update strategy entry notional limits."
     )
     parser.add_argument(
         "--dry-run",
@@ -129,7 +129,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--new-value",
-        default=str(settings.paper_strategy_max_estimated_notional),
+        default=str(settings.strategy_max_estimated_notional),
         help="Target notional value. Defaults to PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL.",
     )
     args = parser.parse_args()

@@ -718,7 +718,7 @@ class RouteBehaviorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.api.routes.jobs_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            "app.api.routes.jobs_maintenance.write_ai_trade_reviews",
             return_value=result,
         ) as writer:
             response = client.post(
@@ -1023,7 +1023,7 @@ class RouteBehaviorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.api.routes.automation.get_paper_performance_review",
+            "app.api.routes.automation.get_performance_review",
             return_value=result,
         ) as performance:
             response = client.get(
@@ -1137,11 +1137,11 @@ class RouteBehaviorTests(unittest.TestCase):
         }
 
         with patch(
-            "app.api.routes.automation.get_paper_review_snapshots",
+            "app.api.routes.automation.get_review_snapshots",
             return_value=[snapshot],
         ) as snapshots:
             response = client.get(
-                "/api/v1/automation/paper-review-snapshots?limit=5",
+                "/api/v1/automation/review-snapshots?limit=5",
                 headers=_AUTH,
             )
 
@@ -1161,7 +1161,7 @@ class RouteBehaviorTests(unittest.TestCase):
         review = {
             "id": str(uuid.uuid4()),
             "trade_case_id": str(uuid.uuid4()),
-            "review_model": "local-paper-review-v1",
+            "review_model": "local-review-v1",
             "review_status": "generated",
             "assessment": {"outcome": "win"},
             "raw_response": {},

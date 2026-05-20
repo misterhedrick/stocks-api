@@ -68,7 +68,7 @@ def _scanner_type_for_trade_case(trade_case: TradeCase) -> str:
 
 def _group_summary_text(group_context: dict[str, Any]) -> str:
     if not group_context:
-        return "No grouped paper-trade context is available yet."
+        return "No grouped trade context is available yet."
     return (
         "Grouped context: "
         f"{group_context.get('trade_cases_seen', 0)} recent cases, "

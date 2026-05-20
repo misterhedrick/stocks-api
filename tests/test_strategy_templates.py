@@ -11,8 +11,8 @@ from app.services.strategy_templates import (
     build_momentum_rate_of_change_strategy_payload,
     build_preview_first_strategy_payloads,
 )
-from scripts.seed_paper_strategies import seed_strategies
-from scripts.seed_paper_trade_universe import _strategy_payloads as universe_strategy_payloads
+from scripts.seed_strategies import seed_strategies
+from scripts.seed_trade_universe import _strategy_payloads as universe_strategy_payloads
 
 
 class FakeSeedSession:
@@ -82,7 +82,7 @@ class StrategyTemplateTests(unittest.TestCase):
         )
 
         scanner = payload["config"]["scanner"]
-        self.assertEqual(payload["name"], "Paper SPY moving average call preview")
+        self.assertEqual(payload["name"], "SPY moving average call preview")
         self.assertEqual(scanner["type"], "moving_average")
         self.assertEqual(scanner["symbols"], ["SPY"])
         self.assertEqual(scanner["trigger"], "bullish_cross")
@@ -98,7 +98,7 @@ class StrategyTemplateTests(unittest.TestCase):
         )
 
         scanner = payload["config"]["scanner"]
-        self.assertEqual(payload["name"], "Paper SPY momentum rate-of-change call preview")
+        self.assertEqual(payload["name"], "SPY momentum rate-of-change call preview")
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["lookback_minutes"], 30)
         self.assertEqual(scanner["change_above_percent"], "0.25")

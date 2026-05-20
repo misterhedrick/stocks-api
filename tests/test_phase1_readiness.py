@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
-from app.db.models import JobRun, PaperReviewSnapshot
+from app.db.models import JobRun, ReviewSnapshot
 from app.services.phase1_readiness import build_phase1_readiness
 
 
@@ -21,7 +21,7 @@ class FakePhase1Session:
     """Sequences calls in the order build_phase1_readiness makes them:
     scalars() #1 -> strategy IDs
     scalar()  #1-4 -> job runs (market_entry_cycle, market_cycle, market_cycle_exits, market_maintenance)
-    scalar()  #5   -> latest PaperReviewSnapshot
+    scalar()  #5   -> latest ReviewSnapshot
     scalars() #2   -> trade case IDs
     """
 
@@ -30,7 +30,7 @@ class FakePhase1Session:
         *,
         strategy_ids: list | None = None,
         job_runs: list | None = None,
-        snapshot: PaperReviewSnapshot | None = None,
+        snapshot: ReviewSnapshot | None = None,
         trade_case_ids: list | None = None,
     ) -> None:
         self._scalars_queue = [
@@ -64,9 +64,9 @@ def _build_job_run(job_name: str, *, status: str = "succeeded", started_at: date
     )
 
 
-def _build_snapshot(review_date: date = date(2026, 5, 10)) -> PaperReviewSnapshot:
+def _build_snapshot(review_date: date = date(2026, 5, 10)) -> ReviewSnapshot:
     now = datetime.now(timezone.utc)
-    return PaperReviewSnapshot(
+    return ReviewSnapshot(
         id=uuid.uuid4(),
         review_date=review_date,
         review_type="post_market",
@@ -179,7 +179,7 @@ class Phase1ReadinessTests(unittest.TestCase):
         with patch.multiple("app.services.phase1_readiness.settings", **_base_settings()):
             result = build_phase1_readiness(db)
 
-        self.assertIn("no paper review snapshot found yet", result["warnings"])
+        self.assertIn("no review snapshot found yet", result["warnings"])
         self.assertIsNone(result["latest_paper_review_snapshot"])
 
     def test_build_phase1_readiness_warns_for_missing_required_jobs(self) -> None:

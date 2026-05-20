@@ -52,7 +52,7 @@ DEFAULT_UNIVERSE = (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Seed and enable a broader liquid paper-trading ticker universe."
+        description="Seed and enable a broader liquid trading ticker universe."
     )
     parser.add_argument(
         "--symbol",
@@ -63,14 +63,14 @@ def main() -> None:
     parser.add_argument("--sample-price", action="append", default=[])
     parser.add_argument(
         "--max-notional-per-order",
-        default=_money_string(settings.paper_strategy_max_estimated_notional),
+        default=_money_string(settings.strategy_max_estimated_notional),
     )
-    parser.add_argument("--max-spread", default=str(settings.paper_strategy_max_spread))
-    parser.add_argument("--max-spread-percent", default=str(settings.paper_strategy_max_spread_percent))
+    parser.add_argument("--max-spread", default=str(settings.strategy_max_spread))
+    parser.add_argument("--max-spread-percent", default=str(settings.strategy_max_spread_percent))
     parser.add_argument(
         "--min-open-interest",
         type=int,
-        default=settings.paper_strategy_min_open_interest,
+        default=settings.strategy_min_open_interest,
     )
     parser.add_argument("--min-quote-size", type=int, default=1)
     parser.add_argument("--max-orders-per-cycle", type=int, default=100)
@@ -362,7 +362,7 @@ def _globalize_strategy_payload(
     preview["rationale"] = f"{payload['name']}: auto-submit enabled."
 
     payload["description"] = (
-        f"Global {display_name} paper strategy scanning "
+        f"Global {display_name} strategy scanning "
         f"{', '.join(symbols)}. Bullish signals preview calls; bearish signals preview puts."
     )
     return payload
@@ -417,9 +417,9 @@ def _upsert_strategy(db: Session, payload: dict[str, Any]) -> bool:
             entity_type="strategy",
             entity_id=strategy.id,
             message=(
-                "Strategy created by paper universe seed"
+                "Strategy created by universe seed"
                 if created
-                else "Strategy updated by paper universe seed"
+                else "Strategy updated by universe seed"
             ),
             payload={
                 "source": "seed_paper_trade_universe",
@@ -467,7 +467,7 @@ def _deactivate_legacy_symbol_strategies(
             event_type="strategy.deactivated",
             entity_type="strategy",
             entity_id=strategy.id,
-            message="Legacy symbol-specific paper strategy deactivated by universe seed",
+            message="Legacy symbol-specific strategy deactivated by universe seed",
             payload={
                 "source": "seed_paper_trade_universe",
                 "name": strategy.name,
@@ -480,7 +480,7 @@ def _deactivate_legacy_symbol_strategies(
 
 def _looks_like_legacy_symbol_strategy(strategy: Strategy) -> bool:
     name = strategy.name.strip()
-    if not (name.startswith("Paper ") and name.endswith(" preview")):
+    if not (name.endswith(" preview")):
         return False
     scanner = strategy.config.get("scanner") if isinstance(strategy.config, dict) else None
     if not isinstance(scanner, dict):
