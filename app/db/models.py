@@ -450,9 +450,9 @@ class StrategyTuningDecision(Base):
 
 
 class ReviewSnapshot(Base):
-    __tablename__ = "paper_review_snapshots"
+    __tablename__ = "review_snapshots"
     __table_args__ = (
-        UniqueConstraint("review_date", "review_type", name="uq_paper_review_snapshots_date_type"),
+        UniqueConstraint("review_date", "review_type", name="uq_review_snapshots_date_type"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
