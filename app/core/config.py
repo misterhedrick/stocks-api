@@ -67,7 +67,13 @@ class Settings(BaseSettings):
     strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
     strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
     strategy_preview_profiles_enabled: bool = True
-    review_snapshot_retention_days: int = 45
+    review_snapshot_retention_days: int = Field(
+        default=45,
+        validation_alias=AliasChoices(
+            "REVIEW_SNAPSHOT_RETENTION_DAYS",
+            "PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS",
+        ),
+    )
     options_min_dte: int = 7
     options_target_dte: int = 14
     options_max_dte: int = 45

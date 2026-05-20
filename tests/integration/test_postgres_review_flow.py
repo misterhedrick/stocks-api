@@ -81,7 +81,7 @@ def test_alembic_upgrade_head_creates_review_tables(migrated_engine) -> None:
     inspector = inspect(migrated_engine)
     table_names = set(inspector.get_table_names())
 
-    assert "paper_review_snapshots" in table_names
+    assert "review_snapshots" in table_names
     assert "ai_trade_reviews" in table_names
     assert "strategy_change_suggestions" in table_names
     suggestion_columns = {
@@ -91,7 +91,7 @@ def test_alembic_upgrade_head_creates_review_tables(migrated_engine) -> None:
     assert {"review_notes", "reviewed_at", "reviewed_by"} <= suggestion_columns
 
 
-def test_paper_review_snapshot_upserts_one_daily_post_market_row(db, monkeypatch) -> None:
+def test_review_snapshot_upserts_one_daily_post_market_row(db, monkeypatch) -> None:
     generated_at = datetime(2026, 5, 8, 21, 30, tzinfo=timezone.utc)
     monkeypatch.setattr(
         "app.services.review_snapshots.get_performance_review",
@@ -197,7 +197,7 @@ def test_trading_reset_deletes_review_tables_in_real_postgres(db) -> None:
 
     assert result.deleted["strategy_change_suggestions"] == 1
     assert result.deleted["ai_trade_reviews"] == 1
-    assert result.deleted["paper_review_snapshots"] == 1
+    assert result.deleted["review_snapshots"] == 1
     assert result.deleted["trade_cases"] == 1
     assert db.scalar(select(func.count(StrategyChangeSuggestion.id))) == 0
     assert db.scalar(select(func.count(AiTradeReview.id))) == 0

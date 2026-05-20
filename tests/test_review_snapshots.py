@@ -55,7 +55,7 @@ class FakeSnapshotSession:
             obj.id = uuid.uuid4()
 
 
-class PaperReviewSnapshotTests(unittest.TestCase):
+class ReviewSnapshotTests(unittest.TestCase):
     def test_create_post_market_snapshot_persists_empty_daily_payload(self) -> None:
         db = FakeSnapshotSession()
         generated_at = datetime(2026, 5, 8, 21, 30, tzinfo=timezone.utc)

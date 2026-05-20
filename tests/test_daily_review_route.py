@@ -13,11 +13,11 @@ from app.main import app
 _AUTH = {"Authorization": f"Bearer {settings.admin_api_token}"}
 
 
-class DailyPaperReviewRouteTests(unittest.TestCase):
+class DailyReviewRouteTests(unittest.TestCase):
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
-    def test_daily_paper_review_route_returns_service_result(self) -> None:
+    def test_daily_review_route_returns_service_result(self) -> None:
         db = object()
 
         def override_db() -> Iterator[object]:
@@ -62,7 +62,7 @@ class DailyPaperReviewRouteTests(unittest.TestCase):
         assert kwargs["review_date"].isoformat() == "2026-05-11"
         assert kwargs["limit"] == 250
 
-    def test_daily_paper_review_route_requires_auth(self) -> None:
+    def test_daily_review_route_requires_auth(self) -> None:
         client = TestClient(app)
 
         response = client.get("/api/v1/automation/daily-review")

@@ -100,9 +100,9 @@ class StrategyTemplateTests(unittest.TestCase):
         scanner = payload["config"]["scanner"]
         self.assertEqual(payload["name"], "SPY momentum rate-of-change call preview")
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
-        self.assertEqual(scanner["lookback_minutes"], 30)
-        self.assertEqual(scanner["change_above_percent"], "0.25")
-        self.assertEqual(scanner["change_below_percent"], "-0.25")
+        self.assertEqual(scanner["lookback_minutes"], 45)
+        self.assertEqual(scanner["change_above_percent"], "0.35")
+        self.assertEqual(scanner["change_below_percent"], "-0.35")
         self.assertEqual(scanner["max_extension_percent"], "2.0")
         self.assertTrue(scanner["require_latest_candle_confirmation"])
         self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
@@ -136,7 +136,7 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(windows[0]["start"], "10:00")
         self.assertEqual(windows[0]["end"], "16:00")
 
-    def test_paper_universe_seed_builds_global_scanner_type_strategies(self) -> None:
+    def test_universe_seed_builds_global_scanner_type_strategies(self) -> None:
         payloads = universe_strategy_payloads(
             ["SPY", "QQQ", "MSFT"],
             prices={
@@ -157,7 +157,7 @@ class StrategyTemplateTests(unittest.TestCase):
             trade_window_end="16:00",
         )
 
-        self.assertEqual(len(payloads), 9)
+        self.assertEqual(len(payloads), 16)
         names = {payload["name"] for payload in payloads}
         self.assertIn("momentum_rate_of_change", names)
         for payload in payloads:

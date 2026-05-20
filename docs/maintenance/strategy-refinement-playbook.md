@@ -24,7 +24,7 @@ strategy.config.scanner
 -> broker reconciliation imports fills and positions
 -> exit evaluation
 -> post-market maintenance
--> trade_cases, paper_review_snapshots, ai_trade_reviews, strategy_refinement summary
+-> trade_cases, review_snapshots, ai_trade_reviews, strategy_refinement summary
 ```
 
 The data used for refinement lands in these places:
@@ -34,7 +34,7 @@ The data used for refinement lands in these places:
 - `order_intents`: previewed/submitted/rejected order intent state.
 - `fills`: Alpaca paper fills from reconciliation.
 - `trade_cases`: closed FIFO round trips built from fills.
-- `paper_review_snapshots.raw_payload.learning_report`: daily saved learning report, including `refinement_candidates`.
+- `review_snapshots.raw_payload.learning_report`: daily saved learning report, including `refinement_candidates`.
 - `strategy_tuning_decisions`: human-recorded tuning decisions, evidence, expected effect, and later outcome summary.
 
 ## Daily Evidence Workflow
@@ -44,7 +44,7 @@ Post-market maintenance now builds the daily evidence bundle. After it runs, ins
 ```http
 GET /api/v1/automation/strategy-refinement
 GET /api/v1/automation/learning-report
-GET /api/v1/automation/paper-review-snapshots?limit=10
+GET /api/v1/automation/review-snapshots?limit=10
 GET /api/v1/automation/strategy-change-suggestions?status=pending
 GET /api/v1/automation/strategy-tuning-decisions
 ```
@@ -233,7 +233,7 @@ Do:
 - Check `job_runs` and Render logs first.
 - Confirm cron hours around DST.
 - Confirm Alpaca credentials and paper mode.
-- Confirm post-market maintenance created `paper_review_snapshots`.
+- Confirm post-market maintenance created `review_snapshots`.
 
 Do not:
 
@@ -682,8 +682,8 @@ New strategy types added after the May 18 review:
 Apply the current strategy-type batch manually after recording the approved decisions:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
-.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-05-18-strategy-type-batch
 ```
 
 Batch scope:
@@ -871,7 +871,7 @@ Decision:
 Before changing anything:
 
 - Is post-market maintenance current?
-- Are there recent `paper_review_snapshots`?
+- Are there recent `review_snapshots`?
 - Does `strategy-refinement` show minimum evidence met?
 - Is the problem signal, option selection, exit/risk, or runtime?
 - Is the change one scanner/profile and one or two keys?

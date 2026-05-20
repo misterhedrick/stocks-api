@@ -1,10 +1,9 @@
 """
 Repair the Render Alembic revision after the no-op 0012 migration incident.
 
-This is an operational script for the specific Render state where the database
-schema still uses paper_review_snapshots, migration 0012 is intentionally a
-no-op, and PgBouncer/server-side zombie transactions may be blocking Alembic's
-version-table update during app startup.
+This is an operational script for the historical Render state where production
+needed to be stamped to the no-op 0012 bridge before the real review_snapshots
+rename could run as a later migration.
 
 Usage:
     python scripts/repair_render_alembic_0012.py

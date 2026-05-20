@@ -110,7 +110,7 @@ Market-cycle may create signals but no orders when no option contract passes quo
 
 `OPTIONS_CANDIDATE_LIMIT` controls how many option contracts are requested and quote-checked before giving up. Increasing it can improve contract discovery but increases preview runtime, so this is the first tuning step before loosening open-interest, spread, or notional safety filters. `OPTIONS_CANDIDATE_LIMIT` is already `100`. `OPTIONS_DIAGNOSTIC_CANDIDATE_LIMIT` only caps the number of rejected candidate samples stored/logged for debugging; the current recommended value is `10`.
 
-The `/api/v1/automation/performance` and learning report outputs include paper-trade summaries plus signal and rejection context for tuning. They report signal volume by status, scanner type, and symbol; aggregate no-signal reasons and option-selection diagnostic rejection reasons; compare `preview_rejected` signals with later same-symbol/same-scanner paper round trips; and surface `refinement_candidates` grouped by scanner and symbol. The post-market maintenance run also persists a daily `paper_review_snapshots` row with signals, previews, broker orders, fills, diagnostics, rejected-preview trade comparisons, rejected-signal shadow market movement comparisons, and the generated learning report at `raw_payload.learning_report`. Old paper review snapshots are pruned during post-market maintenance using `PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS` (default `45`). Recent snapshots are available at `/api/v1/automation/paper-review-snapshots`. This is for review and tuning only; it does not change strategy logic automatically.
+The `/api/v1/automation/performance` and learning report outputs include paper-trade summaries plus signal and rejection context for tuning. They report signal volume by status, scanner type, and symbol; aggregate no-signal reasons and option-selection diagnostic rejection reasons; compare `preview_rejected` signals with later same-symbol/same-scanner paper round trips; and surface `refinement_candidates` grouped by scanner and symbol. The post-market maintenance run also persists a daily `review_snapshots` row with signals, previews, broker orders, fills, diagnostics, rejected-preview trade comparisons, rejected-signal shadow market movement comparisons, and the generated learning report at `raw_payload.learning_report`. Old review snapshots are pruned during post-market maintenance using `REVIEW_SNAPSHOT_RETENTION_DAYS` (default `45`). Recent snapshots are available at `/api/v1/automation/review-snapshots`. This is for review and tuning only; it does not change strategy logic automatically.
 
 ## Current Render cron topology
 
@@ -234,7 +234,7 @@ python scripts/update_strategy_preview_profiles.py
 
 ## Current seeded universe
 
-`seed_paper_trade_universe.py` seeds the paper trading strategy universe. It creates one active strategy per scanner type, stores the ticker list in `scanner.symbols`, and sets shared `scanner.preview` config (DTE range, spread, notional, and OI limits). Bullish signals preview calls and bearish signals preview puts. It defaults to five core liquid symbols:
+`seed_trade_universe.py` seeds the paper trading strategy universe. It creates one active strategy per scanner type, stores the ticker list in `scanner.symbols`, and sets shared `scanner.preview` config (DTE range, spread, notional, and OI limits). Bullish signals preview calls and bearish signals preview puts. It defaults to five core liquid symbols:
 
 ```text
 SPY, QQQ, NVDA, AAPL, MSFT
@@ -326,8 +326,8 @@ The strongest loss sources are tuned at the strategy/profile level rather than p
 Apply the 2026-05-18 strategy-type tuning batch with:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
-.\.venv\Scripts\python.exe scripts\tune_paper_strategies.py apply-2026-05-18-strategy-type-batch
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-05-18-strategy-type-batch
 ```
 
 The batch patches scanner config for `support_resistance`, `momentum_rate_of_change`, `moving_average`, `mean_reversion`, `rsi_reversal`, and `volume_confirmed_breakout`. It leaves `macd_crossover`, `breakout_price_threshold`, and `volatility_squeeze` in watch mode because the current evidence is not strong enough to tighten them.
@@ -357,16 +357,16 @@ When switching to a new Alpaca paper trading account, clear the generated tradin
 Dry run first:
 
 ```bash
-python scripts/reset_paper_account_data.py
+python scripts/reset_account_data.py
 ```
 
 Confirmed reset:
 
 ```bash
-python scripts/reset_paper_account_data.py --apply --confirm RESET_TRADING_DATA
+python scripts/reset_account_data.py --apply --confirm RESET_TRADING_DATA
 ```
 
-The script clears runtime trading tables such as `signals`, `order_intents`, `broker_orders`, `fills`, `position_snapshots`, diagnostics, trade cases, paper review snapshots, AI review rows, and, by default, old `job_runs` and `audit_logs`. It then records the reset itself. Pass `--keep-history` to preserve existing job and audit history.
+The script clears runtime trading tables such as `signals`, `order_intents`, `broker_orders`, `fills`, `position_snapshots`, diagnostics, trade cases, review snapshots, AI review rows, and, by default, old `job_runs` and `audit_logs`. It then records the reset itself. Pass `--keep-history` to preserve existing job and audit history.
 
 ## Signal strategy planning docs
 
@@ -509,11 +509,11 @@ Implemented:
 - `option_selection_diagnostics` table and ORM model for rejected preview/contract-selection context.
 - `app/services/trade_cases.py` to idempotently populate closed FIFO round trips.
 - Post-market maintenance automatically populates trade cases in an isolated transaction.
-- Post-market maintenance persists `paper_review_snapshots` with signal, preview, fill, diagnostic, rejected-outcome context, and the generated learning report.
-- Post-market maintenance prunes old paper-review snapshots using `PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS`.
-- `app/services/ai_trade_review.py` writes local, deterministic paper-trade reviews from `trade_cases` plus the latest `paper_review_snapshots` row.
+- Post-market maintenance persists `review_snapshots` with signal, preview, fill, diagnostic, rejected-outcome context, and the generated learning report.
+- Post-market maintenance prunes old review snapshots using `REVIEW_SNAPSHOT_RETENTION_DAYS`.
+- `app/services/ai_trade_review.py` writes local, deterministic paper-trade reviews from `trade_cases` plus the latest `review_snapshots` row.
 - `POST /api/v1/jobs/write-ai-trade-reviews?limit=100` stores generated `ai_trade_reviews` and pending `strategy_change_suggestions`.
-- Post-market maintenance runs the AI review writer after trade cases and paper-review snapshots are created; failures are isolated from the maintenance job.
+- Post-market maintenance runs the AI review writer after trade cases and review snapshots are created; failures are isolated from the maintenance job.
 - `GET /api/v1/automation/ai-trade-reviews` and `GET /api/v1/automation/strategy-change-suggestions?status=pending` expose the review queue.
 - `PATCH /api/v1/automation/strategy-change-suggestions/{id}` records approval/rejection notes and review metadata without applying any strategy change.
 - `GET /api/v1/automation/strategy-refinement` summarizes recent snapshots into a tuning queue with minimum evidence gates, readiness statuses, priority trends, and before/after windows around recorded decisions.
@@ -521,7 +521,7 @@ Implemented:
 - `GET /api/v1/automation/strategy-tuning-decisions` lists recorded tuning decisions for later before/after review.
 - `docs/maintenance/strategy-refinement-playbook.md` describes the full strategy tuning workflow and per-scanner refinement guidance.
 - `strategy_tuning_prompt.md` is the top-level prompt to ask the AI for a broad tuning research pass and proposed batch of changes.
-- `scripts/print_paper_review_snapshot.py` prints the latest paper-review snapshot as a readable CLI report.
+- `scripts/print_review_snapshot.py` prints the latest review snapshot as a readable CLI report.
 
 Not implemented yet:
 
@@ -590,7 +590,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/jobs/market-maintenance?phase=auto&ne
 ```
 
 ```bash
-python scripts/print_paper_review_snapshot.py --limit 8
+python scripts/print_review_snapshot.py --limit 8
 ```
 
 ```bash

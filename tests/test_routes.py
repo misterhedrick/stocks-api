@@ -1119,7 +1119,7 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()["by_symbol"][0]["realized_pnl"], "35")
         trade_cases.assert_called_once_with(db, limit=25)
 
-    def test_paper_review_snapshots_route_returns_service_result(self) -> None:
+    def test_review_snapshots_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
         def override_db() -> Iterator[FakeRouteSession]:

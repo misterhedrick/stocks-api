@@ -37,10 +37,6 @@ class ReviewSnapshotResult:
     refinement_candidate_count: int
 
 
-# TODO: once paper_review_snapshots is renamed to review_snapshots in a maintenance window,
-# update ReviewSnapshot.__tablename__ and the unique constraint name in models.py,
-# update the display key in trading_reset.py / retention_report.py / test_trading_reset.py,
-# and flip migration 0012 from a no-op to the actual ALTER TABLE RENAME.
 def create_or_update_post_market_review_snapshot(
     db: Session,
     *,

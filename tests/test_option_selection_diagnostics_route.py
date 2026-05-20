@@ -75,7 +75,7 @@ class OptionSelectionDiagnosticsRouteTests(unittest.TestCase):
             "risk_caps": {"max_auto_orders_per_cycle": 5},
             "active_strategy_count": 2,
             "latest_jobs": {},
-            "latest_paper_review_snapshot": None,
+            "latest_review_snapshot": None,
             "recent_trade_case_count": 3,
         }
 

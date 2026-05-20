@@ -8,7 +8,7 @@ from app.db.models import ReviewSnapshot
 from scripts.print_review_snapshot import format_snapshot_report
 
 
-class PaperReviewSnapshotReportTests(unittest.TestCase):
+class ReviewSnapshotReportTests(unittest.TestCase):
     def test_format_snapshot_report_prints_review_sections(self) -> None:
         snapshot = ReviewSnapshot(
             id=uuid.uuid4(),

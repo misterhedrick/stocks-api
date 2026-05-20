@@ -153,7 +153,7 @@ def build_tuning_dataset(
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source": "paper_review_snapshots.raw_payload.learning_report.refinement_candidates",
+        "source": "review_snapshots.raw_payload.learning_report.refinement_candidates",
         "snapshot_count": len(ordered),
         "snapshot_window": _snapshot_window(ordered),
         "thresholds": {

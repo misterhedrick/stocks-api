@@ -29,7 +29,7 @@ def build_phase1_readiness(db: Session) -> dict[str, Any]:
     recent_jobs = _latest_jobs(db)
     _check_recent_jobs(recent_jobs, warnings)
 
-    latest_snapshot = _latest_paper_review_snapshot(db)
+    latest_snapshot = _latest_review_snapshot(db)
     latest_trade_case_count = _recent_trade_case_count(db)
 
     if latest_snapshot is None:
@@ -62,7 +62,7 @@ def build_phase1_readiness(db: Session) -> dict[str, Any]:
         },
         "active_strategy_count": active_strategy_count,
         "latest_jobs": recent_jobs,
-        "latest_paper_review_snapshot": latest_snapshot,
+        "latest_review_snapshot": latest_snapshot,
         "recent_trade_case_count": latest_trade_case_count,
     }
 
@@ -154,7 +154,7 @@ def _check_recent_jobs(
             warnings.append(f"latest {job_name} job is older than 3 days")
 
 
-def _latest_paper_review_snapshot(db: Session) -> dict[str, Any] | None:
+def _latest_review_snapshot(db: Session) -> dict[str, Any] | None:
     snapshot = db.scalar(
         select(ReviewSnapshot)
         .order_by(ReviewSnapshot.generated_at.desc())

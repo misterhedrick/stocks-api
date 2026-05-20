@@ -422,7 +422,7 @@ def _upsert_strategy(db: Session, payload: dict[str, Any]) -> bool:
                 else "Strategy updated by universe seed"
             ),
             payload={
-                "source": "seed_paper_trade_universe",
+                "source": "seed_trade_universe",
                 "name": strategy.name,
                 "config": strategy.config,
             },
@@ -469,7 +469,7 @@ def _deactivate_legacy_symbol_strategies(
             entity_id=strategy.id,
             message="Legacy symbol-specific strategy deactivated by universe seed",
             payload={
-                "source": "seed_paper_trade_universe",
+                "source": "seed_trade_universe",
                 "name": strategy.name,
                 "replacement": "global scanner-type strategy",
             },

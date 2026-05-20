@@ -130,7 +130,7 @@ class Phase1ReadinessTests(unittest.TestCase):
         self.assertEqual(result["blockers"], [])
         self.assertEqual(result["active_strategy_count"], 2)
         self.assertEqual(result["recent_trade_case_count"], 3)
-        self.assertIsNotNone(result["latest_paper_review_snapshot"])
+        self.assertIsNotNone(result["latest_review_snapshot"])
 
     def test_build_phase1_readiness_blocked_when_no_strategies(self) -> None:
         db = FakePhase1Session(strategy_ids=[])
@@ -180,7 +180,7 @@ class Phase1ReadinessTests(unittest.TestCase):
             result = build_phase1_readiness(db)
 
         self.assertIn("no review snapshot found yet", result["warnings"])
-        self.assertIsNone(result["latest_paper_review_snapshot"])
+        self.assertIsNone(result["latest_review_snapshot"])
 
     def test_build_phase1_readiness_warns_for_missing_required_jobs(self) -> None:
         db = FakePhase1Session(
@@ -279,7 +279,7 @@ class Phase1ReadinessTests(unittest.TestCase):
         with patch.multiple("app.services.phase1_readiness.settings", **_base_settings()):
             result = build_phase1_readiness(db)
 
-        snap = result["latest_paper_review_snapshot"]
+        snap = result["latest_review_snapshot"]
         self.assertIsNotNone(snap)
         self.assertEqual(snap["review_date"], "2026-05-10")
         self.assertEqual(snap["review_type"], "post_market")

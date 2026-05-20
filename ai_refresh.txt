@@ -63,9 +63,9 @@ Execution rule:
 
 Implemented on develop:
 - /api/v1/automation/learning-report includes refinement_candidates grouped by scanner_type, not symbol-specific strategy rows.
-- Post-market maintenance saves the generated learning report inside paper_review_snapshots.raw_payload.learning_report.
-- PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS controls paper_review_snapshots retention; default is 45 days.
-- Post-market maintenance prunes old paper_review_snapshots after creating the latest snapshot and AI reviews.
+- Post-market maintenance saves the generated learning report inside review_snapshots.raw_payload.learning_report.
+- REVIEW_SNAPSHOT_RETENTION_DAYS controls review_snapshots retention; default is 45 days.
+- Post-market maintenance prunes old review_snapshots after creating the latest snapshot and AI reviews.
 - /api/v1/automation/strategy-refinement reads recent saved snapshots and builds a tuning queue with:
   - priority score trends
   - minimum evidence gates
@@ -190,7 +190,7 @@ The runtime contract selector can use profile-specific env limits when preview_p
 
 === CURRENT SYMBOL UNIVERSE ===
 
-scripts/seed_paper_trade_universe.py default universe:
+scripts/seed_trade_universe.py default universe:
 
 SPY, QQQ, NVDA, AAPL, MSFT
 
@@ -262,8 +262,8 @@ The 2026-05-18 tuning pass keeps SPY enabled and tunes scanner/profile behavior 
 
 Apply the 2026-05-18 strategy-type tuning batch with:
 
-    python scripts/tune_paper_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
-    python scripts/tune_paper_strategies.py apply-2026-05-18-strategy-type-batch
+    python scripts/tune_strategies.py apply-2026-05-18-strategy-type-batch --dry-run
+    python scripts/tune_strategies.py apply-2026-05-18-strategy-type-batch
 
 The batch patches:
 - support_resistance: stricter level quality and distance.

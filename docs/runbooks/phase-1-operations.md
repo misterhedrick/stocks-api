@@ -96,7 +96,7 @@ curl.exe --ssl-no-revoke -L --max-time 90 \
 ```bash
 curl.exe --ssl-no-revoke -L --max-time 90 \
   -H "Authorization: Bearer %ADMIN_API_TOKEN%" \
-  "https://stocks-api-z11i.onrender.com/api/v1/automation/daily-paper-review?date=YYYY-MM-DD"
+  "https://stocks-api-z11i.onrender.com/api/v1/automation/daily-review?date=YYYY-MM-DD"
 ```
 
 ## Manual job calls
@@ -155,9 +155,9 @@ Render cron schedules are UTC-only and need review around DST changes.
 
 After market close and post-market maintenance:
 
-1. Check daily paper review.
+1. Check daily review.
 2. Check option-selection diagnostics summary.
-3. Check paper review snapshots.
+3. Check review snapshots.
 4. Check trade cases.
 5. Check AI reviews and pending strategy suggestions.
 
@@ -166,7 +166,7 @@ Daily review:
 ```bash
 curl.exe --ssl-no-revoke -L --max-time 120 \
   -H "Authorization: Bearer %ADMIN_API_TOKEN%" \
-  "https://stocks-api-z11i.onrender.com/api/v1/automation/daily-paper-review?date=YYYY-MM-DD&limit=5000"
+  "https://stocks-api-z11i.onrender.com/api/v1/automation/daily-review?date=YYYY-MM-DD&limit=5000"
 ```
 
 Option-selection diagnostics summary:
@@ -177,12 +177,12 @@ curl.exe --ssl-no-revoke -L --max-time 120 \
   "https://stocks-api-z11i.onrender.com/api/v1/automation/option-selection-diagnostics/summary?date=YYYY-MM-DD&limit=5000"
 ```
 
-Paper review snapshots:
+Review snapshots:
 
 ```bash
 curl.exe --ssl-no-revoke -L --max-time 120 \
   -H "Authorization: Bearer %ADMIN_API_TOKEN%" \
-  "https://stocks-api-z11i.onrender.com/api/v1/automation/paper-review-snapshots?limit=5"
+  "https://stocks-api-z11i.onrender.com/api/v1/automation/review-snapshots?limit=5"
 ```
 
 AI reviews:
@@ -216,7 +216,7 @@ fills.by_symbol
 option_selection_diagnostics.reason_counts
 trade_cases.closed
 ai_reviews.suggestions_by_status
-paper_review_snapshot
+review_snapshot
 ```
 
 Common interpretations:
@@ -248,8 +248,8 @@ Use reset only when intentionally clearing paper-trading state. Prefer dry-run f
 Local script for a new Alpaca paper account:
 
 ```bash
-python scripts/reset_paper_account_data.py
-python scripts/reset_paper_account_data.py --apply --confirm RESET_TRADING_DATA
+python scripts/reset_account_data.py
+python scripts/reset_account_data.py --apply --confirm RESET_TRADING_DATA
 ```
 
 The reset preserves `strategies`. By default it clears runtime trading tables plus
@@ -289,8 +289,8 @@ Phase 1 is operationally complete when:
 - Health and readiness pass after deploys.
 - Paper-only safety settings are verified.
 - Entry, exit, and maintenance crons run on schedule.
-- Daily paper review explains what happened each market day.
+- Daily review explains what happened each market day.
 - Option diagnostics explain skipped/rejected trades.
-- Trade cases and paper review snapshots are created post-market.
+- Trade cases and review snapshots are created post-market.
 - Emergency stops are documented and tested.
 - Basic route/service tests pass locally.
