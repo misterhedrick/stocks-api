@@ -26,7 +26,7 @@ from app.services.strategy_templates import build_momentum_rate_of_change_strate
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="List and tune preview-first paper strategy configs."
+        description="List and tune preview-first strategy configs."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -35,7 +35,7 @@ def main() -> None:
 
     seed_parser = subparsers.add_parser(
         "seed-moving-average",
-        help="Create or update one preview-first moving-average paper strategy.",
+        help="Create or update one preview-first moving-average strategy.",
     )
     seed_parser.add_argument("--name")
     seed_parser.add_argument("--symbol", default="SPY")
@@ -63,7 +63,7 @@ def main() -> None:
 
     momentum_parser = subparsers.add_parser(
         "seed-momentum-rate-of-change",
-        help="Create or update one preview-first momentum rate-of-change paper strategy.",
+        help="Create or update one preview-first momentum rate-of-change strategy.",
     )
     momentum_parser.add_argument("--name")
     momentum_parser.add_argument("--symbol", default="SPY")
@@ -132,7 +132,7 @@ def main() -> None:
 
     batch_parser = subparsers.add_parser(
         "apply-2026-05-18-strategy-type-batch",
-        help="Apply the 2026-05-18 paper evidence tuning batch by scanner type.",
+        help="Apply the 2026-05-18 evidence tuning batch by scanner type.",
     )
     batch_parser.add_argument("--dry-run", action="store_true")
 

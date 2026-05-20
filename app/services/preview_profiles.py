@@ -41,7 +41,7 @@ def resolve_preview_profile_limits(
     max_spread_percent: Decimal | None,
     min_open_interest: int | Decimal | None,
 ) -> PreviewProfileLimits:
-    if not settings.paper_strategy_preview_profiles_enabled:
+    if not settings.strategy_preview_profiles_enabled:
         return PreviewProfileLimits(
             profile=profile,
             max_estimated_notional=max_estimated_notional,
@@ -60,12 +60,12 @@ def resolve_preview_profile_limits(
         max_spread=settings.preview_profile_decimal(
             profile,
             "MAX_SPREAD",
-            max_spread or settings.paper_strategy_max_spread,
+            max_spread or settings.strategy_max_spread,
         ),
         max_spread_percent=settings.preview_profile_decimal(
             profile,
             "MAX_SPREAD_PERCENT",
-            max_spread_percent or settings.paper_strategy_max_spread_percent,
+            max_spread_percent or settings.strategy_max_spread_percent,
         ),
         min_open_interest=settings.preview_profile_int(
             profile,

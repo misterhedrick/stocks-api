@@ -16,7 +16,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.db.models import PaperReviewSnapshot
+from app.db.models import ReviewSnapshot
 from app.db.session import SessionLocal
 
 
@@ -65,7 +65,7 @@ class EvidenceThresholds:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Export saved paper-review snapshots as a scanner-level tuning dataset."
+            "Export saved review snapshots as a scanner-level tuning dataset."
         )
     )
     parser.add_argument("--days", type=int, default=10, help="Recent snapshots to read.")
@@ -103,10 +103,10 @@ def main() -> None:
     with SessionLocal() as db:
         snapshots = list(
             db.scalars(
-                select(PaperReviewSnapshot)
+                select(ReviewSnapshot)
                 .order_by(
-                    PaperReviewSnapshot.review_date.desc(),
-                    PaperReviewSnapshot.generated_at.desc(),
+                    ReviewSnapshot.review_date.desc(),
+                    ReviewSnapshot.generated_at.desc(),
                 )
                 .limit(args.days)
             )
@@ -123,7 +123,7 @@ def main() -> None:
 
 
 def build_tuning_dataset(
-    snapshots: list[PaperReviewSnapshot],
+    snapshots: list[ReviewSnapshot],
     *,
     thresholds: EvidenceThresholds | None = None,
 ) -> dict[str, Any]:
@@ -177,7 +177,7 @@ def render_dataset(dataset: dict[str, Any], *, output_format: str) -> str:
     raise ValueError("output_format must be json or csv")
 
 
-def _snapshot_candidates(snapshot: PaperReviewSnapshot) -> list[dict[str, Any]]:
+def _snapshot_candidates(snapshot: ReviewSnapshot) -> list[dict[str, Any]]:
     raw_payload = snapshot.raw_payload if isinstance(snapshot.raw_payload, dict) else {}
     learning_report = raw_payload.get("learning_report")
     if not isinstance(learning_report, dict):
@@ -188,7 +188,7 @@ def _snapshot_candidates(snapshot: PaperReviewSnapshot) -> list[dict[str, Any]]:
     return [item for item in candidates if isinstance(item, dict)]
 
 
-def _daily_row(snapshot: PaperReviewSnapshot, candidate: dict[str, Any]) -> dict[str, Any]:
+def _daily_row(snapshot: ReviewSnapshot, candidate: dict[str, Any]) -> dict[str, Any]:
     signals = _as_dict(candidate.get("signals"))
     signal_status = _as_dict(signals.get("status_counts"))
     option_selection = _as_dict(candidate.get("option_selection"))
@@ -329,7 +329,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _snapshot_window(snapshots: list[PaperReviewSnapshot]) -> dict[str, Any]:
+def _snapshot_window(snapshots: list[ReviewSnapshot]) -> dict[str, Any]:
     if not snapshots:
         return {"start_date": None, "end_date": None}
     return {

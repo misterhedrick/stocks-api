@@ -43,7 +43,7 @@ class PerformanceReviewResult:
     rejected_preview_outcomes: list[dict[str, Any]] = field(default_factory=list)
 
 
-def get_paper_performance_review(
+def get_performance_review(
     db: Session,
     *,
     limit: int = 500,

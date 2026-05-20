@@ -9,7 +9,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import PaperReviewSnapshot, StrategyTuningDecision
+from app.db.models import ReviewSnapshot, StrategyTuningDecision
 from app.services.audit_logs import record_audit_log
 
 READY_FOR_REVIEW = "ready_for_review"
@@ -189,11 +189,11 @@ def update_strategy_tuning_decision(
     return StrategyTuningDecisionResult(decision=decision)
 
 
-def _recent_snapshots(db: Session, *, limit: int) -> list[PaperReviewSnapshot]:
+def _recent_snapshots(db: Session, *, limit: int) -> list[ReviewSnapshot]:
     return list(
         db.scalars(
-            select(PaperReviewSnapshot)
-            .order_by(PaperReviewSnapshot.review_date.desc(), PaperReviewSnapshot.generated_at.desc())
+            select(ReviewSnapshot)
+            .order_by(ReviewSnapshot.review_date.desc(), ReviewSnapshot.generated_at.desc())
             .limit(limit)
         )
     )
@@ -210,7 +210,7 @@ def _recent_decisions(db: Session, *, limit: int) -> list[StrategyTuningDecision
 
 
 def _aggregate_snapshot_candidates(
-    snapshots: list[PaperReviewSnapshot],
+    snapshots: list[ReviewSnapshot],
 ) -> dict[tuple[str, str], dict[str, Any]]:
     groups: dict[tuple[str, str], dict[str, Any]] = {}
     for snapshot in sorted(snapshots, key=lambda item: item.review_date):
@@ -264,7 +264,7 @@ def _aggregate_snapshot_candidates(
 def _attach_decisions(
     groups: dict[tuple[str, str], dict[str, Any]],
     decisions: list[StrategyTuningDecision],
-    snapshots: list[PaperReviewSnapshot],
+    snapshots: list[ReviewSnapshot],
 ) -> None:
     for decision in decisions:
         key = (decision.scanner_type, "ALL_SYMBOLS")
@@ -391,7 +391,7 @@ def _readiness_status(
 
 def _before_after_window(
     decision: StrategyTuningDecision,
-    snapshots: list[PaperReviewSnapshot],
+    snapshots: list[ReviewSnapshot],
 ) -> dict[str, Any]:
     before_scores: list[int] = []
     after_scores: list[int] = []
@@ -424,7 +424,7 @@ def _before_after_window(
 
 
 def _candidate_score_for_snapshot(
-    snapshot: PaperReviewSnapshot,
+    snapshot: ReviewSnapshot,
     *,
     scanner_type: str,
     symbol: str,
@@ -444,13 +444,13 @@ def _candidate_score_for_snapshot(
     return None
 
 
-def _snapshot_learning_report(snapshot: PaperReviewSnapshot) -> dict[str, Any]:
+def _snapshot_learning_report(snapshot: ReviewSnapshot) -> dict[str, Any]:
     raw_payload = snapshot.raw_payload if isinstance(snapshot.raw_payload, dict) else {}
     learning_report = raw_payload.get("learning_report")
     return learning_report if isinstance(learning_report, dict) else {}
 
 
-def _snapshot_window(snapshots: list[PaperReviewSnapshot]) -> dict[str, Any]:
+def _snapshot_window(snapshots: list[ReviewSnapshot]) -> dict[str, Any]:
     if not snapshots:
         return {"start_date": None, "end_date": None}
     dates = sorted(snapshot.review_date for snapshot in snapshots)

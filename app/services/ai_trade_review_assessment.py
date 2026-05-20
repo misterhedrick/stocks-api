@@ -8,17 +8,17 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import PaperReviewSnapshot, TradeCase
+from app.db.models import ReviewSnapshot, TradeCase
 from app.services.ai_trade_review_stats import _empty_group_stats, _group_summary_text
 
 # Matches the 6-digit YYMMDD expiration in OCC option symbols e.g. "SPY271219C00500000".
 _OCC_EXP_RE = re.compile(r"(\d{2})(\d{2})(\d{2})[CP](\d{8})$")
 
 
-def _latest_snapshot(db: Session) -> PaperReviewSnapshot | None:
+def _latest_snapshot(db: Session) -> ReviewSnapshot | None:
     return db.scalar(
-        select(PaperReviewSnapshot)
-        .order_by(PaperReviewSnapshot.generated_at.desc())
+        select(ReviewSnapshot)
+        .order_by(ReviewSnapshot.generated_at.desc())
         .limit(1)
     )
 
@@ -26,7 +26,7 @@ def _latest_snapshot(db: Session) -> PaperReviewSnapshot | None:
 def _assessment_for_trade_case(
     trade_case: TradeCase,
     *,
-    latest_snapshot: PaperReviewSnapshot | None,
+    latest_snapshot: ReviewSnapshot | None,
     review_model: str,
     group_stats: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -249,14 +249,14 @@ def _str_or_none(value: Any) -> str | None:
 
 
 def _snapshot_context_for_trade(
-    snapshot: PaperReviewSnapshot | None,
+    snapshot: ReviewSnapshot | None,
     *,
     scanner_type: str,
     symbol: str,
 ) -> dict[str, Any]:
     if snapshot is None:
         return {
-            "paper_review_snapshot_id": None,
+            "review_snapshot_id": None,
             "diagnostic_reasons": {},
             "rejected_trade_comparisons": [],
             "rejected_shadow_outcomes": [],
@@ -267,7 +267,7 @@ def _snapshot_context_for_trade(
     rejected = snapshot.rejected_outcomes if isinstance(snapshot.rejected_outcomes, dict) else {}
 
     return {
-        "paper_review_snapshot_id": str(snapshot.id),
+        "review_snapshot_id": str(snapshot.id),
         "diagnostic_reasons": diagnostic_summary.get("reason_counts", {}),
         "rejected_trade_comparisons": [
             item

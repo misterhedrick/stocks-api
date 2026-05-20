@@ -30,7 +30,7 @@ def build_moving_average_strategy_payload(
     clean_symbol = symbol.strip().upper()
     direction = "bearish" if trigger.startswith("bearish") else "bullish"
     if name is None:
-        name = f"Paper {clean_symbol} moving average {option_type} preview"
+        name = f"{clean_symbol} moving average {option_type} preview"
 
     return {
         "name": name,
@@ -52,7 +52,7 @@ def build_moving_average_strategy_payload(
                 "direction": direction,
                 "confidence": confidence,
                 "min_change_percent": min_change_percent
-                or _decimal_string(settings.paper_strategy_min_change_percent),
+                or _decimal_string(settings.strategy_min_change_percent),
                 "require_short_average_slope": True,
                 "require_price_confirmation": True,
                 "market_regime": _market_regime_config(direction),
@@ -93,7 +93,7 @@ def build_momentum_rate_of_change_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} momentum rate-of-change {option_type} preview"
+        name = f"{clean_symbol} momentum rate-of-change {option_type} preview"
 
     return {
         "name": name,
@@ -113,7 +113,7 @@ def build_momentum_rate_of_change_strategy_payload(
                 "short_average_type": short_average_type,
                 "short_average_window": short_average_window,
                 "max_extension_percent": max_extension_percent
-                or _decimal_string(settings.paper_strategy_momentum_max_extension_percent),
+                or _decimal_string(settings.strategy_momentum_max_extension_percent),
                 "require_latest_candle_confirmation": True,
                 "direction": direction,
                 "confidence": confidence,
@@ -152,7 +152,7 @@ def build_rsi_reversal_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} RSI reversal {option_type} preview"
+        name = f"{clean_symbol} RSI reversal {option_type} preview"
 
     return {
         "name": name,
@@ -211,7 +211,7 @@ def build_macd_crossover_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} MACD crossover {option_type} preview"
+        name = f"{clean_symbol} MACD crossover {option_type} preview"
 
     return {
         "name": name,
@@ -267,7 +267,7 @@ def build_mean_reversion_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} mean reversion {option_type} preview"
+        name = f"{clean_symbol} mean reversion {option_type} preview"
 
     return {
         "name": name,

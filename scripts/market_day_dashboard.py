@@ -17,7 +17,7 @@ from app.db.models import JobRun
 from app.db.session import SessionLocal
 from app.services.automation_status import get_automation_status
 from app.services.learning_report import build_learning_report
-from app.services.performance_review import get_paper_performance_review
+from app.services.performance_review import get_performance_review
 from app.services.position_exits import get_position_management_statuses
 
 
@@ -42,14 +42,14 @@ def main() -> None:
 def build_dashboard(db, *, limit: int = 100) -> dict[str, Any]:
     automation = get_automation_status(db)
     positions = get_position_management_statuses(db, limit=limit)
-    performance = get_paper_performance_review(db, limit=max(limit, 500))
+    performance = get_performance_review(db, limit=max(limit, 500))
     learning = build_learning_report(db, limit=max(limit, 500))
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": automation.operational_summary.get("effective_mode"),
         "switches": automation.switches.model_dump(),
-        "readiness": automation.operational_summary.get("paper_trading_readiness", {}),
+        "readiness": automation.operational_summary.get("trading_readiness", {}),
         "latest_jobs": _latest_jobs(db, limit=10),
         "exit_attention": _exit_attention(db, limit=10),
         "positions": {

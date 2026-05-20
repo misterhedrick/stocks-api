@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, time, timezone
@@ -8,8 +7,6 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
 from zoneinfo import ZoneInfo
-
-logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -23,16 +20,6 @@ class AutomationDecision:
     allowed: bool
     reasons: list[str]
     limits_snapshot: dict[str, Any]
-
-
-EXPOSURE_BROKER_ORDER_STATUSES = (
-    "new",
-    "accepted",
-    "pending_new",
-    "partially_filled",
-    "filled",
-    "submitted",
-)
 
 
 def can_auto_submit_order_intent(

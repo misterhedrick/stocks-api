@@ -20,7 +20,7 @@ from app.services.market_maintenance import (
 )
 from app.services.news_scanner import NewsScanResult
 from app.services.performance_review import PerformanceReviewResult
-from app.services.paper_review_snapshots import PaperReviewSnapshotResult
+from app.services.review_snapshots import ReviewSnapshotResult
 from app.services.trade_cases import TradeCasePopulationResult
 
 
@@ -116,7 +116,7 @@ def build_strategy() -> Strategy:
     now = datetime.now(timezone.utc)
     return Strategy(
         id=uuid.uuid4(),
-        name="Paper SPY confirmed trend call preview",
+        name="SPY confirmed trend call preview",
         is_active=True,
         config={
             "scanner": {
@@ -186,9 +186,9 @@ def build_trade_case_population_result() -> TradeCasePopulationResult:
     )
 
 
-def build_paper_review_snapshot_result() -> PaperReviewSnapshotResult:
+def build_review_snapshot_result() -> ReviewSnapshotResult:
     today = datetime.now(timezone.utc).date()
-    return PaperReviewSnapshotResult(
+    return ReviewSnapshotResult(
         snapshot=SimpleNamespace(id=uuid.uuid4()),
         created=True,
         review_date=today,
@@ -229,7 +229,7 @@ def build_market_maintenance_result(phase: str) -> MarketMaintenanceResult:
         ai_trade_reviews={"trade_cases_seen": 2, "reviews_created": 1}
         if phase == "post_market"
         else None,
-        paper_review_snapshot_retention={"deleted": 0}
+        review_snapshot_retention={"deleted": 0}
         if phase == "post_market"
         else None,
     )
@@ -359,16 +359,16 @@ class MarketMaintenanceTests(unittest.TestCase):
             "app.services.market_maintenance.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_maintenance.get_paper_performance_review",
+            "app.services.market_maintenance.get_performance_review",
             return_value=build_performance_result(),
         ) as performance, patch(
             "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
             return_value=build_trade_case_population_result(),
         ), patch(
-            "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
-            return_value=build_paper_review_snapshot_result(),
+            "app.services.market_maintenance.create_or_update_post_market_review_snapshot",
+            return_value=build_review_snapshot_result(),
         ), patch(
-            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            "app.services.market_maintenance.write_ai_trade_reviews",
             return_value=build_ai_trade_review_writer_result(),
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
@@ -376,8 +376,8 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.phase, "post_market")
         self.assertEqual(result.performance["matched_round_trips"], 1)
         self.assertEqual(result.performance["totals"]["realized_pnl"], "25")
-        self.assertEqual(result.paper_review_snapshot["signal_count"], 4)
-        self.assertEqual(result.paper_review_snapshot["refinement_candidate_count"], 2)
+        self.assertEqual(result.review_snapshot["signal_count"], 4)
+        self.assertEqual(result.review_snapshot["refinement_candidate_count"], 2)
         self.assertEqual(result.ai_trade_reviews["reviews_created"], 1)
         self.assertIsNone(result.news)
         performance.assert_called_once_with(db, limit=500)
@@ -392,19 +392,19 @@ class MarketMaintenanceTests(unittest.TestCase):
             "app.services.market_maintenance.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_maintenance.get_paper_performance_review",
+            "app.services.market_maintenance.get_performance_review",
             return_value=build_performance_result(),
         ), patch(
             "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
             return_value=build_trade_case_population_result(),
         ) as populate, patch(
-            "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
-            return_value=build_paper_review_snapshot_result(),
+            "app.services.market_maintenance.create_or_update_post_market_review_snapshot",
+            return_value=build_review_snapshot_result(),
         ), patch(
-            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            "app.services.market_maintenance.write_ai_trade_reviews",
             return_value=build_ai_trade_review_writer_result(),
         ), patch(
-            "app.services.market_maintenance.prune_old_paper_review_snapshots",
+            "app.services.market_maintenance.prune_old_review_snapshots",
             return_value={"before_date": "2026-04-01", "deleted": 1, "retention_days": 45},
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)
@@ -414,9 +414,9 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(result.trade_cases["inserted"], 1)
         self.assertEqual(result.trade_cases["skipped"], 1)
         self.assertEqual(result.trade_cases["errors"], [])
-        self.assertEqual(result.paper_review_snapshot["diagnostic_count"], 1)
-        self.assertEqual(result.paper_review_snapshot["learning_report_saved"], True)
-        self.assertEqual(result.paper_review_snapshot_retention["deleted"], 1)
+        self.assertEqual(result.review_snapshot["diagnostic_count"], 1)
+        self.assertEqual(result.review_snapshot["learning_report_saved"], True)
+        self.assertEqual(result.review_snapshot_retention["deleted"], 1)
         populate.assert_called_once_with(db, limit=500)
         # Five commits: maintenance + trade case audit + snapshot audit + AI review audit + retention audit
         self.assertEqual(db.commit_count, 5)
@@ -434,13 +434,13 @@ class MarketMaintenanceTests(unittest.TestCase):
         self.assertEqual(tc_audit.payload["round_trips_seen"], 2)
         self.assertEqual(tc_audit.payload["inserted"], 1)
         snapshot_audit = next(
-            (a for a in audit_logs if "paper_review_snapshot" in a.event_type),
+            (a for a in audit_logs if "review_snapshot" in a.event_type),
             None,
         )
         self.assertIsNotNone(snapshot_audit)
         self.assertEqual(
             snapshot_audit.event_type,
-            "market_maintenance.post_market.paper_review_snapshot.succeeded",
+            "market_maintenance.post_market.review_snapshot.succeeded",
         )
         ai_audit = next(
             (a for a in audit_logs if "ai_trade_reviews" in a.event_type),
@@ -452,13 +452,13 @@ class MarketMaintenanceTests(unittest.TestCase):
             "market_maintenance.post_market.ai_trade_reviews.succeeded",
         )
         retention_audit = next(
-            (a for a in audit_logs if "paper_review_snapshot_retention" in a.event_type),
+            (a for a in audit_logs if "review_snapshot_retention" in a.event_type),
             None,
         )
         self.assertIsNotNone(retention_audit)
         self.assertEqual(
             retention_audit.event_type,
-            "market_maintenance.post_market.paper_review_snapshot_retention.succeeded",
+            "market_maintenance.post_market.review_snapshot_retention.succeeded",
         )
 
     def test_post_market_maintenance_trade_case_failure_does_not_fail_maintenance(self) -> None:
@@ -471,19 +471,19 @@ class MarketMaintenanceTests(unittest.TestCase):
             "app.services.market_maintenance.reconcile_broker_state",
             return_value=build_reconciliation_result(),
         ), patch(
-            "app.services.market_maintenance.get_paper_performance_review",
+            "app.services.market_maintenance.get_performance_review",
             return_value=build_performance_result(),
         ), patch(
             "app.services.market_maintenance.populate_trade_cases_from_closed_round_trips",
             side_effect=RuntimeError("fill table exploded"),
         ), patch(
-            "app.services.market_maintenance.create_or_update_post_market_paper_review_snapshot",
-            return_value=build_paper_review_snapshot_result(),
+            "app.services.market_maintenance.create_or_update_post_market_review_snapshot",
+            return_value=build_review_snapshot_result(),
         ), patch(
-            "app.services.market_maintenance.write_ai_trade_reviews_from_paper_evidence",
+            "app.services.market_maintenance.write_ai_trade_reviews",
             return_value=build_ai_trade_review_writer_result(),
         ), patch(
-            "app.services.market_maintenance.prune_old_paper_review_snapshots",
+            "app.services.market_maintenance.prune_old_review_snapshots",
             return_value={"before_date": "2026-04-01", "deleted": 0, "retention_days": 45},
         ):
             result = run_post_market_maintenance(db, stale_after_hours=0)

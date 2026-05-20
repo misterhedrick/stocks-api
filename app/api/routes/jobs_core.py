@@ -1,12 +1,10 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.api.alpaca_errors import alpaca_error_status_code
 from app.core.security import require_admin
-from app.db.models import JobRun
 from app.db.session import get_db
 from app.integrations.alpaca import (
     ALPACA_ACCOUNT_ACTIVITIES_MAX_PAGE_SIZE,
@@ -14,39 +12,16 @@ from app.integrations.alpaca import (
     AlpacaTradingError,
 )
 from app.schemas.jobs import (
-    AiTradeReviewWriterRead,
     BrokerReconciliationRead,
     JobRunRead,
-    MarketMaintenanceRead,
-    MarketCycleRead,
     NewsScanRead,
     PositionExitEvaluationRead,
     SignalScanRead,
-    TradeCasePopulationRead,
-    PatchStrategyDteRead,
-    TradingDataResetRead,
 )
-from app.services.ai_trade_review import write_ai_trade_reviews_from_paper_evidence
 from app.services.broker_reconciliation import reconcile_broker_state
-from app.services.market_cycle import (
-    normalize_market_entry_symbol,
-    run_market_cycle,
-    run_market_entry_cycle,
-)
-from app.services.market_maintenance import (
-    patch_strategy_dte,
-    run_market_maintenance,
-    run_post_market_maintenance,
-    run_pre_market_maintenance,
-)
 from app.services.news_scanner import NewsFetchError, scan_market_news
 from app.services.position_exits import evaluate_position_exits, preview_unmanaged_position_exits
 from app.services.signal_scanner import scan_signals
-from app.services.trade_cases import populate_trade_cases_from_closed_round_trips
-from app.services.trading_reset import (
-    TradingDataResetConfirmationError,
-    run_trading_data_reset,
-)
 
 router = APIRouter(
     prefix="/jobs",

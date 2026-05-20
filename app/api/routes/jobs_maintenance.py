@@ -26,7 +26,7 @@ from app.schemas.jobs import (
     PatchStrategyDteRead,
     TradingDataResetRead,
 )
-from app.services.ai_trade_review import write_ai_trade_reviews_from_paper_evidence
+from app.services.ai_trade_review import write_ai_trade_reviews
 from app.services.broker_reconciliation import reconcile_broker_state
 from app.services.market_cycle import (
     normalize_market_entry_symbol,
@@ -104,9 +104,9 @@ def market_maintenance_route(
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
         trade_cases=result.trade_cases,
-        paper_review_snapshot=result.paper_review_snapshot,
+        review_snapshot=result.review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
-        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
+        review_snapshot_retention=result.review_snapshot_retention,
     )
 
 
@@ -156,9 +156,9 @@ def pre_market_maintenance_route(
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
         trade_cases=result.trade_cases,
-        paper_review_snapshot=result.paper_review_snapshot,
+        review_snapshot=result.review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
-        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
+        review_snapshot_retention=result.review_snapshot_retention,
     )
 
 
@@ -201,9 +201,9 @@ def post_market_maintenance_route(
         readiness=result.readiness,
         settings_snapshot=result.settings_snapshot,
         trade_cases=result.trade_cases,
-        paper_review_snapshot=result.paper_review_snapshot,
+        review_snapshot=result.review_snapshot,
         ai_trade_reviews=result.ai_trade_reviews,
-        paper_review_snapshot_retention=result.paper_review_snapshot_retention,
+        review_snapshot_retention=result.review_snapshot_retention,
     )
 
 
@@ -271,7 +271,7 @@ def write_ai_trade_reviews_route(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> AiTradeReviewWriterRead:
-    result = write_ai_trade_reviews_from_paper_evidence(db, limit=limit)
+    result = write_ai_trade_reviews(db, limit=limit)
     return AiTradeReviewWriterRead(
         job_run=JobRunRead.model_validate(result.job_run),
         trade_cases_seen=result.trade_cases_seen,

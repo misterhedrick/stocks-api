@@ -5,7 +5,7 @@ from decimal import Decimal
 import unittest
 import uuid
 
-from app.services.performance_review import get_paper_performance_review
+from app.services.performance_review import get_performance_review
 
 
 class FakePerformanceSession:
@@ -155,7 +155,7 @@ def job_run_row(*, no_signal_reasons: list[str]) -> tuple:
 
 
 class PerformanceReviewTests(unittest.TestCase):
-    def test_get_paper_performance_review_matches_fifo_round_trips(self) -> None:
+    def test_get_performance_review_matches_fifo_round_trips(self) -> None:
         strategy_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
         db = FakePerformanceSession(
@@ -179,7 +179,7 @@ class PerformanceReviewTests(unittest.TestCase):
             ]
         )
 
-        result = get_paper_performance_review(db)
+        result = get_performance_review(db)
 
         self.assertEqual(result.fills_seen, 2)
         self.assertEqual(result.matched_round_trips, 1)
@@ -201,7 +201,7 @@ class PerformanceReviewTests(unittest.TestCase):
         self.assertEqual(result.option_selection_diagnostics["diagnostics_seen"], 0)
         self.assertEqual(result.rejected_preview_outcomes, [])
 
-    def test_get_paper_performance_review_handles_losses(self) -> None:
+    def test_get_performance_review_handles_losses(self) -> None:
         strategy_id = uuid.uuid4()
         now = datetime.now(timezone.utc)
         db = FakePerformanceSession(
@@ -225,7 +225,7 @@ class PerformanceReviewTests(unittest.TestCase):
             ]
         )
 
-        result = get_paper_performance_review(db)
+        result = get_performance_review(db)
 
         self.assertEqual(result.totals["realized_pnl"], "-50")
         self.assertEqual(result.totals["losing_trades"], 1)
@@ -233,7 +233,7 @@ class PerformanceReviewTests(unittest.TestCase):
         self.assertEqual(result.by_symbol[0]["losing_trades"], 1)
         self.assertEqual(result.open_positions, [])
 
-    def test_get_paper_performance_review_reports_learning_context_and_unmatched_fills(self) -> None:
+    def test_get_performance_review_reports_learning_context_and_unmatched_fills(self) -> None:
         strategy_id = uuid.uuid4()
         entry_order_intent_id = uuid.uuid4()
         exit_order_intent_id = uuid.uuid4()
@@ -274,7 +274,7 @@ class PerformanceReviewTests(unittest.TestCase):
             ]
         )
 
-        result = get_paper_performance_review(db)
+        result = get_performance_review(db)
 
         self.assertEqual(result.matched_round_trips, 1)
         round_trip = result.recent_round_trips[0]
@@ -292,7 +292,7 @@ class PerformanceReviewTests(unittest.TestCase):
             "sell_short fill is not matched as a long-option exit",
         )
 
-    def test_get_paper_performance_review_reports_signal_and_rejection_context(self) -> None:
+    def test_get_performance_review_reports_signal_and_rejection_context(self) -> None:
         strategy_id = uuid.uuid4()
         entry_order_intent_id = uuid.uuid4()
         signal_id = uuid.uuid4()
@@ -369,7 +369,7 @@ class PerformanceReviewTests(unittest.TestCase):
             ],
         )
 
-        result = get_paper_performance_review(db)
+        result = get_performance_review(db)
 
         self.assertEqual(result.signal_summary["signals_seen"], 2)
         self.assertEqual(result.signal_summary["by_status"]["preview_rejected"], 1)

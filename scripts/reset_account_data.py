@@ -24,7 +24,7 @@ from app.services.trading_reset import (
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Clear local paper-trading data after switching to a new Alpaca paper account. "
+            "Clear local trading data after switching to a new Alpaca paper account. "
             "Strategies are preserved so the app can keep running with the same configuration."
         )
     )

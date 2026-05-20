@@ -192,14 +192,14 @@ def _operational_summary(
             "skipped": submit.get("skipped"),
             "rejected": submit.get("rejected"),
         },
-        "paper_trading_readiness": _paper_trading_readiness(
+        "trading_readiness": _trading_readiness(
             active_strategies,
             risk=risk,
         ),
     }
 
 
-def _paper_trading_readiness(
+def _trading_readiness(
     active_strategies: list[Strategy],
     *,
     risk: dict[str, Any],
@@ -210,7 +210,7 @@ def _paper_trading_readiness(
     if not settings.alpaca_paper:
         blockers.append("ALPACA_PAPER is false")
     if settings.auto_submit_requires_paper and not settings.alpaca_paper:
-        blockers.append("AUTO_SUBMIT_REQUIRES_PAPER is true but paper mode is off")
+        blockers.append("AUTO_SUBMIT_REQUIRES_PAPER is true but paper trading mode is off")
     if not settings.market_cycle_scan_enabled:
         blockers.append("MARKET_CYCLE_SCAN_ENABLED is false")
     if not settings.market_cycle_preview_enabled:
@@ -218,9 +218,9 @@ def _paper_trading_readiness(
     if not settings.market_cycle_reconcile_enabled:
         blockers.append("MARKET_CYCLE_RECONCILE_ENABLED is false")
     if not settings.market_cycle_submit_enabled:
-        warnings.append("MARKET_CYCLE_SUBMIT_ENABLED must be true to auto-submit paper orders")
+        warnings.append("MARKET_CYCLE_SUBMIT_ENABLED must be true to auto-submit orders")
     if not settings.trading_automation_enabled:
-        warnings.append("TRADING_AUTOMATION_ENABLED must be true to auto-submit paper orders")
+        warnings.append("TRADING_AUTOMATION_ENABLED must be true to auto-submit orders")
     if settings.market_cycle_news_enabled and risk.get("should_block_new_entries") is True:
         warnings.append("news risk gate is currently blocking new entry previews")
 

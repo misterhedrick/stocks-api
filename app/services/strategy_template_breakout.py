@@ -30,7 +30,7 @@ def build_breakout_price_threshold_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} breakout price threshold {option_type} preview"
+        name = f"{clean_symbol} breakout price threshold {option_type} preview"
 
     return {
         "name": name,
@@ -87,7 +87,7 @@ def build_volume_confirmed_breakout_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} volume confirmed breakout {option_type} preview"
+        name = f"{clean_symbol} volume confirmed breakout {option_type} preview"
 
     return {
         "name": name,
@@ -148,7 +148,7 @@ def build_volatility_squeeze_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} volatility squeeze {option_type} preview"
+        name = f"{clean_symbol} volatility squeeze {option_type} preview"
 
     return {
         "name": name,
@@ -211,7 +211,7 @@ def build_support_resistance_strategy_payload(
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
     if name is None:
-        name = f"Paper {clean_symbol} support resistance {option_type} preview"
+        name = f"{clean_symbol} support resistance {option_type} preview"
 
     return {
         "name": name,

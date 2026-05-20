@@ -34,7 +34,7 @@ LEGACY_STRATEGY_NAMES = (
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Prepare real paper strategies for a higher-volume paper trading day."
+        description="Prepare strategies for a higher-volume trading day."
     )
     parser.add_argument("--apply", action="store_true", help="Persist the strategy changes.")
     parser.add_argument("--max-orders-per-cycle", type=int, default=1)
@@ -46,7 +46,7 @@ def main() -> None:
     parser.add_argument(
         "--keep-legacy-active",
         action="store_true",
-        help="Do not deactivate old manual/test paper strategies.",
+        help="Do not deactivate old manual/test strategies.",
     )
     parser.add_argument(
         "--strategy-name",
@@ -126,7 +126,7 @@ def main() -> None:
                     event_type="strategy.updated",
                     entity_type="strategy",
                     entity_id=strategy.id,
-                    message="Strategy prepared for paper trade data gathering",
+                    message="Strategy prepared for trade data gathering",
                     payload={
                         "source": "prepare_paper_trade_day",
                         "submit_config": submit_config,
@@ -157,7 +157,7 @@ def main() -> None:
                         event_type="strategy.updated",
                         entity_type="strategy",
                         entity_id=strategy.id,
-                        message="Legacy paper test strategy deactivated for trade data gathering",
+                        message="Legacy test strategy deactivated for trade data gathering",
                         payload={
                             "source": "prepare_paper_trade_day",
                             "reason": "avoid always-on or stale test strategy signals",

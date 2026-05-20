@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 import uuid
 
-from app.db.models import PaperReviewSnapshot, StrategyTuningDecision
+from app.db.models import ReviewSnapshot, StrategyTuningDecision
 from app.services.strategy_refinement import (
     build_strategy_refinement_summary,
     create_strategy_tuning_decision,
@@ -17,7 +17,7 @@ class FakeStrategyRefinementSession:
     def __init__(
         self,
         *,
-        snapshots: list[PaperReviewSnapshot] | None = None,
+        snapshots: list[ReviewSnapshot] | None = None,
         decisions: list[StrategyTuningDecision] | None = None,
         decision: StrategyTuningDecision | None = None,
     ) -> None:
@@ -156,9 +156,9 @@ def _snapshot(
     preview_rejected: int,
     diagnostics_seen: int,
     closed_trade_cases: int,
-) -> PaperReviewSnapshot:
+) -> ReviewSnapshot:
     generated = generated_at or datetime(2026, 5, 12, 21, 30, tzinfo=timezone.utc)
-    return PaperReviewSnapshot(
+    return ReviewSnapshot(
         id=uuid.uuid4(),
         review_date=review_date,
         review_type="post_market",

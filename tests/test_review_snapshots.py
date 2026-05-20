@@ -6,16 +6,16 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from app.db.models import PaperReviewSnapshot
-from app.services.paper_review_snapshots import (
+from app.db.models import ReviewSnapshot
+from app.services.review_snapshots import (
     _rejected_signal_shadow_outcomes,
-    create_or_update_post_market_paper_review_snapshot,
-    prune_old_paper_review_snapshots,
+    create_or_update_post_market_review_snapshot,
+    prune_old_review_snapshots,
 )
 
 
 class FakeSnapshotSession:
-    def __init__(self, *, existing: PaperReviewSnapshot | None = None) -> None:
+    def __init__(self, *, existing: ReviewSnapshot | None = None) -> None:
         self.execute_results = [[], [], [], [], [], [], [], []]
         self.scalar_results = [existing]
         self.scalars_results = [[], []]
@@ -61,10 +61,10 @@ class PaperReviewSnapshotTests(unittest.TestCase):
         generated_at = datetime(2026, 5, 8, 21, 30, tzinfo=timezone.utc)
 
         with patch(
-            "app.services.paper_review_snapshots.build_learning_report",
+            "app.services.review_snapshots.build_learning_report",
             return_value=_learning_report(),
         ):
-            result = create_or_update_post_market_paper_review_snapshot(
+            result = create_or_update_post_market_review_snapshot(
                 db,
                 generated_at=generated_at,
             )
@@ -76,7 +76,7 @@ class PaperReviewSnapshotTests(unittest.TestCase):
         self.assertEqual(result.refinement_candidate_count, 1)
         self.assertEqual(db.commit_count, 1)
         snapshot = db.added[-1]
-        self.assertIsInstance(snapshot, PaperReviewSnapshot)
+        self.assertIsInstance(snapshot, ReviewSnapshot)
         self.assertEqual(snapshot.review_type, "post_market")
         self.assertEqual(snapshot.raw_payload["review_date"], "2026-05-08")
         self.assertEqual(
@@ -84,8 +84,8 @@ class PaperReviewSnapshotTests(unittest.TestCase):
             "SPY",
         )
 
-    def test_prune_old_paper_review_snapshots_deletes_before_cutoff(self) -> None:
-        old_snapshot = PaperReviewSnapshot(
+    def test_prune_old_review_snapshots_deletes_before_cutoff(self) -> None:
+        old_snapshot = ReviewSnapshot(
             id=uuid.uuid4(),
             review_date=date(2026, 4, 1),
             review_type="post_market",
@@ -95,7 +95,7 @@ class PaperReviewSnapshotTests(unittest.TestCase):
         db = FakeSnapshotSession()
         db.scalars_results = [[old_snapshot]]
 
-        result = prune_old_paper_review_snapshots(
+        result = prune_old_review_snapshots(
             db,
             before_date=date(2026, 4, 15),
         )

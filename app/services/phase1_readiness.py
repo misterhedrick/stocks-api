@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.models import JobRun, PaperReviewSnapshot, Strategy, TradeCase
+from app.db.models import JobRun, ReviewSnapshot, Strategy, TradeCase
 
 REQUIRED_RECENT_JOB_NAMES = (
     "market_entry_cycle",
@@ -33,7 +33,7 @@ def build_phase1_readiness(db: Session) -> dict[str, Any]:
     latest_trade_case_count = _recent_trade_case_count(db)
 
     if latest_snapshot is None:
-        warnings.append("no paper review snapshot found yet")
+        warnings.append("no review snapshot found yet")
 
     return {
         "ready": not blockers,
@@ -156,8 +156,8 @@ def _check_recent_jobs(
 
 def _latest_paper_review_snapshot(db: Session) -> dict[str, Any] | None:
     snapshot = db.scalar(
-        select(PaperReviewSnapshot)
-        .order_by(PaperReviewSnapshot.generated_at.desc())
+        select(ReviewSnapshot)
+        .order_by(ReviewSnapshot.generated_at.desc())
         .limit(1)
     )
     if snapshot is None:

@@ -96,9 +96,9 @@ class MarketMaintenanceRead(BaseModel):
     readiness: dict[str, Any]
     settings_snapshot: dict[str, Any]
     trade_cases: dict[str, Any] | None = None
-    paper_review_snapshot: dict[str, Any] | None = None
+    review_snapshot: dict[str, Any] | None = None
     ai_trade_reviews: dict[str, Any] | None = None
-    paper_review_snapshot_retention: dict[str, Any] | None = None
+    review_snapshot_retention: dict[str, Any] | None = None
 
 
 class TradingDataResetRead(BaseModel):

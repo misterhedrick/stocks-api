@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import BrokerOrder, Fill, OrderIntent, PositionSnapshot
-from app.services.performance_review import get_paper_performance_review
+from app.services.performance_review import get_performance_review
 from app.services.position_exits import (
     _latest_active_exit_order,
     _latest_position_snapshots,
@@ -71,7 +71,7 @@ def get_trade_cases(
     *,
     limit: int = 500,
 ) -> TradeCasesResult:
-    review = get_paper_performance_review(db, limit=limit)
+    review = get_performance_review(db, limit=limit)
     return TradeCasesResult(
         generated_at=review.generated_at,
         fills_seen=review.fills_seen,

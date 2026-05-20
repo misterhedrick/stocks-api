@@ -16,7 +16,7 @@ from app.services.ai_trade_review_types import AiTradeReviewWriterResult, LOCAL_
 from app.services.audit_logs import record_audit_log
 
 
-def write_ai_trade_reviews_from_paper_evidence(
+def write_ai_trade_reviews(
     db: Session,
     *,
     limit: int = 100,
@@ -76,7 +76,7 @@ def write_ai_trade_reviews_from_paper_evidence(
                         "source": "local_rule_based_review",
                         "review_model": review_model,
                         "generated_at": started_at.isoformat(),
-                        "paper_review_snapshot_id": str(latest_snapshot.id)
+                        "review_snapshot_id": str(latest_snapshot.id)
                         if latest_snapshot is not None
                         else None,
                     },
@@ -128,7 +128,7 @@ def write_ai_trade_reviews_from_paper_evidence(
             "errors": errors,
             "review_model": review_model,
             "suggestion_grouping": "suggestions are deduplicated by type, scanner, and symbol per run",
-            "paper_review_snapshot_id": str(latest_snapshot.id)
+            "review_snapshot_id": str(latest_snapshot.id)
             if latest_snapshot is not None
             else None,
         }

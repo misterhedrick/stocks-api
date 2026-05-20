@@ -7,7 +7,7 @@ import unittest
 import uuid
 
 from app.db.models import AuditLog, Strategy
-from scripts.tune_paper_strategies import (
+from scripts.tune_strategies import (
     list_strategy_summaries,
     momentum_rate_of_change_payload_from_args,
     moving_average_payload_from_args,
@@ -65,7 +65,7 @@ def build_strategy() -> Strategy:
     now = datetime.now(timezone.utc)
     return Strategy(
         id=uuid.uuid4(),
-        name="Paper SPY moving average call preview",
+        name="SPY moving average call preview",
         description="Existing",
         is_active=True,
         config={
