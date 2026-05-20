@@ -48,7 +48,7 @@ def build_retention_report(db: Session, *, now: datetime | None = None) -> dict[
             "trade_cases",
             "ai_trade_reviews",
             "strategy_change_suggestions",
-            "review_snapshots",
+            "paper_review_snapshots",
             "failed_job_runs",
         ],
     }
