@@ -15,7 +15,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 NOOP_BRIDGE_CURRENT_REVISION = "0011_strategy_tuning_decisions"
-NOOP_BRIDGE_HEAD_REVISION = "0012_rename_paper_review_snapshots"
+NOOP_BRIDGE_HEAD_REVISION = "0012_review_snapshots_noop"
 
 
 def get_alembic_config() -> Config:

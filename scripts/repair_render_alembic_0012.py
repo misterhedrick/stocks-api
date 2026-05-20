@@ -35,7 +35,7 @@ from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
 CURRENT_REVISION = "0011_strategy_tuning_decisions"
-TARGET_REVISION = "0012_rename_paper_review_snapshots"
+TARGET_REVISION = "0012_review_snapshots_noop"
 CONFIRMATION_PHRASE = "STAMP_ALEMBIC_0012"
 
 
