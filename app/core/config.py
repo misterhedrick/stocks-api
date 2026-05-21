@@ -104,6 +104,20 @@ class Settings(BaseSettings):
     market_regime_filter_evaluator_enabled: bool = True
     pairs_relative_value_evaluator_enabled: bool = True
     options_spread_candidate_evaluator_enabled: bool = True
+    entry_quality_gate_enabled: bool = True
+    entry_quality_min_score: Decimal = Decimal("60")
+    entry_quality_fast_confirmation_enabled: bool = True
+    entry_quality_disabled_auto_submit_scanners: str = (
+        "market_regime_filter,options_spread_candidate"
+    )
+    entry_quality_min_relative_edge_percent: Decimal = Decimal("1.0")
+    entry_quality_min_momentum_threshold_multiplier: Decimal = Decimal("1.4")
+    entry_quality_min_breakout_buffer_multiplier: Decimal = Decimal("1.5")
+    entry_quality_min_vwap_distance_percent: Decimal = Decimal("0.25")
+    entry_quality_min_average_separation_percent: Decimal = Decimal("0.20")
+    entry_quality_max_option_spread_percent: Decimal = Decimal("25")
+    entry_quality_min_open_interest: int = 50
+    entry_quality_stop_loss_cooldown_minutes: int = 120
     auto_migrate_on_startup: bool | None = Field(
         default=None,
         validation_alias=AliasChoices(

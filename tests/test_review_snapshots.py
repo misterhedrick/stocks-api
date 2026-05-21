@@ -84,6 +84,26 @@ class ReviewSnapshotTests(unittest.TestCase):
             "SPY",
         )
 
+    def test_create_post_market_snapshot_uses_new_york_review_date(self) -> None:
+        db = FakeSnapshotSession()
+        generated_at = datetime(2026, 5, 21, 0, 35, tzinfo=timezone.utc)
+
+        with patch(
+            "app.services.review_snapshots.build_learning_report",
+            return_value=_learning_report(),
+        ):
+            result = create_or_update_post_market_review_snapshot(
+                db,
+                generated_at=generated_at,
+            )
+
+        snapshot = db.added[-1]
+        self.assertEqual(result.review_date, date(2026, 5, 20))
+        self.assertEqual(snapshot.raw_payload["review_date"], "2026-05-20")
+        self.assertEqual(
+            snapshot.raw_payload["window_start"], "2026-05-20T04:00:00+00:00"
+        )
+
     def test_prune_old_review_snapshots_deletes_before_cutoff(self) -> None:
         old_snapshot = ReviewSnapshot(
             id=uuid.uuid4(),

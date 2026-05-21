@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.utils import current_trading_day_start_utc
 from app.db.models import OrderIntent, Signal, Strategy
+from app.services.entry_quality import entry_preview_delay_reason
 from app.services.market_cycle_steps import _error_category, _normalize_symbol
 from app.services.market_cycle_submit import _preview_payload_for_signal
 from app.services.market_cycle_submit_config import (
@@ -89,6 +90,13 @@ def _preview_created_signals(
             previews_skipped += 1
             skipped_reasons["delayed"] += 1
             errors.append(f"Signal '{signal_id}': {delay_reason}")
+            continue
+
+        quality_delay_reason = entry_preview_delay_reason(signal, strategy)
+        if quality_delay_reason is not None:
+            previews_skipped += 1
+            skipped_reasons["entry_quality_confirmation_pending"] += 1
+            errors.append(f"Signal '{signal_id}': {quality_delay_reason}")
             continue
 
         try:

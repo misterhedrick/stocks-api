@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.utils import current_trading_day_start_utc
 from app.db.models import BrokerOrder, JobRun, OrderIntent, Signal, Strategy
+from app.services.entry_quality import evaluate_entry_quality
 from app.schemas.options import OptionContractSelectionCreate
 from app.schemas.order_intents import OrderIntentPreviewCreate
 from app.services.automation_guard import can_auto_submit_order_intent
@@ -223,6 +224,59 @@ def _submit_previewed_order_intents(
                 ),
                 now=now,
             )
+            signal = db.get(Signal, order_intent.signal_id) if order_intent.signal_id else None
+            quality_decision = evaluate_entry_quality(
+                db,
+                order_intent=order_intent,
+                strategy=strategy,
+                signal=signal,
+                now=now,
+            )
+            logger.info(
+                "market_cycle submit_quality_decision intent_id=%s strategy_id=%s strategy_name=%s "
+                "underlying_symbol=%s option_symbol=%s allowed=%s score=%s reasons=%s snapshot=%s",
+                order_intent.id,
+                strategy.id,
+                strategy.name,
+                order_intent.underlying_symbol,
+                order_intent.option_symbol,
+                quality_decision.allowed,
+                quality_decision.score,
+                quality_decision.reasons,
+                quality_decision.snapshot,
+            )
+            if not quality_decision.allowed:
+                skipped += 1
+                reason_key = _skip_reason_key(quality_decision.reasons)
+                skipped_reasons[reason_key] += 1
+                message = "; ".join(quality_decision.reasons)
+                errors.append(f"Order intent '{order_intent_id}': {message}")
+                order_intent.status = "rejected"
+                order_intent.rejection_reason = f"entry_quality_gate: {message}"
+                db.add(order_intent)
+                record_audit_log(
+                    db,
+                    event_type="order_intent.auto_submit_quality_rejected",
+                    entity_type="order_intent",
+                    entity_id=order_intent.id,
+                    message="Auto-submit rejected by entry quality gate",
+                    payload={
+                        "order_intent_id": str(order_intent.id),
+                        "strategy_id": str(strategy.id),
+                        "cycle_id": cycle_id,
+                        "reasons": quality_decision.reasons,
+                        "quality": quality_decision.snapshot,
+                    },
+                )
+                db.commit()
+                logger.warning(
+                    "market_cycle submit_candidate_skipped reason=%s id=%s status=%s quality_score=%s",
+                    reason_key,
+                    order_intent.id,
+                    order_intent.status,
+                    quality_decision.score,
+                )
+                continue
         except ValueError as exc:
             skipped += 1
             reason_key = _skip_reason_key([str(exc)])
@@ -362,6 +416,16 @@ def _skip_reason_key(reasons: list[str]) -> str:
         return "strategy_submit_disabled"
     if "scanner.submit config" in text:
         return "missing_strategy_submit_config"
+    if "entry quality" in text or "auto-submit minimum" in text:
+        return "entry_quality_gate"
+    if "signal-only" in text:
+        return "scanner_signal_only"
+    if "cooldown" in text:
+        return "stop_loss_cooldown"
+    if "spread percent" in text or "open interest" in text:
+        return "option_quality_gate"
+    if "market regime is a filter" in text:
+        return "scanner_filter_only"
     return "guard_blocked" if reasons else "unknown"
 
 

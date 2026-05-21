@@ -19,8 +19,5 @@ if (-not (Test-Path ".env")) {
 Write-Host "Checking database connection..."
 python -m app.db.check_database
 
-Write-Host "Applying database migrations..."
-python -m alembic upgrade head
-
 Write-Host "Starting stocks-api locally..."
 python -m uvicorn app.main:app --reload

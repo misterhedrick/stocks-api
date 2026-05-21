@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 import uuid
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -50,9 +51,16 @@ def create_or_update_post_market_review_snapshot(
         generated = generated.replace(tzinfo=timezone.utc)
     generated = generated.astimezone(timezone.utc)
 
-    selected_date = review_date or generated.date()
-    window_start = datetime.combine(selected_date, time.min, tzinfo=timezone.utc)
-    window_end = datetime.combine(selected_date, time.max, tzinfo=timezone.utc)
+    selected_date = review_date or generated.astimezone(
+        ZoneInfo("America/New_York")
+    ).date()
+    trading_tz = ZoneInfo("America/New_York")
+    window_start = datetime.combine(selected_date, time.min, tzinfo=trading_tz).astimezone(
+        timezone.utc
+    )
+    window_end = datetime.combine(selected_date, time.max, tzinfo=trading_tz).astimezone(
+        timezone.utc
+    )
 
     if performance is None:
         performance = get_performance_review(db, limit=limit)
@@ -169,6 +177,7 @@ def create_or_update_post_market_review_snapshot(
     snapshot.raw_payload = raw_payload
     db.add(snapshot)
     db.commit()
+    db.refresh(snapshot)
     # Detach from the session so SQLAlchemy drops the large JSON columns from its identity map.
     # Column values already loaded (including id) remain accessible on the detached object.
     db.expunge(snapshot)

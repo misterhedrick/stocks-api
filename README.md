@@ -321,6 +321,27 @@ options_spread_candidate=2500
 
 The options spread scanner currently creates spread-candidate signals but still uses the existing single-leg long call/put preview pipeline. Multi-leg option orders need separate execution plumbing before it can submit true spreads.
 
+## Entry quality gate
+
+Auto-submit now has a quality gate between preview and broker submission. Scanners still create signals and previews for review, but weak entries can be rejected before they become Alpaca orders. The gate is controlled by:
+
+```text
+ENTRY_QUALITY_GATE_ENABLED=true
+ENTRY_QUALITY_MIN_SCORE=60
+ENTRY_QUALITY_FAST_CONFIRMATION_ENABLED=true
+ENTRY_QUALITY_DISABLED_AUTO_SUBMIT_SCANNERS=market_regime_filter,options_spread_candidate
+ENTRY_QUALITY_MIN_RELATIVE_EDGE_PERCENT=1.0
+ENTRY_QUALITY_MIN_MOMENTUM_THRESHOLD_MULTIPLIER=1.4
+ENTRY_QUALITY_MIN_BREAKOUT_BUFFER_MULTIPLIER=1.5
+ENTRY_QUALITY_MIN_VWAP_DISTANCE_PERCENT=0.25
+ENTRY_QUALITY_MIN_AVERAGE_SEPARATION_PERCENT=0.20
+ENTRY_QUALITY_MAX_OPTION_SPREAD_PERCENT=25
+ENTRY_QUALITY_MIN_OPEN_INTEREST=50
+ENTRY_QUALITY_STOP_LOSS_COOLDOWN_MINUTES=120
+```
+
+Fast scanners (`momentum_rate_of_change`, `vwap_reclaim`, `opening_range_breakout`, and `moving_average`) wait one completed signal timeframe before previewing so the next cycle can confirm the setup. `market_regime_filter` is treated as a filter-only signal by default, and `options_spread_candidate` stays signal-only until multi-leg execution exists.
+
 The strongest loss sources are tuned at the strategy/profile level rather than pausing a single symbol cron. SPY remains in the paper universe unless a future review explicitly removes it.
 
 Apply the 2026-05-18 strategy-type tuning batch with:
