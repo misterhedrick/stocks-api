@@ -7,6 +7,9 @@ fi
 
 LOCAL_DB_URL="postgresql+psycopg://postgres:postgres@localhost:5432/stocks_api"
 
+echo "[cloud-db] Installing dependencies..."
+pip install -q -r requirements.txt
+
 echo "[cloud-db] Starting PostgreSQL..."
 service postgresql start
 
