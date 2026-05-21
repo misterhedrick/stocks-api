@@ -7,6 +7,10 @@ fi
 
 LOCAL_DB_URL="postgresql+psycopg://postgres:postgres@localhost:5432/stocks_api"
 
+echo "[cloud-db] Installing dependencies..."
+cd "$CLAUDE_PROJECT_DIR"
+pip install -q -r requirements.txt
+
 echo "[cloud-db] Starting PostgreSQL..."
 service postgresql start
 
@@ -18,7 +22,6 @@ echo "[cloud-db] Overriding DATABASE_URL for this session..."
 echo "DATABASE_URL=${LOCAL_DB_URL}" >> "$CLAUDE_ENV_FILE"
 
 echo "[cloud-db] Running migrations..."
-cd "$CLAUDE_PROJECT_DIR"
 DATABASE_URL="$LOCAL_DB_URL" python -m alembic upgrade head
 
 echo "[cloud-db] Local DB ready: $LOCAL_DB_URL"
