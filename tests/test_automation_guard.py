@@ -38,6 +38,13 @@ def build_order_intent() -> OrderIntent:
     )
 
 
+def build_exit_order_intent() -> OrderIntent:
+    order_intent = build_order_intent()
+    order_intent.side = "sell"
+    order_intent.limit_price = Decimal("9.99")
+    return order_intent
+
+
 def build_broker_order(order_intent: OrderIntent) -> BrokerOrder:
     return BrokerOrder(
         id=uuid.uuid4(),
@@ -179,6 +186,18 @@ class AutomationGuardTests(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertIn("MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY reached", decision.reasons)
         self.assertEqual(decision.limits_snapshot["submitted_auto_orders_today_for_symbol"], 5)
+
+    def test_allows_exit_when_entry_exposure_caps_are_reached(self) -> None:
+        with self.allowed_settings():
+            decision = can_auto_submit_order_intent(
+                FakeAutomationGuardSession(scalar_results=[3, 5, 3, 1, 0]),
+                build_exit_order_intent(),
+            )
+
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.reasons, [])
+        self.assertTrue(decision.limits_snapshot["is_exit_order"])
+        self.assertEqual(decision.limits_snapshot["estimated_premium"], "999.00")
 
     def test_allows_when_all_gates_pass(self) -> None:
         with self.allowed_settings():

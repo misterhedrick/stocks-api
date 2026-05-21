@@ -37,6 +37,9 @@ class BrokerReconciliationResult:
     fill_pages_fetched: int = 0
     fill_pagination_complete: bool = True
     fill_pagination_stop_reason: str = "not_run"
+    orders_skipped_before_reset: int = 0
+    fills_skipped_before_reset: int = 0
+    positions_skipped_without_post_reset_activity: int = 0
 
 
 @dataclass(slots=True)
@@ -67,6 +70,7 @@ def reconcile_broker_state(
 
     try:
         client = trading_client or AlpacaTradingClient.from_settings()
+        reset_cutoff = _latest_trading_reset_cutoff(db)
         order_rows = client.list_orders(limit=order_limit)
         requested_fill_page_size = fill_page_size
         safe_fill_page_size = _safe_fill_page_size(fill_page_size)
@@ -82,9 +86,15 @@ def reconcile_broker_state(
         orders_created = 0
         orders_updated = 0
         fills_created = 0
+        orders_skipped_before_reset = 0
+        fills_skipped_before_reset = 0
+        positions_skipped_without_post_reset_activity = 0
         captured_at = datetime.now(timezone.utc)
 
         for order, raw_order in order_rows:
+            if not _order_is_after_reset(order, reset_cutoff):
+                orders_skipped_before_reset += 1
+                continue
             created = _upsert_broker_order(db, order, raw_order)
             if created:
                 orders_created += 1
@@ -92,25 +102,41 @@ def reconcile_broker_state(
                 orders_updated += 1
 
         for fill, raw_fill in fill_rows:
+            if reset_cutoff is not None and fill.transaction_time < reset_cutoff:
+                fills_skipped_before_reset += 1
+                continue
             if _insert_fill_if_new(db, fill, raw_fill):
                 fills_created += 1
 
         for position, raw_position in position_rows:
+            if not _position_has_post_reset_activity(db, position, reset_cutoff):
+                positions_skipped_without_post_reset_activity += 1
+                continue
             _create_position_snapshot(db, position, raw_position, captured_at)
 
         details = {
             "orders_seen": len(order_rows),
             "orders_created": orders_created,
             "orders_updated": orders_updated,
+            "orders_skipped_before_reset": orders_skipped_before_reset,
             "fills_seen": len(fill_rows),
             "fills_created": fills_created,
+            "fills_skipped_before_reset": fills_skipped_before_reset,
             "fill_page_size_requested": requested_fill_page_size,
             "fill_page_size_used": safe_fill_page_size,
             "fill_pages_fetched": fill_page.pages_fetched,
             "fill_pagination_complete": fill_page.complete,
             "fill_pagination_stop_reason": fill_page.stop_reason,
             "positions_seen": len(position_rows),
-            "position_snapshots_created": len(position_rows),
+            "position_snapshots_created": (
+                len(position_rows) - positions_skipped_without_post_reset_activity
+            ),
+            "positions_skipped_without_post_reset_activity": (
+                positions_skipped_without_post_reset_activity
+            ),
+            "trading_data_reset_cutoff": (
+                reset_cutoff.isoformat() if reset_cutoff is not None else None
+            ),
         }
         job_run.status = "succeeded"
         job_run.finished_at = datetime.now(timezone.utc)
@@ -143,12 +169,19 @@ def reconcile_broker_state(
             fills_seen=len(fill_rows),
             fills_created=fills_created,
             positions_seen=len(position_rows),
-            position_snapshots_created=len(position_rows),
+            position_snapshots_created=(
+                len(position_rows) - positions_skipped_without_post_reset_activity
+            ),
             fill_page_size_requested=requested_fill_page_size,
             fill_page_size_used=safe_fill_page_size,
             fill_pages_fetched=fill_page.pages_fetched,
             fill_pagination_complete=fill_page.complete,
             fill_pagination_stop_reason=fill_page.stop_reason,
+            orders_skipped_before_reset=orders_skipped_before_reset,
+            fills_skipped_before_reset=fills_skipped_before_reset,
+            positions_skipped_without_post_reset_activity=(
+                positions_skipped_without_post_reset_activity
+            ),
         )
     except Exception as exc:
         logger.error("Broker reconciliation failed: %s: %s", exc.__class__.__name__, exc)
@@ -262,6 +295,54 @@ def _list_all_fill_activities(
         complete=stop_reason not in {"missing_or_repeated_next_page_token", "budget_exceeded"},
         stop_reason=stop_reason,
     )
+
+
+def _latest_trading_reset_cutoff(db: Session) -> datetime | None:
+    job_run = db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "trading_data_reset")
+        .where(JobRun.status == "succeeded")
+        .order_by(JobRun.started_at.desc())
+        .limit(1)
+    )
+    if job_run is None:
+        return None
+    return job_run.started_at
+
+
+def _order_is_after_reset(
+    order: AlpacaSubmittedOrder,
+    reset_cutoff: datetime | None,
+) -> bool:
+    if reset_cutoff is None:
+        return True
+    order_time = order.submitted_at or order.filled_at
+    return order_time is not None and order_time >= reset_cutoff
+
+
+def _position_has_post_reset_activity(
+    db: Session,
+    position: AlpacaPosition,
+    reset_cutoff: datetime | None,
+) -> bool:
+    if reset_cutoff is None:
+        return True
+    broker_order_count = db.scalar(
+        select(BrokerOrder.id)
+        .where(BrokerOrder.symbol == position.symbol)
+        .where(BrokerOrder.submitted_at.is_not(None))
+        .where(BrokerOrder.submitted_at >= reset_cutoff)
+        .limit(1)
+    )
+    if broker_order_count is not None:
+        return True
+    fill_count = db.scalar(
+        select(Fill.id)
+        .where(Fill.symbol == position.symbol)
+        .where(Fill.filled_at >= reset_cutoff)
+        .limit(1)
+    )
+    return fill_count is not None
 
 
 def _upsert_broker_order(

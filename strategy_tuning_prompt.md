@@ -8,6 +8,7 @@ The goal is not to make one tiny change at the research stage. The goal is to qu
 
 ```text
 Work from develop.
+Create or switch to a feature branch before making any file edits.
 
 Do a strategy tuning research pass for the paper-trading system. Use the latest saved evidence from:
 
@@ -30,9 +31,12 @@ Also read:
 - ai_refresh.txt
 
 Do not apply changes yet.
-Do not change live/master.
+Do not change live, master, or production Render settings.
 Do not let AI automatically rewrite strategy logic.
 Keep all recommendations paper-only and human-review-only.
+Use strategy_tuning_decisions as review records only; they must not apply config or code changes automatically.
+
+If API data is unavailable, report exactly what was unavailable and fall back to local database/query evidence only when it is safe to do so.
 
 Research goals:
 
@@ -61,6 +65,7 @@ Research goals:
    - each change should modify only one or two knobs
    - separate config/env tuning from code changes
    - do not bundle unrelated changes together
+   - prefer env/config tuning before code changes unless the evidence shows a code defect
    - prefer scanner/profile tuning before removing a symbol from the paper universe unless the user explicitly approves a symbol pause
 
 5. For each proposed change, include:
@@ -75,6 +80,7 @@ Research goals:
    - rollback criteria
    - how many post-market snapshots to wait before judging
    - whether it should be recorded as a strategy_tuning_decision
+   - whether implementation would require code, DB config, seeded strategy config, or Render/env settings
 
 6. Prioritize the batch:
    - P0: fix data/runtime/schedule issues before tuning strategy behavior
@@ -90,6 +96,7 @@ Research goals:
    - changes explicitly not recommended yet
    - decision records that should be created
    - tests or smoke checks to run after implementation
+   - any data gaps that limit confidence
 
 Stop after the research report. Do not apply changes unless I explicitly approve the batch or specific items.
 ```
@@ -102,9 +109,11 @@ Use this after reviewing the research report.
 Approved: apply tuning items [list item numbers].
 
 Work from develop only.
+Create or switch to a feature branch before editing files.
 Record strategy_tuning_decision entries before applying the changes.
 Apply only the approved items.
 Keep changes paper-only.
+Do not change live, master, or production Render settings unless I explicitly approve those exact settings.
 Run relevant tests.
 Summarize exactly what changed, what evidence drove it, and how we will judge the outcome after future snapshots.
 ```

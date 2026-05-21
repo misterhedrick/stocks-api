@@ -29,6 +29,7 @@ def can_auto_submit_order_intent(
     cycle_id: str | None = None,
 ) -> AutomationDecision:
     reasons: list[str] = []
+    is_exit_order = _is_exit_order(order_intent)
     price = _order_intent_price(order_intent)
     estimated_premium = (
         price * Decimal(order_intent.quantity) * Decimal("100")
@@ -76,6 +77,7 @@ def can_auto_submit_order_intent(
         else None,
         "price_available": price is not None,
         "has_broker_order": has_broker_order,
+        "is_exit_order": is_exit_order,
     }
 
     if not settings.trading_automation_enabled:
@@ -91,21 +93,28 @@ def can_auto_submit_order_intent(
     if order_intent.quantity > settings.max_contracts_per_order:
         reasons.append("order intent quantity exceeds MAX_CONTRACTS_PER_ORDER")
     if (
-        estimated_premium is not None
+        not is_exit_order
+        and estimated_premium is not None
         and estimated_premium > settings.max_estimated_premium_per_order
     ):
         reasons.append(
             "estimated premium exceeds MAX_ESTIMATED_PREMIUM_PER_ORDER"
         )
-    if submitted_today >= settings.max_auto_orders_per_day:
+    if not is_exit_order and submitted_today >= settings.max_auto_orders_per_day:
         reasons.append("MAX_AUTO_ORDERS_PER_DAY reached")
-    if submitted_today_for_symbol >= settings.max_auto_orders_per_symbol_per_day:
+    if (
+        not is_exit_order
+        and submitted_today_for_symbol >= settings.max_auto_orders_per_symbol_per_day
+    ):
         reasons.append("MAX_AUTO_ORDERS_PER_SYMBOL_PER_DAY reached")
-    if submitted_this_cycle >= settings.max_auto_orders_per_cycle:
+    if not is_exit_order and submitted_this_cycle >= settings.max_auto_orders_per_cycle:
         reasons.append("MAX_AUTO_ORDERS_PER_CYCLE reached")
-    if open_positions >= settings.max_open_positions:
+    if not is_exit_order and open_positions >= settings.max_open_positions:
         reasons.append("MAX_OPEN_POSITIONS reached")
-    if open_positions_for_symbol >= settings.max_open_positions_per_symbol:
+    if (
+        not is_exit_order
+        and open_positions_for_symbol >= settings.max_open_positions_per_symbol
+    ):
         reasons.append("MAX_OPEN_POSITIONS_PER_SYMBOL reached")
 
     return AutomationDecision(
@@ -113,6 +122,10 @@ def can_auto_submit_order_intent(
         reasons=reasons,
         limits_snapshot=limits_snapshot,
     )
+
+
+def _is_exit_order(order_intent: OrderIntent) -> bool:
+    return str(order_intent.side or "").strip().lower() == "sell"
 
 
 def _has_broker_order(db: Session, order_intent: OrderIntent) -> bool:
