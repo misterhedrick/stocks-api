@@ -85,6 +85,8 @@ class RenderJobRunnerTests(unittest.TestCase):
         self.assertTrue(is_deterministic_error_body(502, "validation failed"))
         self.assertTrue(is_deterministic_error_body(422, "bad request"))
         self.assertFalse(is_deterministic_error_body(502, "upstream timeout"))
+        self.assertTrue(is_deterministic_error_body(502, '{"detail":"unauthorized."}'))
+        self.assertTrue(is_deterministic_error_body(502, '{"detail":"Unauthorized"}'))
 
     def test_disabled_job_exits_successfully_without_required_secrets(self) -> None:
         with patch.dict(os.environ, {"SCHEDULED_JOBS_ENABLED": "false"}, clear=True), patch(
@@ -264,6 +266,42 @@ class RenderJobRunnerTests(unittest.TestCase):
         ), patch(
             "scripts.run_render_job.urlopen",
             side_effect=deterministic_error,
+        ) as urlopen, patch(
+            "scripts.run_render_job.time.sleep",
+        ) as sleep, patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ), patch(
+            "sys.stderr",
+            new_callable=StringIO,
+        ):
+            self.assertEqual(run_job_from_env(), 1)
+
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_job_does_not_retry_502_unauthorized_body(self) -> None:
+        auth_error = HTTPError(
+            "https://example.test/api/v1/jobs/market-maintenance",
+            502,
+            "Bad Gateway",
+            hdrs=None,
+            fp=BytesIO(b'{"detail":"unauthorized."}'),
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCHEDULED_JOBS_ENABLED": "true",
+                "STOCKS_API_BASE_URL": "https://example.test",
+                "ADMIN_API_TOKEN": "token",
+                "JOB_PATH": "/api/v1/jobs/market-maintenance",
+                "JOB_RETRY_DELAYS_SECONDS": "0",
+            },
+            clear=True,
+        ), patch(
+            "scripts.run_render_job.urlopen",
+            side_effect=auth_error,
         ) as urlopen, patch(
             "scripts.run_render_job.time.sleep",
         ) as sleep, patch(

@@ -20,6 +20,7 @@ DETERMINISTIC_ERROR_MARKERS = (
     "page size",
     "maximum is 100",
     "validation",
+    "unauthorized",
 )
 
 
