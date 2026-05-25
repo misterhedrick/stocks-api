@@ -15,6 +15,7 @@ from app.services.market_cycle import (
     run_market_cycle,
     run_market_entry_cycle,
 )
+from app.services.market_cycle_submit_config import _contract_selection_for_signal
 from app.services.option_contracts import OptionContractNotFoundError
 from app.services.news_scanner import NewsScanResult
 from app.services.position_exits import ExitEvaluationResult
@@ -219,7 +220,7 @@ def build_strategy() -> Strategy:
                     "max_orders_per_cycle": 1,
                     "max_contracts_per_order": 1,
                     "max_contracts_per_cycle": 1,
-                    "max_notional_per_order": "250.00",
+                    "max_notional_per_order": "5000.00",
                     "max_open_contracts_per_symbol": 1,
                     "max_open_contracts_per_strategy": 2,
                     "allowed_sides": ["buy"],
@@ -284,6 +285,20 @@ def build_broker_order(order_intent: OrderIntent) -> BrokerOrder:
 
 def allowed_automation_decision() -> AutomationDecision:
     return AutomationDecision(allowed=True, reasons=[], limits_snapshot={})
+
+
+class MarketCyclePreviewConfigTests(unittest.TestCase):
+    def test_contract_selection_carries_preview_profile(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["preview"]["preview_profile"] = "momentum_rate_of_change"
+        signal = build_signal(strategy)
+
+        payload = _contract_selection_for_signal(
+            signal,
+            strategy.config["scanner"]["preview"],
+        )
+
+        self.assertEqual(payload.preview_profile, "momentum_rate_of_change")
 
 
 class MarketCycleTests(unittest.TestCase):

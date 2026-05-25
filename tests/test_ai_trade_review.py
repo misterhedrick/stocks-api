@@ -96,6 +96,16 @@ class AiTradeReviewTests(unittest.TestCase):
         self.assertEqual(assessment["outcome"], "win")
         self.assertIn("must not be applied automatically", assessment["recommendation_boundary"])
 
+    def test_assessment_parses_occ_contract_type_from_option_symbol(self) -> None:
+        assessment = _assessment_for_trade_case(
+            _trade_case(),
+            latest_snapshot=_snapshot(),
+            review_model="local-test",
+        )
+
+        self.assertEqual(assessment["entry_option"]["contract_type"], "call")
+        self.assertEqual(assessment["entry_option"]["strike"], "500")
+
     def test_suggestions_default_to_monitoring_for_single_clean_win(self) -> None:
         assessment = {
             "outcome": "win",

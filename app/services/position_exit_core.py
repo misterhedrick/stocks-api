@@ -143,6 +143,7 @@ def evaluate_position_exits(
                 exit_config,
                 trigger_reason=trigger_reason,
                 market_data_client=client,
+                max_quantity=ownership.open_quantity,
             )
         except Exception as exc:
             exits_skipped += 1

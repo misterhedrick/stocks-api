@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -29,12 +30,14 @@ def _create_exit_order_intent(
     *,
     trigger_reason: str,
     market_data_client: AlpacaMarketDataClient,
+    max_quantity: Decimal | None = None,
 ) -> OrderIntent:
     max_contracts_per_exit = _optional_int(exit_config.get("max_contracts_per_exit"))
     if max_contracts_per_exit is not None and max_contracts_per_exit <= 0:
         raise ValueError("scanner.exit.max_contracts_per_exit must be greater than 0")
+    available_quantity = min(position.quantity, max_quantity or position.quantity)
     quantity = min(
-        int(position.quantity),
+        int(available_quantity),
         max_contracts_per_exit or int(position.quantity),
     )
     if quantity <= 0:

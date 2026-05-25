@@ -40,7 +40,7 @@ Emergency switches:
 | Stop cron runner execution | `SCHEDULED_JOBS_ENABLED=false` |
 | Pause exit automation | `MARKET_CYCLE_EXIT_ENABLED=false` |
 
-Paper safety settings should stay enabled:
+Paper-trading safety settings should stay enabled:
 
 ```text
 ALPACA_PAPER=true
@@ -287,7 +287,7 @@ If a deploy breaks health/readiness:
 Phase 1 is operationally complete when:
 
 - Health and readiness pass after deploys.
-- Paper-only safety settings are verified.
+- Paper-trading-only safety settings are verified.
 - Entry, exit, and maintenance crons run on schedule.
 - Daily review explains what happened each market day.
 - Option diagnostics explain skipped/rejected trades.

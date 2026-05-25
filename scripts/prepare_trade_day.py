@@ -19,16 +19,22 @@ from app.services.audit_logs import record_audit_log
 
 
 DEFAULT_STRATEGY_NAMES = (
-    "Paper QQQ downside put preview",
-    "Paper SPY confirmed trend call preview",
-    "Paper SPY momentum call preview",
-    "Paper SPY moving average call preview",
-    "Paper SPY upside call preview",
-)
-
-LEGACY_STRATEGY_NAMES = (
-    "SPY Cron Paper Test",
-    "SPY Paper Momentum",
+    "moving_average",
+    "momentum_rate_of_change",
+    "rsi_reversal",
+    "macd_crossover",
+    "mean_reversion",
+    "breakout_price_threshold",
+    "volume_confirmed_breakout",
+    "volatility_squeeze",
+    "support_resistance",
+    "vwap_reclaim",
+    "opening_range_breakout",
+    "relative_strength",
+    "time_series_momentum",
+    "market_regime_filter",
+    "pairs_relative_value",
+    "options_spread_candidate",
 )
 
 
@@ -84,7 +90,7 @@ def main() -> None:
             max_notional = (
                 preview.get("max_estimated_notional")
                 or existing_submit.get("max_notional_per_order")
-                or "250.00"
+                or "5000.00"
             )
             submit_config = {
                 "enabled": True,
@@ -128,20 +134,24 @@ def main() -> None:
                     entity_id=strategy.id,
                     message="Strategy prepared for trade data gathering",
                     payload={
-                        "source": "prepare_paper_trade_day",
+                        "source": "prepare_trade_day",
                         "submit_config": submit_config,
                     },
                 )
 
         if not args.keep_legacy_active:
+            prepared_names = {strategy.name for strategy in strategies}
             legacy_strategies = list(
                 db.scalars(
                     select(Strategy)
-                    .where(Strategy.name.in_(LEGACY_STRATEGY_NAMES))
+                    .where(Strategy.is_active == True)  # noqa: E712
+                    .where(Strategy.name.not_in(prepared_names))
                     .order_by(Strategy.name.asc())
                 )
             )
             for strategy in legacy_strategies:
+                if not _looks_like_legacy_trade_day_strategy(strategy):
+                    continue
                 deactivated.append(
                     {
                         "id": str(strategy.id),
@@ -159,7 +169,7 @@ def main() -> None:
                         entity_id=strategy.id,
                         message="Legacy test strategy deactivated for trade data gathering",
                         payload={
-                            "source": "prepare_paper_trade_day",
+                            "source": "prepare_trade_day",
                             "reason": "avoid always-on or stale test strategy signals",
                         },
                     )
@@ -179,6 +189,27 @@ def main() -> None:
             indent=2,
             sort_keys=True,
         )
+    )
+
+
+def _looks_like_legacy_trade_day_strategy(strategy: Strategy) -> bool:
+    scanner = strategy.config.get("scanner") if isinstance(strategy.config, dict) else None
+    if not isinstance(scanner, dict):
+        return False
+
+    scanner_type = scanner.get("type")
+    if scanner_type in {"price_threshold", "percent_change", "trend_confirmation"}:
+        return True
+
+    symbols = scanner.get("symbols")
+    preview = scanner.get("preview")
+    return (
+        strategy.name.strip().endswith(" preview")
+        and isinstance(symbols, list)
+        and len(symbols) == 1
+        and isinstance(preview, dict)
+        and isinstance(preview.get("underlying_symbol"), str)
+        and isinstance(preview.get("option_type"), str)
     )
 
 
