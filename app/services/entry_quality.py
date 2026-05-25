@@ -295,9 +295,10 @@ def _recent_stop_loss_exit_intent_exists(
         .where(func.upper(OrderIntent.underlying_symbol) == underlying)
         .where(func.lower(OrderIntent.side) == "sell")
         .where(OrderIntent.created_at >= since)
+        .where(OrderIntent.status.not_in(["canceled", "rejected", "expired", "stale"]))
     )
     try:
-        intents = list(db.scalars(statement))
+        intents = db.scalars(statement)
     except Exception:
         return False
     return any(_is_stop_loss_exit_intent(intent) for intent in intents)

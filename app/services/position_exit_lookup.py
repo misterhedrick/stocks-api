@@ -161,21 +161,18 @@ def _latest_open_entry_lot_for_position(
 
     open_lots: dict[uuid.UUID, list[dict[str, Any]]] = {}
     saw_fill = False
-    for row in rows:
-        values = tuple(row)
-        side = str(values[2]).lower()
-        strategy_id = values[6]
-        order_intent_id = values[5]
+    for _fill_id, filled_at, side, quantity, _price, order_intent_id, strategy_id in rows:
+        side = str(side).lower()
         if strategy_id is None or order_intent_id is None:
             continue
         saw_fill = True
-        quantity = Decimal(str(values[3]))
+        quantity = Decimal(str(quantity))
         if side == "buy":
             open_lots.setdefault(strategy_id, []).append(
                 {
                     "strategy_id": strategy_id,
                     "order_intent_id": order_intent_id,
-                    "filled_at": values[1],
+                    "filled_at": filled_at,
                     "remaining_quantity": quantity,
                 }
             )

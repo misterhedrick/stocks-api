@@ -47,25 +47,17 @@ def preview_order_intent_from_signal(
     max_spread = _effective_max_spread(payload)
     max_spread_percent = payload.max_spread_percent
     if payload.contract_selection is not None:
+        profile_limits = resolve_preview_profile_limits(
+            payload.contract_selection.preview_profile,
+            max_estimated_notional=max_estimated_notional,
+            max_spread=max_spread,
+            max_spread_percent=max_spread_percent or payload.contract_selection.max_spread_percent,
+            min_open_interest=payload.contract_selection.min_open_interest,
+        )
         selection_payload = payload.contract_selection.model_copy(
             update={
                 "side": payload.side,
                 "data_feed": payload.data_feed,
-                "max_estimated_notional": max_estimated_notional,
-                "max_spread": max_spread,
-                "max_spread_percent": max_spread_percent
-                or payload.contract_selection.max_spread_percent,
-            }
-        )
-        profile_limits = resolve_preview_profile_limits(
-            selection_payload.preview_profile,
-            max_estimated_notional=selection_payload.max_estimated_notional,
-            max_spread=selection_payload.max_spread,
-            max_spread_percent=selection_payload.max_spread_percent,
-            min_open_interest=selection_payload.min_open_interest,
-        )
-        selection_payload = selection_payload.model_copy(
-            update={
                 "max_estimated_notional": profile_limits.max_estimated_notional,
                 "max_spread": profile_limits.max_spread,
                 "max_spread_percent": profile_limits.max_spread_percent,
