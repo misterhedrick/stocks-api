@@ -58,6 +58,23 @@ def test_bullish_momentum_signal() -> None:
     assert signal.features["percent_change"] is not None
 
 
+def test_default_momentum_settings_are_more_selective() -> None:
+    closes = [100 + index * 0.01 for index in range(46)]
+    frame = _frame(closes)
+    evaluator = MomentumRateOfChangeEvaluator()
+
+    features = evaluator.required_features({})
+    signal = evaluator.evaluate(
+        symbol="SPY",
+        config={},
+        candles=frame,
+        indicators=_indicators(frame),
+    )
+
+    assert features.lookback_minutes == 45
+    assert signal is None
+
+
 def test_bearish_momentum_signal() -> None:
     frame = _frame([100, 99.95, 99.90, 99.75, 99.60, 99.45])
     signal = MomentumRateOfChangeEvaluator().evaluate(

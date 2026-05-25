@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from typing import Any
+import uuid
 
 from sqlalchemy import and_, func, or_, select
 
@@ -69,7 +71,19 @@ def resolve_position_ownership(
     db: Session,
     position: PositionSnapshot,
 ) -> PositionOwnership:
-    order_intent = _latest_entry_order_intent_for_position(db, position.symbol)
+    open_lot = _latest_open_entry_lot_for_position(db, position.symbol)
+    if open_lot is not None:
+        order_intent = open_lot.get("order_intent")
+        open_quantity = open_lot.get("remaining_quantity")
+        if order_intent is None:
+            return PositionOwnership(
+                symbol=position.symbol,
+                managed=False,
+                reason="no open strategy-linked entry lot found",
+            )
+    else:
+        order_intent = _latest_entry_order_intent_for_position(db, position.symbol)
+        open_quantity = None
     if order_intent is None:
         return PositionOwnership(
             symbol=position.symbol,
@@ -114,6 +128,7 @@ def resolve_position_ownership(
         strategy_id=strategy.id,
         strategy_name=strategy.name,
         order_intent_id=order_intent.id,
+        open_quantity=open_quantity if isinstance(open_quantity, Decimal) else None,
     )
 
 def _latest_entry_order_intent_for_position(
@@ -133,6 +148,95 @@ def _latest_entry_order_intent_for_position(
         .limit(1)
     )
     return db.scalar(statement)
+
+
+def _latest_open_entry_lot_for_position(
+    db: Session,
+    symbol: str,
+) -> dict[str, Any] | None:
+    try:
+        rows = list(db.execute(_strategy_fill_statement_for_symbol(symbol)))
+    except Exception:
+        return None
+
+    open_lots: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    saw_fill = False
+    for row in rows:
+        values = tuple(row)
+        side = str(values[2]).lower()
+        strategy_id = values[6]
+        order_intent_id = values[5]
+        if strategy_id is None or order_intent_id is None:
+            continue
+        saw_fill = True
+        quantity = Decimal(str(values[3]))
+        if side == "buy":
+            open_lots.setdefault(strategy_id, []).append(
+                {
+                    "strategy_id": strategy_id,
+                    "order_intent_id": order_intent_id,
+                    "filled_at": values[1],
+                    "remaining_quantity": quantity,
+                }
+            )
+            continue
+        if side != "sell":
+            continue
+
+        remaining_sell_quantity = quantity
+        lots = open_lots.get(strategy_id, [])
+        while remaining_sell_quantity > 0 and lots:
+            lot = lots[0]
+            matched_quantity = min(remaining_sell_quantity, lot["remaining_quantity"])
+            lot["remaining_quantity"] -= matched_quantity
+            remaining_sell_quantity -= matched_quantity
+            if lot["remaining_quantity"] <= 0:
+                lots.pop(0)
+
+    if not saw_fill:
+        return None
+
+    remaining_lots = [
+        lot
+        for lots in open_lots.values()
+        for lot in lots
+        if lot["remaining_quantity"] > 0
+    ]
+    if not remaining_lots:
+        return {}
+
+    latest_lot = max(
+        remaining_lots,
+        key=lambda item: item["filled_at"] or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    order_intent = db.get(OrderIntent, latest_lot["order_intent_id"])
+    if order_intent is None:
+        return {}
+    return {
+        "order_intent": order_intent,
+        "remaining_quantity": latest_lot["remaining_quantity"],
+    }
+
+
+def _strategy_fill_statement_for_symbol(symbol: str) -> object:
+    return (
+        select(
+            Fill.id,
+            Fill.filled_at,
+            Fill.side,
+            Fill.quantity,
+            Fill.price,
+            OrderIntent.id,
+            OrderIntent.strategy_id,
+        )
+        .select_from(Fill)
+        .join(BrokerOrder, Fill.broker_order_id == BrokerOrder.id)
+        .join(OrderIntent, BrokerOrder.order_intent_id == OrderIntent.id)
+        .where(Fill.symbol == symbol)
+        .where(OrderIntent.option_symbol == symbol)
+        .where(OrderIntent.strategy_id.is_not(None))
+        .order_by(Fill.filled_at.asc(), Fill.created_at.asc())
+    )
 
 def _exit_config_for_strategy(strategy: Strategy) -> dict[str, Any] | None:
     scanner_config = strategy.config.get("scanner")

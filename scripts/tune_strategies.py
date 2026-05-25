@@ -112,7 +112,7 @@ def main() -> None:
     submit_parser.add_argument("--max-orders-per-cycle", type=int, default=100)
     submit_parser.add_argument("--max-contracts-per-order", type=int, default=1)
     submit_parser.add_argument("--max-contracts-per-cycle", type=int, default=100)
-    submit_parser.add_argument("--max-notional-per-order", default="2500.00")
+    submit_parser.add_argument("--max-notional-per-order", default="5000.00")
     submit_parser.add_argument("--max-open-contracts-per-symbol", type=int, default=100)
     submit_parser.add_argument("--max-open-contracts-per-strategy", type=int, default=100)
     submit_parser.add_argument("--max-orders-per-trading-day", type=int, default=500)
@@ -451,8 +451,8 @@ STRATEGY_TYPE_BATCH_2026_05_18: dict[str, dict[str, Any]] = {
     },
     "momentum_rate_of_change": {
         "lookback_minutes": 45,
-        "change_above_percent": "0.35",
-        "change_below_percent": "-0.35",
+        "change_above_percent": "0.50",
+        "change_below_percent": "-0.50",
         "max_extension_percent": "1.25",
         "dedupe_minutes": 120,
         "exit": {

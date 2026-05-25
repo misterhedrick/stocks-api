@@ -24,6 +24,7 @@ from app.services.order_intent_helpers import (
 )
 
 from app.services.order_intent_types import OrderIntentPreviewError, SignalNotFoundError
+from app.services.preview_profiles import resolve_preview_profile_limits
 
 logger = logging.getLogger("app.services.order_intents")
 
@@ -41,8 +42,10 @@ def preview_order_intent_from_signal(
 
     option_symbol = payload.option_symbol
     selection = None
+    selection_payload = None
     max_estimated_notional = _effective_max_estimated_notional(payload)
     max_spread = _effective_max_spread(payload)
+    max_spread_percent = payload.max_spread_percent
     if payload.contract_selection is not None:
         selection_payload = payload.contract_selection.model_copy(
             update={
@@ -50,8 +53,28 @@ def preview_order_intent_from_signal(
                 "data_feed": payload.data_feed,
                 "max_estimated_notional": max_estimated_notional,
                 "max_spread": max_spread,
+                "max_spread_percent": max_spread_percent
+                or payload.contract_selection.max_spread_percent,
             }
         )
+        profile_limits = resolve_preview_profile_limits(
+            selection_payload.preview_profile,
+            max_estimated_notional=selection_payload.max_estimated_notional,
+            max_spread=selection_payload.max_spread,
+            max_spread_percent=selection_payload.max_spread_percent,
+            min_open_interest=selection_payload.min_open_interest,
+        )
+        selection_payload = selection_payload.model_copy(
+            update={
+                "max_estimated_notional": profile_limits.max_estimated_notional,
+                "max_spread": profile_limits.max_spread,
+                "max_spread_percent": profile_limits.max_spread_percent,
+                "min_open_interest": profile_limits.min_open_interest,
+            }
+        )
+        max_estimated_notional = profile_limits.max_estimated_notional
+        max_spread = profile_limits.max_spread
+        max_spread_percent = profile_limits.max_spread_percent
         try:
             selection = select_option_contract(
                 selection_payload,
@@ -89,12 +112,7 @@ def preview_order_intent_from_signal(
             quote_preview,
             max_estimated_notional=max_estimated_notional,
             max_spread=max_spread,
-            max_spread_percent=payload.max_spread_percent
-            or (
-                selection_payload.max_spread_percent
-                if payload.contract_selection is not None
-                else None
-            ),
+            max_spread_percent=max_spread_percent,
         )
     except OrderIntentPreviewError as exc:
         if payload.contract_selection is not None:

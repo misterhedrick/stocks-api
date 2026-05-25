@@ -33,17 +33,17 @@ market regime optional
   "type": "momentum_rate_of_change",
   "symbols": ["SPY"],
   "timeframe": "1Min",
-  "lookback_minutes": 30,
-  "change_above_percent": "0.35",
-  "change_below_percent": "-0.35",
+  "lookback_minutes": 45,
+  "change_above_percent": "0.50",
+  "change_below_percent": "-0.50",
   "min_follow_through_percent": "0.05",
-  "max_extension_percent": "1.00",
+  "max_extension_percent": "1.25",
   "short_average_type": "ema",
   "short_average_window": 9,
   "require_latest_candle_confirmation": true,
   "use_volatility_adjusted_threshold": false,
   "min_momentum_score": "1.50",
-  "dedupe_minutes": 240
+  "dedupe_minutes": 120
 }
 ```
 
@@ -130,7 +130,7 @@ If no short average is used, extension can be measured against VWAP or the lookb
 
 ## Volatility-adjusted threshold
 
-A fixed 0.35% move is not equally meaningful for all symbols. Add optional volatility-adjusted scoring.
+A fixed 0.50% move is not equally meaningful for all symbols. Add optional volatility-adjusted scoring.
 
 Calculate average absolute percent change over the recent N candles:
 
@@ -210,11 +210,11 @@ cap at 0.82
 
 ```json
 {
-  "lookback_minutes": 30,
+  "lookback_minutes": 45,
   "timeframe": "1Min",
   "reference_close": "500.10",
   "latest_close": "502.00",
-  "percent_change": "0.38",
+  "percent_change": "0.58",
   "latest_candle_change_percent": "0.08",
   "short_ma": "501.50",
   "extension_percent": "0.10",

@@ -14,7 +14,7 @@ Single-user FastAPI backend for stock/options paper trading with Alpaca, Postgre
 - **Primary deploy branch:** `master`
 - **Active development branch:** `develop`
 - **Render URL:** `https://stocks-api-z11i.onrender.com/`
-- **Current mode:** paper trading first; live trading is a later target.
+- **Current mode:** paper-trading first; live trading is a later target.
 - **Broker/data:** Alpaca paper trading and Alpaca market data.
 - **Database:** Postgres with SQLAlchemy/Alembic.
 - **Auth:** single admin bearer token through `ADMIN_API_TOKEN`.
@@ -145,7 +145,7 @@ Any one of these is enough to halt the relevant automation:
 | Stop cron runner execution | `SCHEDULED_JOBS_ENABLED=false` |
 | Pause exit automation | `MARKET_CYCLE_EXIT_ENABLED=false` |
 
-Paper safety settings that should remain enabled:
+Paper-trading safety settings that should remain enabled:
 
 ```text
 ALPACA_PAPER=true
@@ -192,19 +192,19 @@ options_spread_candidate
 Env format:
 
 ```text
-PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>
+PREVIEW_PROFILE_<PROFILE>_<SETTING>
 ```
 
 Examples:
 
 ```text
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=2500
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
-PAPER_PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=3000
-PAPER_PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_ESTIMATED_NOTIONAL=3000
+PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
+PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=5000
+PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
+PREVIEW_PROFILE_RSI_REVERSAL_MAX_ESTIMATED_NOTIONAL=5000
+PREVIEW_PROFILE_VOLUME_CONFIRMED_BREAKOUT_MAX_ESTIMATED_NOTIONAL=5000
 ```
 
 The existing production strategies were patched with `scanner.preview.preview_profile` using the GitHub Actions workflow and the result was:
@@ -271,7 +271,7 @@ Default seeded set:
 16 scanner-type strategies
 ```
 
-When reseeded, legacy symbol-specific strategies such as `Paper MSFT momentum rate-of-change put preview` are deactivated and replaced by global scanner-type strategies such as `momentum_rate_of_change`.
+When reseeded, legacy symbol-specific preview strategies such as `MSFT momentum rate-of-change put preview` are deactivated and replaced by global scanner-type strategies such as `momentum_rate_of_change`.
 
 Current paper data-gathering profile:
 
@@ -301,22 +301,22 @@ MAX_OPEN_POSITIONS=30
 Current Render preview profile notional caps are tuned by strategy type:
 
 ```text
-moving_average=2500
-momentum_rate_of_change=2500
-rsi_reversal=3000
+moving_average=5000
+momentum_rate_of_change=5000
+rsi_reversal=5000
 macd_crossover=5000
-mean_reversion=3000
+mean_reversion=5000
 breakout_price_threshold=5000
-volume_confirmed_breakout=3000
+volume_confirmed_breakout=5000
 volatility_squeeze=5000
-support_resistance=2500
-vwap_reclaim=3000
-opening_range_breakout=3000
-relative_strength=3000
-time_series_momentum=3000
-market_regime_filter=2500
-pairs_relative_value=2500
-options_spread_candidate=2500
+support_resistance=5000
+vwap_reclaim=5000
+opening_range_breakout=5000
+relative_strength=5000
+time_series_momentum=5000
+market_regime_filter=5000
+pairs_relative_value=5000
+options_spread_candidate=5000
 ```
 
 The options spread scanner currently creates spread-candidate signals but still uses the existing single-leg long call/put preview pipeline. Multi-leg option orders need separate execution plumbing before it can submit true spreads.
@@ -331,7 +331,7 @@ ENTRY_QUALITY_MIN_SCORE=60
 ENTRY_QUALITY_FAST_CONFIRMATION_ENABLED=true
 ENTRY_QUALITY_DISABLED_AUTO_SUBMIT_SCANNERS=market_regime_filter,options_spread_candidate
 ENTRY_QUALITY_MIN_RELATIVE_EDGE_PERCENT=1.0
-ENTRY_QUALITY_MIN_MOMENTUM_THRESHOLD_MULTIPLIER=1.4
+ENTRY_QUALITY_MIN_MOMENTUM_THRESHOLD_MULTIPLIER=1.8
 ENTRY_QUALITY_MIN_BREAKOUT_BUFFER_MULTIPLIER=1.5
 ENTRY_QUALITY_MIN_VWAP_DISTANCE_PERCENT=0.25
 ENTRY_QUALITY_MIN_AVERAGE_SEPARATION_PERCENT=0.20
@@ -356,8 +356,8 @@ The batch patches scanner config for `support_resistance`, `momentum_rate_of_cha
 Momentum rate-of-change and mean reversion use a controlled wider-stop test in that batch:
 
 ```text
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 scanner.exit.stop_loss_percent=15
 ```
 

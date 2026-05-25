@@ -7,6 +7,7 @@ from typing import Any
 import re
 
 import uuid
+from decimal import Decimal
 
 from app.db.models import JobRun, OrderIntent, Strategy
 
@@ -31,6 +32,7 @@ class PositionOwnership:
     strategy_id: uuid.UUID | None = None
     strategy_name: str | None = None
     order_intent_id: uuid.UUID | None = None
+    open_quantity: Decimal | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +43,9 @@ class PositionOwnership:
             "strategy_name": self.strategy_name,
             "order_intent_id": str(self.order_intent_id)
             if self.order_intent_id
+            else None,
+            "open_quantity": str(self.open_quantity)
+            if self.open_quantity is not None
             else None,
         }
 

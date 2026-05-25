@@ -973,7 +973,7 @@ class RouteBehaviorTests(unittest.TestCase):
         self.assertEqual(response.json()[0]["recommended_action"], "preview_unmanaged_exit")
         positions.assert_called_once_with(db, limit=25)
 
-    def test_paper_performance_route_returns_service_result(self) -> None:
+    def test_performance_route_returns_service_result(self) -> None:
         db = FakeRouteSession()
 
         def override_db() -> Iterator[FakeRouteSession]:

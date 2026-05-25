@@ -279,6 +279,22 @@ class TightThenEmptyMarketDataClient:
         )
 
 
+class TightThenExpensiveMarketDataClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def get_latest_option_quote(
+        self,
+        symbol: str,
+        *,
+        feed: str,
+    ) -> AlpacaLatestOptionQuote:
+        self.calls += 1
+        if self.calls == 1:
+            return SuccessfulMarketDataClient().get_latest_option_quote(symbol, feed=feed)
+        return ExpensiveMarketDataClient().get_latest_option_quote(symbol, feed=feed)
+
+
 class SuccessfulOptionContractTradingClient:
     def list_option_contracts(self, **_: object) -> AlpacaOptionContractsPage:
         return AlpacaOptionContractsPage(
@@ -708,6 +724,54 @@ class OrderIntentSubmissionTests(unittest.TestCase):
         )
         self.assertEqual(audit_logs[-1].event_type, "option_selection.preview_quote_failed")
         self.assertEqual(db.commit_count, 1)
+
+    def test_preview_selected_contract_final_quote_uses_profile_notional_limit(self) -> None:
+        signal = build_signal()
+        strategy = Strategy(
+            id=signal.strategy_id,
+            name="Breakout Strategy",
+            config={"scanner": {"type": "breakout_price_threshold"}},
+        )
+        db = FakeSession(None, signal, strategy)
+
+        with patch.dict(
+            "os.environ",
+            {"PREVIEW_PROFILE_BREAKOUT_PRICE_THRESHOLD_MAX_ESTIMATED_NOTIONAL": "500"},
+        ):
+            with self.assertRaises(OrderIntentPreviewError):
+                preview_order_intent_from_signal(
+                    db,
+                    OrderIntentPreviewCreate(
+                        signal_id=signal.id,
+                        contract_selection=OptionContractSelectionCreate(
+                            underlying_symbol="SPY",
+                            option_type="call",
+                            target_strike=Decimal("500"),
+                            preview_profile="breakout_price_threshold",
+                        ),
+                        side="buy",
+                        quantity=1,
+                        order_type="limit",
+                        time_in_force="day",
+                    ),
+                    trading_client=SuccessfulOptionContractTradingClient(),
+                    market_data_client=TightThenExpensiveMarketDataClient(),
+                )
+
+        diagnostics = [item for item in db.added if isinstance(item, OptionSelectionDiagnostic)]
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(order_intents, [])
+        self.assertEqual(diagnostics[0].preview_profile, "breakout_price_threshold")
+        self.assertEqual(
+            diagnostics[0].reason_counts["estimated_notional_above_max"],
+            1,
+        )
+        self.assertEqual(
+            diagnostics[0].summary["limits"]["max_estimated_notional"],
+            "500",
+        )
 
     def test_preview_order_intent_schema_requires_one_contract_source(self) -> None:
         signal_id = uuid.uuid4()

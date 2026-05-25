@@ -14,7 +14,7 @@ Do a strategy tuning research pass for the paper-trading system. Use the latest 
 
 - /api/v1/automation/strategy-refinement
 - /api/v1/automation/learning-report
-- /api/v1/automation/paper-review-snapshots
+- /api/v1/automation/review-snapshots
 - /api/v1/automation/performance
 - /api/v1/automation/strategy-change-suggestions
 - /api/v1/automation/strategy-tuning-decisions
@@ -42,7 +42,7 @@ Research goals:
 
 1. Confirm the data pipeline is healthy:
    - latest post-market maintenance ran
-   - latest paper_review_snapshot exists
+   - latest review_snapshot exists
    - learning_report was saved
    - strategy-refinement summary has candidates
    - no major job failures or reconciliation gaps are distorting the evidence
@@ -125,7 +125,7 @@ Use this after several post-market snapshots have accumulated.
 ```text
 Review the before/after results for recent strategy_tuning_decisions.
 
-Use /api/v1/automation/strategy-refinement and saved paper_review_snapshots.
+Use /api/v1/automation/strategy-refinement and saved review_snapshots.
 For each applied decision, compare:
 
 - priority score before vs after

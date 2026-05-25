@@ -16,7 +16,7 @@ Usage:
 Options:
     --dry-run      Show what would change without writing to the database.
     --all          Include inactive strategies (default: active strategies only).
-    --new-value    Target minimum open interest. Defaults to PAPER_STRATEGY_MIN_OPEN_INTEREST.
+    --new-value    Target minimum open interest. Defaults to STRATEGY_MIN_OPEN_INTEREST.
 
 Manual SQL equivalent for 50 (run directly against Postgres if the script cannot connect):
 
@@ -112,7 +112,7 @@ def main() -> None:
         "--new-value",
         type=int,
         default=settings.strategy_min_open_interest,
-        help="Target minimum open interest. Defaults to PAPER_STRATEGY_MIN_OPEN_INTEREST.",
+        help="Target minimum open interest. Defaults to STRATEGY_MIN_OPEN_INTEREST.",
     )
     args = parser.parse_args()
 

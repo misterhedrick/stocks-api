@@ -129,7 +129,7 @@ class AutomationStatusTests(unittest.TestCase):
             max_open_positions=500,
             max_open_positions_per_symbol=100,
             max_contracts_per_order=1,
-            max_estimated_premium_per_order="2500",
+            max_estimated_premium_per_order="5000",
         ):
             result = get_automation_status(db)
 
@@ -144,7 +144,7 @@ class AutomationStatusTests(unittest.TestCase):
         self.assertEqual(result.max_open_positions, 500)
         self.assertEqual(result.max_open_positions_per_symbol, 100)
         self.assertEqual(result.max_contracts_per_order, 1)
-        self.assertEqual(str(result.max_estimated_premium_per_order), "2500")
+        self.assertEqual(str(result.max_estimated_premium_per_order), "5000")
         self.assertEqual(result.operational_summary["effective_mode"], "previewing")
         self.assertNotIn(
             "news risk gate is blocking new entry previews",

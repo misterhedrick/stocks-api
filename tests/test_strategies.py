@@ -50,7 +50,7 @@ def build_strategy() -> Strategy:
     return Strategy(
         id=uuid.uuid4(),
         name="Opening range options",
-        description="Paper strategy",
+        description="Options strategy",
         is_active=True,
         config={"underlying": "SPY"},
     )
@@ -63,7 +63,7 @@ class StrategyRouteTests(unittest.TestCase):
         strategy = create_strategy(
             StrategyCreate(
                 name="Opening range options",
-                description="Paper strategy",
+                description="Options strategy",
                 config={"underlying": "SPY"},
             ),
             db,

@@ -14,6 +14,12 @@ from app.services.entry_quality import (
 
 
 class FakeEntryQualitySession:
+    def __init__(self, *, exit_intents: list[OrderIntent] | None = None) -> None:
+        self.exit_intents = exit_intents or []
+
+    def scalars(self, _: object) -> list[OrderIntent]:
+        return self.exit_intents
+
     def scalar(self, _: object) -> int:
         return 0
 
@@ -160,7 +166,7 @@ class EntryQualityTests(unittest.TestCase):
             strategy,
             confidence="0.7000",
             direction="bearish",
-            market_context={"percent_change": "-0.80"},
+            market_context={"percent_change": "-1.00"},
             created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
         )
         decision = evaluate_entry_quality(
@@ -192,6 +198,47 @@ class EntryQualityTests(unittest.TestCase):
         self.assertTrue(
             any("spread percent" in reason for reason in decision.reasons)
         )
+
+    def test_blocks_recent_intraday_stop_loss_before_trade_cases_exist(self) -> None:
+        strategy = build_strategy("momentum_rate_of_change")
+        signal = build_signal(
+            strategy,
+            confidence="0.9000",
+            direction="bearish",
+            market_context={"percent_change": "-1.20"},
+            created_at=datetime(2026, 5, 22, 15, 10, tzinfo=timezone.utc),
+        )
+        exit_intent = OrderIntent(
+            id=uuid.uuid4(),
+            strategy_id=strategy.id,
+            signal_id=None,
+            underlying_symbol="SPY",
+            option_symbol="SPY260522P00500000",
+            side="sell",
+            quantity=1,
+            order_type="limit",
+            limit_price=Decimal("1.10"),
+            time_in_force="day",
+            status="filled",
+            rationale="Exit SPY260522P00500000: stop_loss_percent triggered at -12%",
+            preview={
+                "source": "position_exit_evaluator",
+                "trigger_reason": "stop_loss_percent triggered at -12%",
+            },
+            created_at=datetime(2026, 5, 22, 15, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 5, 22, 15, 0, tzinfo=timezone.utc),
+        )
+
+        decision = evaluate_entry_quality(
+            FakeEntryQualitySession(exit_intents=[exit_intent]),
+            order_intent=build_order_intent(signal),
+            strategy=strategy,
+            signal=signal,
+            now=datetime(2026, 5, 22, 15, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertIn("stop-loss cooldown", "; ".join(decision.reasons))
 
 
 if __name__ == "__main__":

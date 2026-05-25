@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     max_open_positions: int = 200
     max_open_positions_per_symbol: int = 50
     max_contracts_per_order: int = 1
-    max_estimated_premium_per_order: Decimal = Decimal("250")
+    max_estimated_premium_per_order: Decimal = Decimal("5000")
     strategy_min_change_percent: Decimal = Decimal("0.05")
     strategy_trend_min_change_percent: Decimal = Decimal("0.25")
     strategy_max_estimated_notional: Decimal = Decimal("5000")
@@ -65,14 +65,11 @@ class Settings(BaseSettings):
     strategy_stop_loss_min_dollars: Decimal = Decimal("10")
     strategy_trailing_profit_activation_percent: Decimal = Decimal("15")
     strategy_trailing_profit_giveback_percent: Decimal = Decimal("10")
-    strategy_momentum_max_extension_percent: Decimal = Decimal("2.0")
+    strategy_momentum_max_extension_percent: Decimal = Decimal("1.25")
     strategy_preview_profiles_enabled: bool = True
     review_snapshot_retention_days: int = Field(
         default=45,
-        validation_alias=AliasChoices(
-            "REVIEW_SNAPSHOT_RETENTION_DAYS",
-            "PAPER_REVIEW_SNAPSHOT_RETENTION_DAYS",
-        ),
+        validation_alias=AliasChoices("REVIEW_SNAPSHOT_RETENTION_DAYS"),
     )
     options_min_dte: int = 7
     options_target_dte: int = 14
@@ -111,7 +108,7 @@ class Settings(BaseSettings):
         "market_regime_filter,options_spread_candidate"
     )
     entry_quality_min_relative_edge_percent: Decimal = Decimal("1.0")
-    entry_quality_min_momentum_threshold_multiplier: Decimal = Decimal("1.4")
+    entry_quality_min_momentum_threshold_multiplier: Decimal = Decimal("1.8")
     entry_quality_min_breakout_buffer_multiplier: Decimal = Decimal("1.5")
     entry_quality_min_vwap_distance_percent: Decimal = Decimal("0.25")
     entry_quality_min_average_separation_percent: Decimal = Decimal("0.20")

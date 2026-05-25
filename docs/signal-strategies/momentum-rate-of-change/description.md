@@ -25,10 +25,10 @@ Intraday starter config:
 ```json
 {
   "timeframe": "1Min",
-  "lookback_minutes": 30,
-  "change_above_percent": "0.35",
-  "change_below_percent": "-0.35",
-  "dedupe_minutes": 240
+  "lookback_minutes": 45,
+  "change_above_percent": "0.50",
+  "change_below_percent": "-0.50",
+  "dedupe_minutes": 120
 }
 ```
 
@@ -57,7 +57,7 @@ A bullish signal should require:
 Example:
 
 ```text
-percent_change_30m >= 0.35
+percent_change_45m >= 0.50
 latest_close >= previous_close
 latest_close > short_ma
 ```
@@ -75,7 +75,7 @@ A bearish signal should require:
 Example:
 
 ```text
-percent_change_30m <= -0.35
+percent_change_45m <= -0.50
 latest_close <= previous_close
 latest_close < short_ma
 ```
@@ -111,7 +111,7 @@ Signal only if:
 momentum_score >= 1.5
 ```
 
-This helps avoid treating a 0.35% move the same across all symbols. A 0.35% move in a slow ticker may be meaningful, while a 0.35% move in a highly volatile ticker may be normal noise.
+This helps avoid treating a 0.50% move the same across all symbols. A 0.50% move in a slow ticker may be meaningful, while a 0.50% move in a highly volatile ticker may be normal noise.
 
 ## Market regime filter
 

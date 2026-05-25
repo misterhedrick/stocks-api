@@ -20,7 +20,7 @@ Use this guide when changing `scanner.type = momentum_rate_of_change` strategies
 | `require_latest_candle_confirmation` | `false` | `true` |
 | `dedupe_minutes` | Lower value | Higher value |
 
-Default seeded posture: `1Min`, 30-minute lookback, about `0.25%` move threshold, EMA confirmation on.
+Default seeded posture: `1Min`, 45-minute lookback, `0.50%` move threshold, EMA confirmation on, and a `1.25%` max-extension limit.
 
 ## Preview and Risk Knobs
 
@@ -44,14 +44,14 @@ Default seeded posture: `1Min`, 30-minute lookback, about `0.25%` move threshold
   "strategy_type": "momentum_rate_of_change",
   "evidence_window": "last_20_market_cycles",
   "change": {
-    "scanner.change_above_percent": "0.25",
-    "scanner.dedupe_minutes": 90
+    "scanner.change_above_percent": "0.60",
+    "scanner.dedupe_minutes": 180
   },
   "reason": "High preview volume with weak realized follow-through.",
   "risk": "May miss smaller trend starts.",
   "rollback": {
-    "scanner.change_above_percent": "0.20",
-    "scanner.dedupe_minutes": 60
+    "scanner.change_above_percent": "0.50",
+    "scanner.dedupe_minutes": 120
   }
 }
 ```

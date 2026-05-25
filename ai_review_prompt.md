@@ -12,7 +12,7 @@ Do not ask the user to copy/paste anything.
 2. **Pull trade review data** from the running API. Use whichever fits the request:
    - Recent trade reviews: `GET /api/v1/automation/ai-trade-reviews`
    - Strategy refinement candidates: `GET /api/v1/automation/strategy-refinement`
-   - Full day: `GET /api/v1/automation/daily-paper-review`
+   - Full day: `GET /api/v1/automation/daily-review`
 
    If no base URL is specified, use `http://127.0.0.1:8000`.
    If API data is unavailable, report what failed and use local evidence only when it is safe and relevant.
