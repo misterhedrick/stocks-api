@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from typing import Any
@@ -67,20 +68,26 @@ def _latest_position_snapshots(db: Session, *, limit: int) -> list[PositionSnaps
     )
     return list(db.scalars(statement))
 
+@dataclass(slots=True)
+class _OpenLot:
+    order_intent: OrderIntent | None
+    remaining_quantity: Decimal | None = None
+
+
 def resolve_position_ownership(
     db: Session,
     position: PositionSnapshot,
 ) -> PositionOwnership:
     open_lot = _latest_open_entry_lot_for_position(db, position.symbol)
     if open_lot is not None:
-        order_intent = open_lot.get("order_intent")
-        open_quantity = open_lot.get("remaining_quantity")
-        if order_intent is None:
+        if open_lot.order_intent is None:
             return PositionOwnership(
                 symbol=position.symbol,
                 managed=False,
                 reason="no open strategy-linked entry lot found",
             )
+        order_intent = open_lot.order_intent
+        open_quantity = open_lot.remaining_quantity
     else:
         order_intent = _latest_entry_order_intent_for_position(db, position.symbol)
         open_quantity = None
@@ -153,7 +160,7 @@ def _latest_entry_order_intent_for_position(
 def _latest_open_entry_lot_for_position(
     db: Session,
     symbol: str,
-) -> dict[str, Any] | None:
+) -> _OpenLot | None:
     try:
         rows = list(db.execute(_strategy_fill_statement_for_symbol(symbol)))
     except Exception:
@@ -200,7 +207,7 @@ def _latest_open_entry_lot_for_position(
         if lot["remaining_quantity"] > 0
     ]
     if not remaining_lots:
-        return {}
+        return _OpenLot(order_intent=None)
 
     latest_lot = max(
         remaining_lots,
@@ -208,14 +215,15 @@ def _latest_open_entry_lot_for_position(
     )
     order_intent = db.get(OrderIntent, latest_lot["order_intent_id"])
     if order_intent is None:
-        return {}
-    return {
-        "order_intent": order_intent,
-        "remaining_quantity": latest_lot["remaining_quantity"],
-    }
+        return _OpenLot(order_intent=None)
+    return _OpenLot(
+        order_intent=order_intent,
+        remaining_quantity=latest_lot["remaining_quantity"],
+    )
 
 
 def _strategy_fill_statement_for_symbol(symbol: str) -> object:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=180)
     return (
         select(
             Fill.id,
@@ -232,6 +240,7 @@ def _strategy_fill_statement_for_symbol(symbol: str) -> object:
         .where(Fill.symbol == symbol)
         .where(OrderIntent.option_symbol == symbol)
         .where(OrderIntent.strategy_id.is_not(None))
+        .where(Fill.filled_at >= cutoff)
         .order_by(Fill.filled_at.asc(), Fill.created_at.asc())
     )
 
