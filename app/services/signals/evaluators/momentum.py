@@ -18,7 +18,7 @@ class MomentumRateOfChangeEvaluator:
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
         timeframe = str(config.get("timeframe") or "1Min")
-        lookback_minutes = int(config.get("lookback_minutes") or 30)
+        lookback_minutes = int(config.get("lookback_minutes") or 45)
         short_average_window = int(config.get("short_average_window") or 9)
         average_type = str(config.get("short_average_type") or "ema").lower()
         ema_periods = frozenset({short_average_window}) if average_type == "ema" else frozenset()
@@ -40,7 +40,7 @@ class MomentumRateOfChangeEvaluator:
         market_regime: Any | None = None,
     ) -> SignalCandidate | None:
         timeframe = str(config.get("timeframe") or candles.timeframe)
-        lookback_minutes = int(config.get("lookback_minutes") or 30)
+        lookback_minutes = int(config.get("lookback_minutes") or 45)
         offset = _candles_for_minutes(lookback_minutes, timeframe)
         if len(candles.candles) <= offset or len(candles.candles) < 2:
             return None
@@ -52,8 +52,8 @@ class MomentumRateOfChangeEvaluator:
         if pct is None:
             return None
 
-        change_above = float(config.get("change_above_percent") or 0.35)
-        change_below = float(config.get("change_below_percent") or -0.35)
+        change_above = float(config.get("change_above_percent") or 0.50)
+        change_below = float(config.get("change_below_percent") or -0.50)
 
         if pct >= change_above:
             direction = "bullish"
@@ -94,7 +94,7 @@ class MomentumRateOfChangeEvaluator:
         if extension_percent is not None and max_extension_percent is not None and extension_percent > max_extension_percent * 0.8:
             score -= Decimal("0.05")
 
-        dedupe_minutes = int(config.get("dedupe_minutes") or 240)
+        dedupe_minutes = int(config.get("dedupe_minutes") or 120)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,

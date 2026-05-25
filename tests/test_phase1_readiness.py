@@ -101,7 +101,7 @@ def _base_settings() -> dict:
         max_open_positions=50,
         max_open_positions_per_symbol=3,
         max_contracts_per_order=1,
-        max_estimated_premium_per_order="2500",
+        max_estimated_premium_per_order="5000",
     )
 
 
@@ -270,7 +270,7 @@ class Phase1ReadinessTests(unittest.TestCase):
         self.assertEqual(caps["max_auto_orders_per_cycle"], 5)
         self.assertEqual(caps["max_auto_orders_per_day"], 20)
         self.assertEqual(caps["max_open_positions"], 50)
-        self.assertEqual(str(caps["max_estimated_premium_per_order"]), "2500")
+        self.assertEqual(str(caps["max_estimated_premium_per_order"]), "5000")
 
     def test_build_phase1_readiness_snapshot_fields_serialized(self) -> None:
         snapshot = _build_snapshot(review_date=date(2026, 5, 10))

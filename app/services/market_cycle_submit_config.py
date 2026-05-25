@@ -156,6 +156,7 @@ def _contract_selection_for_signal(
         max_spread_percent=preview_config.get("max_spread_percent"),
         min_open_interest=preview_config.get("min_open_interest"),
         min_quote_size=preview_config.get("min_quote_size"),
+        preview_profile=_preview_profile(preview_config),
         data_feed=_string_config(preview_config, "data_feed", default="indicative"),
         limit=_options_candidate_limit(),
     )
@@ -168,6 +169,13 @@ def _option_type_for_signal(signal: Signal) -> str:
     if direction == "bearish":
         return "put"
     raise ValueError("signal.direction must be bullish or bearish when scanner.preview.option_type is omitted")
+
+
+def _preview_profile(preview_config: dict[str, Any]) -> str | None:
+    profile = preview_config.get("preview_profile") or preview_config.get("profile")
+    if isinstance(profile, str) and profile.strip():
+        return profile.strip()
+    return None
 
 
 def _options_candidate_limit() -> int:

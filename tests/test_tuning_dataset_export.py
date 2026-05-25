@@ -12,7 +12,7 @@ from scripts.export_tuning_dataset import (
 )
 
 
-class PaperTuningDatasetExportTests(unittest.TestCase):
+class TuningDatasetExportTests(unittest.TestCase):
     def test_build_tuning_dataset_aggregates_snapshot_candidates(self) -> None:
         snapshots = [
             _snapshot(

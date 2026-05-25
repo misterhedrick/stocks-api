@@ -131,7 +131,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["change_above_percent"], "0.20")
         self.assertEqual(scanner["change_below_percent"], "-0.20")
-        self.assertEqual(scanner["max_extension_percent"], "2.0")
+        self.assertEqual(scanner["max_extension_percent"], "1.25")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertTrue(scanner["submit"]["enabled"])
 
@@ -206,7 +206,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
                 max_orders_per_cycle=100,
                 max_contracts_per_order=1,
                 max_contracts_per_cycle=100,
-                max_notional_per_order="2500",
+                max_notional_per_order="5000",
                 max_open_contracts_per_symbol=100,
                 max_open_contracts_per_strategy=100,
                 max_orders_per_trading_day=500,
@@ -219,7 +219,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         )
 
         self.assertTrue(submit["enabled"])
-        self.assertEqual(submit["max_notional_per_order"], "2500.00")
+        self.assertEqual(submit["max_notional_per_order"], "5000.00")
         self.assertEqual(submit["max_orders_per_trading_day"], 500)
         self.assertEqual(submit["max_open_contracts_per_strategy"], 100)
         self.assertEqual(submit["trade_windows"][0]["start"], "10:00")
@@ -234,7 +234,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
             "max_orders_per_cycle": 100,
             "max_contracts_per_order": 1,
             "max_contracts_per_cycle": 100,
-            "max_notional_per_order": "2500.00",
+            "max_notional_per_order": "5000.00",
             "max_open_contracts_per_symbol": 100,
             "max_open_contracts_per_strategy": 100,
             "max_orders_per_trading_day": 500,
@@ -259,7 +259,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertTrue(updated.config["scanner"]["submit"]["enabled"])
         self.assertEqual(
             updated.config["scanner"]["submit"]["max_notional_per_order"],
-            "2500.00",
+            "5000.00",
         )
         self.assertEqual(audit_logs[-1].event_type, "strategy.updated")
 

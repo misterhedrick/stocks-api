@@ -3,7 +3,7 @@ Idempotent script to update strategy entry notional limits.
 
 This patches existing database strategy rows. It is intended for cases where the
 code/templates have changed but already-seeded strategies still carry an older,
-tighter notional cap such as 250.00.
+tighter notional cap.
 
 Only patches:
 - scanner.preview.max_estimated_notional
@@ -17,24 +17,24 @@ Usage:
 Options:
     --dry-run      Show what would change without writing to the database.
     --all          Include inactive strategies (default: active strategies only).
-    --new-value    Target notional value. Defaults to PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL.
+    --new-value    Target notional value. Defaults to STRATEGY_MAX_ESTIMATED_NOTIONAL.
 
-Manual SQL equivalent for 3000.00 (run directly against Postgres if the script cannot connect):
+Manual SQL equivalent for 5000.00 (run directly against Postgres if the script cannot connect):
 
     UPDATE strategies
     SET config = jsonb_set(
         jsonb_set(
             config,
             '{scanner,preview,max_estimated_notional}',
-            '"3000.00"'::jsonb
+            '"5000.00"'::jsonb
         ),
         '{scanner,submit,max_notional_per_order}',
-        '"3000.00"'::jsonb
+        '"5000.00"'::jsonb
     )
     WHERE is_active = true
       AND (
-          NULLIF(config #>> '{scanner,preview,max_estimated_notional}', '')::numeric < 3000
-          OR NULLIF(config #>> '{scanner,submit,max_notional_per_order}', '')::numeric < 3000
+          NULLIF(config #>> '{scanner,preview,max_estimated_notional}', '')::numeric < 5000
+          OR NULLIF(config #>> '{scanner,submit,max_notional_per_order}', '')::numeric < 5000
       );
 
 To run against Render Postgres:
@@ -130,7 +130,7 @@ def main() -> None:
     parser.add_argument(
         "--new-value",
         default=str(settings.strategy_max_estimated_notional),
-        help="Target notional value. Defaults to PAPER_STRATEGY_MAX_ESTIMATED_NOTIONAL.",
+        help="Target notional value. Defaults to STRATEGY_MAX_ESTIMATED_NOTIONAL.",
     )
     args = parser.parse_args()
 

@@ -13,8 +13,8 @@ Usage:
 Options:
     --dry-run               Show changes without writing to the database.
     --all                   Include inactive strategies (default: active only).
-    --stop-loss-percent     Target stop loss percent. Defaults to PAPER_STRATEGY_STOP_LOSS_PERCENT.
-    --stop-loss-min-dollars Target dollar floor. Defaults to PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS.
+    --stop-loss-percent     Target stop loss percent. Defaults to STRATEGY_STOP_LOSS_PERCENT.
+    --stop-loss-min-dollars Target dollar floor. Defaults to STRATEGY_STOP_LOSS_MIN_DOLLARS.
 
 To run against Render Postgres:
     1. Open the Render dashboard and copy the external DATABASE_URL.

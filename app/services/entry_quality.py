@@ -259,6 +259,14 @@ def _recent_stop_loss_exists(
     underlying = (signal.underlying_symbol or signal.symbol or "").strip().upper()
     if not underlying:
         return False
+    if _recent_stop_loss_exit_intent_exists(
+        db,
+        strategy=strategy,
+        underlying=underlying,
+        since=since,
+    ):
+        return True
+
     statement = (
         select(func.count(TradeCase.id))
         .where(TradeCase.strategy_id == strategy.id)
@@ -272,6 +280,42 @@ def _recent_stop_loss_exists(
         return int(db.scalar(statement) or 0) > 0
     except Exception:
         return False
+
+
+def _recent_stop_loss_exit_intent_exists(
+    db: Session,
+    *,
+    strategy: Strategy,
+    underlying: str,
+    since: datetime,
+) -> bool:
+    statement = (
+        select(OrderIntent)
+        .where(OrderIntent.strategy_id == strategy.id)
+        .where(func.upper(OrderIntent.underlying_symbol) == underlying)
+        .where(func.lower(OrderIntent.side) == "sell")
+        .where(OrderIntent.created_at >= since)
+    )
+    try:
+        intents = list(db.scalars(statement))
+    except Exception:
+        return False
+    return any(_is_stop_loss_exit_intent(intent) for intent in intents)
+
+
+def _is_stop_loss_exit_intent(order_intent: OrderIntent) -> bool:
+    if order_intent.status in {"canceled", "rejected", "expired", "stale"}:
+        return False
+    preview = order_intent.preview if isinstance(order_intent.preview, dict) else {}
+    if preview.get("source") != "position_exit_evaluator":
+        return False
+    trigger_reason = preview.get("trigger_reason")
+    text = " ".join(
+        str(value)
+        for value in (trigger_reason, order_intent.rationale)
+        if value is not None
+    ).lower()
+    return "stop_loss_percent" in text
 
 
 def _scanner_type(strategy: Strategy) -> str:
@@ -309,8 +353,8 @@ def _confidence_score(signal: Signal) -> Decimal:
 
 def _momentum_threshold(features: dict[str, Any], signal: Signal) -> Decimal:
     if (signal.direction or "").lower() == "bearish":
-        return abs(_decimal(features.get("change_below_percent")) or Decimal("0.35"))
-    return abs(_decimal(features.get("change_above_percent")) or Decimal("0.35"))
+        return abs(_decimal(features.get("change_below_percent")) or Decimal("0.50"))
+    return abs(_decimal(features.get("change_above_percent")) or Decimal("0.50"))
 
 
 def _quote_spread_percent(quote: dict[str, Any]) -> Decimal | None:

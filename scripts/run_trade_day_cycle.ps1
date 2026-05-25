@@ -13,7 +13,7 @@ $env:MAX_AUTO_ORDERS_PER_DAY = "50"
 $env:MAX_OPEN_POSITIONS = "100"
 $env:MAX_OPEN_POSITIONS_PER_SYMBOL = "100"
 $env:MAX_CONTRACTS_PER_ORDER = "1"
-$env:MAX_ESTIMATED_PREMIUM_PER_ORDER = "250"
+$env:MAX_ESTIMATED_PREMIUM_PER_ORDER = "5000"
 
 .\.venv\Scripts\python.exe .\scripts\run_market_cycle_smoke.py `
   --scan-limit 50 `

@@ -187,7 +187,7 @@ def _entry_option_summary(
             strike = str(Decimal(raw_strike) / Decimal("1000"))
         except Exception:
             pass
-        cp_idx = occ_match.start() - 1
+        cp_idx = occ_match.start() + 6
         if 0 <= cp_idx < len(option_symbol):
             contract_type = "call" if option_symbol[cp_idx].upper() == "C" else "put"
 

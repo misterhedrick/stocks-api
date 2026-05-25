@@ -180,7 +180,7 @@ Likely causes:
 Do:
 
 - First raise `OPTIONS_CANDIDATE_LIMIT` only if diagnostics show too few candidates evaluated.
-- Tune per-profile env vars such as `PAPER_PREVIEW_PROFILE_<PROFILE>_MAX_SPREAD_PERCENT`, `MIN_OPEN_INTEREST`, or `MAX_ESTIMATED_NOTIONAL`.
+- Tune per-profile env vars such as `PREVIEW_PROFILE_<PROFILE>_MAX_SPREAD_PERCENT`, `MIN_OPEN_INTEREST`, or `MAX_ESTIMATED_NOTIONAL`.
 - Adjust DTE windows before loosening liquidity filters if contracts are too near expiration.
 - Review missing-OI allowlist only after confirming OI is structurally absent for the feed.
 
@@ -629,39 +629,39 @@ Primary global settings:
 Per-profile settings follow:
 
 ```text
-PAPER_PREVIEW_PROFILE_<PROFILE>_<SETTING>
+PREVIEW_PROFILE_<PROFILE>_<SETTING>
 ```
 
 Examples:
 
 ```text
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=2500
-PAPER_PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
-PAPER_PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=2500
+PREVIEW_PROFILE_MOVING_AVERAGE_MIN_OPEN_INTEREST=50
+PREVIEW_PROFILE_MOVING_AVERAGE_MAX_ESTIMATED_NOTIONAL=5000
+PREVIEW_PROFILE_MOVING_AVERAGE_MAX_SPREAD_PERCENT=35
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
+PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
 ```
 
 Current paper profile notional caps by strategy type:
 
 | Profile | Max estimated notional |
 |---|---:|
-| `moving_average` | `2500` |
-| `momentum_rate_of_change` | `2500` |
-| `rsi_reversal` | `3000` |
+| `moving_average` | `5000` |
+| `momentum_rate_of_change` | `5000` |
+| `rsi_reversal` | `5000` |
 | `macd_crossover` | `5000` |
-| `mean_reversion` | `3000` |
+| `mean_reversion` | `5000` |
 | `breakout_price_threshold` | `5000` |
-| `volume_confirmed_breakout` | `3000` |
+| `volume_confirmed_breakout` | `5000` |
 | `volatility_squeeze` | `5000` |
-| `support_resistance` | `2500` |
-| `vwap_reclaim` | `3000` |
-| `opening_range_breakout` | `3000` |
-| `relative_strength` | `3000` |
-| `time_series_momentum` | `3000` |
-| `market_regime_filter` | `2500` |
-| `pairs_relative_value` | `2500` |
-| `options_spread_candidate` | `2500` |
+| `support_resistance` | `5000` |
+| `vwap_reclaim` | `5000` |
+| `opening_range_breakout` | `5000` |
+| `relative_strength` | `5000` |
+| `time_series_momentum` | `5000` |
+| `market_regime_filter` | `5000` |
+| `pairs_relative_value` | `5000` |
+| `options_spread_candidate` | `5000` |
 
 The May 18 strategy-type batch tunes scanner behavior before removing symbols from the universe. SPY remains enabled; use SPY outcomes as evidence for scanner/profile tuning unless a future decision explicitly approves a symbol removal.
 
@@ -691,9 +691,9 @@ Batch scope:
 | Scanner | Patch intent |
 |---|---|
 | `support_resistance` | Require better level quality and closer entries. |
-| `momentum_rate_of_change` | Reduce chase entries and test a wider stop after lower notional. |
+| `momentum_rate_of_change` | Reduce chase entries and test a wider stop with stricter entry filtering. |
 | `moving_average` | Tighten trend quality and reduce duplicate entries. |
-| `mean_reversion` | Require cleaner band setup and test a wider stop after lower notional. |
+| `mean_reversion` | Require cleaner band setup and test a wider stop with stricter entries. |
 | `rsi_reversal` | Use stricter RSI extremes and reject trend conflicts. |
 | `volume_confirmed_breakout` | Require stronger volume and less extended breakouts. |
 | `macd_crossover` | Watch only for now. |
@@ -719,9 +719,9 @@ Common diagnostic reasons:
 
 Default seeded exit config:
 
-- `profit_target_percent`: from `PAPER_STRATEGY_PROFIT_TARGET_PERCENT`, default `25`.
-- `stop_loss_percent`: from `PAPER_STRATEGY_STOP_LOSS_PERCENT`, default `10`.
-- `stop_loss_min_dollars`: from `PAPER_STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `10`.
+- `profit_target_percent`: from `STRATEGY_PROFIT_TARGET_PERCENT`, default `25`.
+- `stop_loss_percent`: from `STRATEGY_STOP_LOSS_PERCENT`, default `10`.
+- `stop_loss_min_dollars`: from `STRATEGY_STOP_LOSS_MIN_DOLLARS`, default `10`.
 - `max_days_to_expiration`: `1`.
 - Limit price source: `bid`.
 - Exit submit is enabled for sell orders.

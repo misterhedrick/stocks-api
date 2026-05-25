@@ -14,6 +14,7 @@ from app.services.position_exits import (
     evaluate_position_exits,
     get_position_management_statuses,
     preview_unmanaged_position_exits,
+    resolve_position_ownership,
 )
 
 
@@ -144,6 +145,32 @@ class HighPremiumWideAbsoluteMarketDataClient:
         )
 
 
+class FakeOwnershipSession:
+    def __init__(
+        self,
+        *,
+        fill_rows: list[tuple],
+        order_intents: dict[uuid.UUID, OrderIntent],
+        strategies: dict[uuid.UUID, Strategy],
+    ) -> None:
+        self.fill_rows = fill_rows
+        self.order_intents = order_intents
+        self.strategies = strategies
+
+    def execute(self, _: object) -> list[tuple]:
+        return self.fill_rows
+
+    def get(self, model: type, record_id: uuid.UUID) -> object | None:
+        if model is OrderIntent:
+            return self.order_intents.get(record_id)
+        if model is Strategy:
+            return self.strategies.get(record_id)
+        return None
+
+    def scalar(self, _: object) -> object | None:
+        return None
+
+
 def build_position(
     *,
     symbol: str = "SPY260429C00500000",
@@ -198,6 +225,13 @@ def build_strategy() -> Strategy:
         created_at=now,
         updated_at=now,
     )
+
+
+def build_named_strategy(name: str) -> Strategy:
+    strategy = build_strategy()
+    strategy.id = uuid.uuid4()
+    strategy.name = name
+    return strategy
 
 
 def build_entry_order_intent(strategy: Strategy) -> OrderIntent:
@@ -255,6 +289,59 @@ def build_reconciliation_window(
 
 
 class PositionExitTests(unittest.TestCase):
+    def test_resolve_position_ownership_uses_latest_open_lot_not_latest_buy(self) -> None:
+        moving_average = build_named_strategy("moving_average")
+        momentum = build_named_strategy("momentum_rate_of_change")
+        moving_average_intent = build_entry_order_intent(moving_average)
+        momentum_intent = build_entry_order_intent(momentum)
+        symbol = moving_average_intent.option_symbol
+        moving_average_intent.option_symbol = symbol
+        momentum_intent.option_symbol = symbol
+        rows = [
+            (
+                uuid.uuid4(),
+                datetime(2026, 5, 22, 14, 19, tzinfo=timezone.utc),
+                "buy",
+                Decimal("1"),
+                Decimal("2.68"),
+                moving_average_intent.id,
+                moving_average.id,
+            ),
+            (
+                uuid.uuid4(),
+                datetime(2026, 5, 22, 14, 24, tzinfo=timezone.utc),
+                "buy",
+                Decimal("1"),
+                Decimal("2.83"),
+                momentum_intent.id,
+                momentum.id,
+            ),
+            (
+                uuid.uuid4(),
+                datetime(2026, 5, 22, 14, 30, tzinfo=timezone.utc),
+                "sell",
+                Decimal("1"),
+                Decimal("2.50"),
+                momentum_intent.id,
+                momentum.id,
+            ),
+        ]
+        db = FakeOwnershipSession(
+            fill_rows=rows,
+            order_intents={
+                moving_average_intent.id: moving_average_intent,
+                momentum_intent.id: momentum_intent,
+            },
+            strategies={moving_average.id: moving_average, momentum.id: momentum},
+        )
+
+        ownership = resolve_position_ownership(db, build_position(symbol=symbol))
+
+        self.assertTrue(ownership.managed)
+        self.assertEqual(ownership.strategy_name, "moving_average")
+        self.assertEqual(ownership.order_intent_id, moving_average_intent.id)
+        self.assertEqual(ownership.open_quantity, Decimal("1"))
+
     def test_evaluate_position_exits_creates_sell_intent_for_profit_target(self) -> None:
         strategy = build_strategy()
         position = build_position()
