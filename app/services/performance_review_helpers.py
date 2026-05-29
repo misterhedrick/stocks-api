@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.performance_review_fills import (
+    _close_expired_missing_position_lots,
     _fill_records,
     _match_round_trips,
     _open_position_summaries,

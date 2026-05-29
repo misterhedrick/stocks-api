@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import JobRun, TradeCase
 from app.services.audit_logs import record_audit_log
-from app.services.performance_review import _fill_records, _match_round_trips
+from app.services.performance_review import (
+    _close_expired_missing_position_lots,
+    _fill_records,
+    _match_round_trips,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,8 @@ def populate_trade_cases_from_closed_round_trips(
 
     try:
         fill_records = _fill_records(db, limit=limit)
-        round_trips, _open_lots, _unmatched, _ignored = _match_round_trips(fill_records)
+        round_trips, open_lots, _unmatched, _ignored = _match_round_trips(fill_records)
+        round_trips.extend(_close_expired_missing_position_lots(db, open_lots))
 
         inserted, updated, skipped, errors = _upsert_round_trips(db, round_trips)
 
@@ -125,14 +130,18 @@ def _upsert_round_trips(
     for rt in round_trips:
         try:
             entry_fill_id = uuid.UUID(rt["entry_fill_id"])
-            exit_fill_id = uuid.UUID(rt["exit_fill_id"])
-
-            existing = db.scalar(
-                select(TradeCase).where(
-                    TradeCase.entry_fill_id == entry_fill_id,
-                    TradeCase.exit_fill_id == exit_fill_id,
-                )
+            exit_fill_id = (
+                uuid.UUID(rt["exit_fill_id"])
+                if rt.get("exit_fill_id") is not None
+                else None
             )
+
+            statement = select(TradeCase).where(TradeCase.entry_fill_id == entry_fill_id)
+            if exit_fill_id is None:
+                statement = statement.where(TradeCase.exit_fill_id.is_(None))
+            else:
+                statement = statement.where(TradeCase.exit_fill_id == exit_fill_id)
+            existing = db.scalar(statement)
 
             new_context = _build_context(rt)
 

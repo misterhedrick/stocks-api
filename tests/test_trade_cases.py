@@ -243,6 +243,28 @@ class UpsertRoundTripsTests(unittest.TestCase):
         tc = next(obj for obj in db.added if isinstance(obj, TradeCase))
         self.assertIsNone(tc.underlying_symbol)
 
+    def test_inserts_synthetic_expiration_trade_case_without_exit_fill(self) -> None:
+        rt = _make_round_trip()
+        rt["exit_fill_id"] = None
+        rt["exit_context"] = {
+            "synthetic_close": {
+                "reason": "expired_missing_from_broker_positions",
+            }
+        }
+        db = FakeTradeCaseSession(scalar_results=[None])
+        inserted, updated, skipped, errors = _upsert_round_trips(db, [rt])
+
+        self.assertEqual(inserted, 1)
+        self.assertEqual(updated, 0)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(errors, [])
+        tc = next(obj for obj in db.added if isinstance(obj, TradeCase))
+        self.assertIsNone(tc.exit_fill_id)
+        self.assertEqual(
+            tc.context["exit"]["synthetic_close"]["reason"],
+            "expired_missing_from_broker_positions",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Integration test: populate_trade_cases_from_closed_round_trips

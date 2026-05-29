@@ -20,9 +20,11 @@ class FakeReconciliationSession:
     def __init__(
         self,
         scalar_results: list[object | None] | None = None,
+        scalars_results: list[list[object]] | None = None,
         records: dict[tuple[type, uuid.UUID], object] | None = None,
     ) -> None:
         self.scalar_results = scalar_results or []
+        self.scalars_results = scalars_results or []
         self.records = records or {}
         self.added: list[object] = []
         self.commit_count = 0
@@ -39,6 +41,11 @@ class FakeReconciliationSession:
         if self.scalar_results:
             return self.scalar_results.pop(0)
         return None
+
+    def scalars(self, _: object) -> object:
+        if self.scalars_results:
+            return iter(self.scalars_results.pop(0))
+        return iter([])
 
     def get(self, model: type, record_id: uuid.UUID) -> object | None:
         return self.records.get((model, record_id))
@@ -206,6 +213,22 @@ class ResetCutoffReconciliationClient(SuccessfulReconciliationClient):
 class FailingReconciliationClient:
     def list_orders(self, *, limit: int) -> list[tuple[AlpacaSubmittedOrder, dict]]:
         raise AlpacaTradingError("Alpaca is unavailable")
+
+
+class NoPositionReconciliationClient:
+    def list_orders(self, *, limit: int) -> list[tuple[AlpacaSubmittedOrder, dict]]:
+        return []
+
+    def list_fill_activities(
+        self,
+        *,
+        page_size: int,
+        page_token: str | None = None,
+    ) -> list[tuple[AlpacaFillActivity, dict]]:
+        return []
+
+    def list_positions(self) -> list[tuple[AlpacaPosition, dict]]:
+        return []
 
 
 def build_fill(fill_id: str, order_id: str = "alpaca-order-123") -> tuple[AlpacaFillActivity, dict]:
@@ -458,6 +481,42 @@ class BrokerReconciliationTests(unittest.TestCase):
         self.assertEqual([item.alpaca_order_id for item in broker_orders], ["new-order"])
         self.assertEqual([item.alpaca_fill_id for item in fills], ["new-fill"])
         self.assertEqual([item.symbol for item in positions], ["SPY260417C00500000"])
+
+    def test_reconcile_broker_state_flattens_positions_missing_from_broker(self) -> None:
+        stale_snapshot = PositionSnapshot(
+            id=uuid.uuid4(),
+            symbol="SPY260417C00500000",
+            quantity=1,
+            market_value=125,
+            cost_basis=125,
+            unrealized_pl=0,
+            raw_position={},
+            captured_at=datetime(2026, 4, 23, 16, 0, tzinfo=timezone.utc),
+        )
+        db = FakeReconciliationSession(
+            scalar_results=[None],
+            scalars_results=[[stale_snapshot]],
+        )
+
+        result = reconcile_broker_state(
+            db,
+            trading_client=NoPositionReconciliationClient(),
+        )
+
+        self.assertEqual(result.positions_seen, 0)
+        self.assertEqual(result.position_snapshots_created, 1)
+        self.assertEqual(result.position_flat_snapshots_created, 1)
+        flattened = [
+            item
+            for item in db.added
+            if isinstance(item, PositionSnapshot) and item.symbol == stale_snapshot.symbol
+        ]
+        self.assertEqual(len(flattened), 1)
+        self.assertEqual(flattened[0].quantity, 0)
+        self.assertEqual(
+            flattened[0].raw_position["source"],
+            "broker_reconciliation_missing_from_alpaca_positions",
+        )
 
     def test_reconcile_broker_state_records_failed_job_run(self) -> None:
         db = FakeReconciliationSession()

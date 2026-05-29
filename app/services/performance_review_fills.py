@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
+import re
 from typing import Any
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -15,9 +16,12 @@ from app.db.models import (
     JobRun,
     OptionSelectionDiagnostic,
     OrderIntent,
+    PositionSnapshot,
     Signal,
     Strategy,
 )
+
+_OPTION_SYMBOL_EXPIRATION_RE = re.compile(r"(\d{6})[CP]\d{8}$")
 
 
 @dataclass(slots=True)
@@ -228,6 +232,189 @@ def _match_round_trips(
             )
 
     return round_trips, open_lots, unmatched_closing_fills, ignored_fills
+
+
+def _close_expired_missing_position_lots(
+    db: Session,
+    open_lots: dict[tuple[str, uuid.UUID | None], list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    broker_state = _latest_broker_position_state(db)
+    if broker_state is None:
+        return []
+
+    active_symbols, closed_at = broker_state
+    today = closed_at.date()
+    synthetic_round_trips: list[dict[str, Any]] = []
+
+    for key, lots in list(open_lots.items()):
+        symbol, strategy_id = key
+        expiration_date = _option_expiration_date(symbol)
+        if (
+            expiration_date is None
+            or expiration_date >= today
+            or symbol.strip().upper() in active_symbols
+        ):
+            continue
+
+        for lot in lots:
+            remaining_quantity = Decimal(str(lot["remaining_quantity"]))
+            if remaining_quantity <= 0:
+                continue
+            synthetic_round_trips.append(
+                _expired_missing_position_round_trip(
+                    symbol=symbol,
+                    strategy_id=strategy_id,
+                    lot=lot,
+                    quantity=remaining_quantity,
+                    closed_at=closed_at,
+                    expiration_date=expiration_date.isoformat(),
+                )
+            )
+        open_lots.pop(key, None)
+
+    return synthetic_round_trips
+
+
+def _latest_broker_position_state(
+    db: Session,
+) -> tuple[set[str], datetime] | None:
+    if not isinstance(db, Session):
+        return None
+
+    latest_reconciliation = db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "reconcile_broker")
+        .where(JobRun.status == "succeeded")
+        .where(JobRun.finished_at.is_not(None))
+        .order_by(JobRun.finished_at.desc())
+        .limit(1)
+    )
+    if (
+        latest_reconciliation is not None
+        and latest_reconciliation.started_at is not None
+        and latest_reconciliation.finished_at is not None
+    ):
+        symbols = {
+            str(symbol).strip().upper()
+            for symbol in db.scalars(
+                select(PositionSnapshot.symbol)
+                .where(PositionSnapshot.captured_at >= latest_reconciliation.started_at)
+                .where(PositionSnapshot.captured_at <= latest_reconciliation.finished_at)
+                .where(PositionSnapshot.quantity > 0)
+            )
+        }
+        return symbols, latest_reconciliation.finished_at
+
+    latest_captured_at = (
+        select(
+            PositionSnapshot.symbol.label("symbol"),
+            func.max(PositionSnapshot.captured_at).label("captured_at"),
+        )
+        .group_by(PositionSnapshot.symbol)
+        .subquery()
+    )
+    rows = list(
+        db.scalars(
+            select(PositionSnapshot)
+            .join(
+                latest_captured_at,
+                and_(
+                    PositionSnapshot.symbol == latest_captured_at.c.symbol,
+                    PositionSnapshot.captured_at == latest_captured_at.c.captured_at,
+                ),
+            )
+        )
+    )
+    if not rows:
+        return None
+
+    symbols = {
+        snapshot.symbol.strip().upper()
+        for snapshot in rows
+        if snapshot.quantity > 0
+    }
+    closed_at = max(snapshot.captured_at for snapshot in rows)
+    return symbols, closed_at
+
+
+def _expired_missing_position_round_trip(
+    *,
+    symbol: str,
+    strategy_id: uuid.UUID | None,
+    lot: dict[str, Any],
+    quantity: Decimal,
+    closed_at: datetime,
+    expiration_date: str,
+) -> dict[str, Any]:
+    entry_price = Decimal(str(lot["entry_price"]))
+    multiplier = Decimal("100")
+    entry_notional = entry_price * quantity * multiplier
+    exit_notional = Decimal("0")
+    realized_pnl = -entry_notional
+    entry_at = lot["entry_at"]
+    holding_seconds = int((closed_at - entry_at).total_seconds())
+    entry_context = lot.get("entry_context", {})
+    signal_context = (
+        entry_context.get("signal")
+        if isinstance(entry_context.get("signal"), dict)
+        else {}
+    )
+    return {
+        "symbol": symbol,
+        "underlying_symbol": signal_context.get("underlying_symbol")
+        or _underlying_symbol(symbol),
+        "strategy_id": str(strategy_id) if strategy_id is not None else None,
+        "strategy_name": lot.get("strategy_name"),
+        "quantity": _decimal_string(quantity),
+        "entry_price": _decimal_string(entry_price),
+        "exit_price": "0",
+        "entry_notional": _decimal_string(entry_notional),
+        "exit_notional": _decimal_string(exit_notional),
+        "realized_pnl": _decimal_string(realized_pnl),
+        "return_percent": "-100",
+        "entry_at": entry_at.isoformat(),
+        "exit_at": closed_at.isoformat(),
+        "holding_seconds": holding_seconds,
+        "entry_fill_id": str(lot["entry_fill_id"]),
+        "exit_fill_id": None,
+        "entry_order_intent_id": str(lot["order_intent_id"])
+        if lot["order_intent_id"] is not None
+        else None,
+        "exit_order_intent_id": None,
+        "entry_context": entry_context,
+        "exit_context": {
+            "order_intent": {
+                "id": None,
+                "side": "sell",
+                "rationale": "synthetic expiration close at zero after broker position disappeared",
+                "preview": {},
+            },
+            "signal": {},
+            "synthetic_close": {
+                "reason": "expired_missing_from_broker_positions",
+                "expiration_date": expiration_date,
+                "broker_position_missing": True,
+            },
+        },
+    }
+
+
+def _option_expiration_date(symbol: str) -> date | None:
+    match = _OPTION_SYMBOL_EXPIRATION_RE.search(symbol)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%y%m%d").date()
+    except ValueError:
+        return None
+
+
+def _underlying_symbol(symbol: str) -> str | None:
+    match = _OPTION_SYMBOL_EXPIRATION_RE.search(symbol)
+    if match is None:
+        return None
+    underlying = symbol[: match.start()].strip().upper()
+    return underlying or None
 
 
 def _fill_learning_context(fill: FillRecord) -> dict[str, Any]:

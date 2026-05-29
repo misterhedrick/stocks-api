@@ -192,6 +192,45 @@ def _open_positions_count(
     *,
     underlying_symbol: str | None = None,
 ) -> int:
+    latest_reconciliation = _latest_completed_reconciliation(db)
+    open_positions = None
+    if latest_reconciliation is not None:
+        started_at = getattr(latest_reconciliation, "started_at", None)
+        finished_at = getattr(latest_reconciliation, "finished_at", None)
+        if started_at is not None and finished_at is not None:
+            open_positions = (
+                select(PositionSnapshot.symbol)
+                .where(PositionSnapshot.captured_at >= started_at)
+                .where(PositionSnapshot.captured_at <= finished_at)
+                .where(PositionSnapshot.quantity > 0)
+                .distinct()
+            )
+
+    if open_positions is None:
+        open_positions = _latest_position_snapshot_positions()
+
+    if underlying_symbol is not None:
+        open_positions = _filter_positions_by_underlying(
+            open_positions,
+            underlying_symbol=underlying_symbol,
+        )
+
+    statement = select(func.count()).select_from(open_positions.subquery())
+    return _int_scalar(db, statement)
+
+
+def _latest_completed_reconciliation(db: Session) -> JobRun | None:
+    return db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "reconcile_broker")
+        .where(JobRun.status == "succeeded")
+        .where(JobRun.finished_at.is_not(None))
+        .order_by(JobRun.finished_at.desc())
+        .limit(1)
+    )
+
+
+def _latest_position_snapshot_positions() -> object:
     latest_captured_at = (
         select(
             PositionSnapshot.symbol.label("symbol"),
@@ -200,7 +239,7 @@ def _open_positions_count(
         .group_by(PositionSnapshot.symbol)
         .subquery()
     )
-    open_positions = (
+    return (
         select(PositionSnapshot.symbol)
         .join(
             latest_captured_at,
@@ -209,25 +248,28 @@ def _open_positions_count(
         )
         .where(PositionSnapshot.quantity > 0)
     )
-    if underlying_symbol is not None:
-        normalized = underlying_symbol.strip().upper()
-        if not normalized:
-            return 0
-        # Match the exact stock symbol OR option contracts whose symbol starts
-        # with the underlying immediately followed by a 6-digit expiration date
-        # (e.g. "SPY240315C00500000"). The [0-9] anchor prevents "SPY" from
-        # matching unrelated tickers like "SPYG" or "SPYD".
-        open_positions = open_positions.where(
-            or_(
-                func.upper(PositionSnapshot.symbol) == normalized,
-                PositionSnapshot.symbol.regexp_match(
-                    f"^{re.escape(normalized)}[0-9]", flags="i"
-                ),
-            )
-        )
 
-    statement = select(func.count()).select_from(open_positions.subquery())
-    return _int_scalar(db, statement)
+
+def _filter_positions_by_underlying(
+    statement: object,
+    *,
+    underlying_symbol: str,
+) -> object:
+    normalized = underlying_symbol.strip().upper()
+    if not normalized:
+        return statement.where(False)
+    # Match the exact stock symbol OR option contracts whose symbol starts
+    # with the underlying immediately followed by a 6-digit expiration date
+    # (e.g. "SPY240315C00500000"). The [0-9] anchor prevents "SPY" from
+    # matching unrelated tickers like "SPYG" or "SPYD".
+    return statement.where(
+        or_(
+            func.upper(PositionSnapshot.symbol) == normalized,
+            PositionSnapshot.symbol.regexp_match(
+                f"^{re.escape(normalized)}[0-9]", flags="i"
+            ),
+        )
+    )
 
 
 def _order_intent_price(order_intent: OrderIntent) -> Decimal | None:

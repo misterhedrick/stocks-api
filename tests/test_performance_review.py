@@ -4,8 +4,10 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import unittest
 import uuid
+from unittest.mock import patch
 
 from app.services.performance_review import get_performance_review
+from app.services.performance_review_fills import _close_expired_missing_position_lots
 
 
 class FakePerformanceSession:
@@ -155,6 +157,45 @@ def job_run_row(*, no_signal_reasons: list[str]) -> tuple:
 
 
 class PerformanceReviewTests(unittest.TestCase):
+    def test_closes_expired_missing_broker_positions_at_zero(self) -> None:
+        strategy_id = uuid.uuid4()
+        entry_fill_id = uuid.uuid4()
+        order_intent_id = uuid.uuid4()
+        entry_at = datetime(2026, 5, 1, 14, 0, tzinfo=timezone.utc)
+        open_lots = {
+            ("SPY260501C00500000", strategy_id): [
+                {
+                    "symbol": "SPY260501C00500000",
+                    "strategy_id": strategy_id,
+                    "strategy_name": "Expired Test",
+                    "quantity": Decimal("1"),
+                    "remaining_quantity": Decimal("1"),
+                    "entry_price": Decimal("1.00"),
+                    "entry_fill_id": entry_fill_id,
+                    "entry_at": entry_at,
+                    "order_intent_id": order_intent_id,
+                    "entry_context": {
+                        "signal": {
+                            "underlying_symbol": "SPY",
+                            "market_context": {"strategy_type": "moving_average"},
+                        }
+                    },
+                }
+            ]
+        }
+
+        with patch(
+            "app.services.performance_review_fills._latest_broker_position_state",
+            return_value=(set(), datetime(2026, 5, 2, 14, 0, tzinfo=timezone.utc)),
+        ):
+            round_trips = _close_expired_missing_position_lots(object(), open_lots)
+
+        self.assertEqual(len(round_trips), 1)
+        self.assertEqual(round_trips[0]["realized_pnl"], "-100")
+        self.assertEqual(round_trips[0]["return_percent"], "-100")
+        self.assertIsNone(round_trips[0]["exit_fill_id"])
+        self.assertEqual(open_lots, {})
+
     def test_get_performance_review_matches_fifo_round_trips(self) -> None:
         strategy_id = uuid.uuid4()
         now = datetime.now(timezone.utc)

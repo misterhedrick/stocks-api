@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.services.performance_review_helpers import (
     _fill_records,
     _match_round_trips,
+    _close_expired_missing_position_lots,
     _signal_records,
     _option_selection_diagnostic_records,
     _no_signal_summary,
@@ -52,6 +53,7 @@ def get_performance_review(
     round_trips, open_lots, unmatched_closing_fills, ignored_fills = (
         _match_round_trips(fill_records)
     )
+    round_trips.extend(_close_expired_missing_position_lots(db, open_lots))
 
     signal_records = _signal_records(db, limit=limit)
     diagnostic_records = _option_selection_diagnostic_records(db, limit=limit)

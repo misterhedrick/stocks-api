@@ -4,6 +4,7 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.db.models import BrokerOrder, OrderIntent
@@ -209,6 +210,32 @@ class AutomationGuardTests(unittest.TestCase):
         self.assertTrue(decision.allowed)
         self.assertEqual(decision.reasons, [])
         self.assertTrue(decision.limits_snapshot["price_available"])
+
+    def test_uses_latest_reconciliation_window_for_open_position_count(self) -> None:
+        latest_reconciliation = SimpleNamespace(
+            started_at=datetime(2026, 4, 23, 16, 0, tzinfo=timezone.utc),
+            finished_at=datetime(2026, 4, 23, 16, 1, tzinfo=timezone.utc),
+        )
+
+        with self.allowed_settings():
+            decision = can_auto_submit_order_intent(
+                FakeAutomationGuardSession(
+                    scalar_results=[
+                        0,
+                        0,
+                        latest_reconciliation,
+                        0,
+                        latest_reconciliation,
+                        0,
+                        0,
+                    ],
+                ),
+                build_order_intent(),
+            )
+
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.limits_snapshot["open_positions"], 0)
+        self.assertEqual(decision.limits_snapshot["open_positions_for_symbol"], 0)
 
 
 if __name__ == "__main__":

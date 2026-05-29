@@ -4,11 +4,12 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from time import perf_counter
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import BrokerOrder, Fill, JobRun, OrderIntent, PositionSnapshot
@@ -32,6 +33,7 @@ class BrokerReconciliationResult:
     fills_created: int
     positions_seen: int
     position_snapshots_created: int
+    position_flat_snapshots_created: int = 0
     fill_page_size_requested: int = 100
     fill_page_size_used: int = 100
     fill_pages_fetched: int = 0
@@ -89,7 +91,9 @@ def reconcile_broker_state(
         orders_skipped_before_reset = 0
         fills_skipped_before_reset = 0
         positions_skipped_without_post_reset_activity = 0
+        live_position_snapshots_created = 0
         captured_at = datetime.now(timezone.utc)
+        active_position_symbols: set[str] = set()
 
         for order, raw_order in order_rows:
             if not _order_is_after_reset(order, reset_cutoff):
@@ -112,7 +116,16 @@ def reconcile_broker_state(
             if not _position_has_post_reset_activity(db, position, reset_cutoff):
                 positions_skipped_without_post_reset_activity += 1
                 continue
+            active_position_symbols.add(position.symbol.strip().upper())
             _create_position_snapshot(db, position, raw_position, captured_at)
+            live_position_snapshots_created += 1
+
+        flat_position_snapshots_created = _create_flat_position_snapshots_for_missing_symbols(
+            db,
+            active_position_symbols=active_position_symbols,
+            captured_at=captured_at,
+            reset_cutoff=reset_cutoff,
+        )
 
         details = {
             "orders_seen": len(order_rows),
@@ -129,8 +142,10 @@ def reconcile_broker_state(
             "fill_pagination_stop_reason": fill_page.stop_reason,
             "positions_seen": len(position_rows),
             "position_snapshots_created": (
-                len(position_rows) - positions_skipped_without_post_reset_activity
+                live_position_snapshots_created + flat_position_snapshots_created
             ),
+            "live_position_snapshots_created": live_position_snapshots_created,
+            "position_flat_snapshots_created": flat_position_snapshots_created,
             "positions_skipped_without_post_reset_activity": (
                 positions_skipped_without_post_reset_activity
             ),
@@ -170,8 +185,9 @@ def reconcile_broker_state(
             fills_created=fills_created,
             positions_seen=len(position_rows),
             position_snapshots_created=(
-                len(position_rows) - positions_skipped_without_post_reset_activity
+                live_position_snapshots_created + flat_position_snapshots_created
             ),
+            position_flat_snapshots_created=flat_position_snapshots_created,
             fill_page_size_requested=requested_fill_page_size,
             fill_page_size_used=safe_fill_page_size,
             fill_pages_fetched=fill_page.pages_fetched,
@@ -448,3 +464,84 @@ def _create_position_snapshot(
             captured_at=captured_at,
         )
     )
+
+
+def _create_flat_position_snapshots_for_missing_symbols(
+    db: Session,
+    *,
+    active_position_symbols: set[str],
+    captured_at: datetime,
+    reset_cutoff: datetime | None,
+) -> int:
+    latest_captured_at = (
+        select(
+            PositionSnapshot.symbol.label("symbol"),
+            func.max(PositionSnapshot.captured_at).label("captured_at"),
+        )
+        .group_by(PositionSnapshot.symbol)
+        .subquery()
+    )
+    statement = (
+        select(PositionSnapshot)
+        .join(
+            latest_captured_at,
+            (PositionSnapshot.symbol == latest_captured_at.c.symbol)
+            & (PositionSnapshot.captured_at == latest_captured_at.c.captured_at),
+        )
+        .where(PositionSnapshot.quantity > 0)
+    )
+
+    created = 0
+    for snapshot in db.scalars(statement):
+        symbol = snapshot.symbol.strip().upper()
+        if symbol in active_position_symbols:
+            continue
+        if not _position_snapshot_has_post_reset_activity(db, snapshot, reset_cutoff):
+            continue
+        db.add(
+            PositionSnapshot(
+                symbol=snapshot.symbol,
+                quantity=Decimal("0"),
+                market_value=Decimal("0"),
+                cost_basis=Decimal("0"),
+                unrealized_pl=Decimal("0"),
+                raw_position={
+                    "source": "broker_reconciliation_missing_from_alpaca_positions",
+                    "previous_position_snapshot_id": str(snapshot.id),
+                    "previous_captured_at": snapshot.captured_at.isoformat()
+                    if snapshot.captured_at is not None
+                    else None,
+                },
+                captured_at=captured_at,
+            )
+        )
+        created += 1
+    return created
+
+
+def _position_snapshot_has_post_reset_activity(
+    db: Session,
+    snapshot: PositionSnapshot,
+    reset_cutoff: datetime | None,
+) -> bool:
+    if reset_cutoff is None:
+        return True
+    if snapshot.captured_at is not None and snapshot.captured_at >= reset_cutoff:
+        return True
+
+    broker_order_count = db.scalar(
+        select(BrokerOrder.id)
+        .where(BrokerOrder.symbol == snapshot.symbol)
+        .where(BrokerOrder.submitted_at.is_not(None))
+        .where(BrokerOrder.submitted_at >= reset_cutoff)
+        .limit(1)
+    )
+    if broker_order_count is not None:
+        return True
+    fill_count = db.scalar(
+        select(Fill.id)
+        .where(Fill.symbol == snapshot.symbol)
+        .where(Fill.filled_at >= reset_cutoff)
+        .limit(1)
+    )
+    return fill_count is not None
