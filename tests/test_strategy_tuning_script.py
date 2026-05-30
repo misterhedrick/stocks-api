@@ -8,6 +8,8 @@ import uuid
 
 from app.db.models import AuditLog, Strategy
 from scripts.tune_strategies import (
+    ENTRY_QUALITY_BATCH_2026_05_29,
+    apply_entry_quality_batch_2026_05_29,
     list_strategy_summaries,
     momentum_rate_of_change_payload_from_args,
     moving_average_payload_from_args,
@@ -61,23 +63,28 @@ class FakeTuningSession:
         return FakeScalarResult(self.strategies)
 
 
-def build_strategy() -> Strategy:
+def build_strategy(
+    *,
+    scanner_type: str = "moving_average",
+    scanner_patch: dict | None = None,
+) -> Strategy:
     now = datetime.now(timezone.utc)
+    scanner = {
+        "type": scanner_type,
+        "symbols": ["SPY"],
+        "short_window": 5,
+        "long_window": 20,
+        "preview": {"enabled": True},
+        "submit": {"enabled": False},
+    }
+    if scanner_patch:
+        scanner.update(scanner_patch)
     return Strategy(
         id=uuid.uuid4(),
-        name="SPY moving average call preview",
+        name=f"{scanner_type} strategy",
         description="Existing",
         is_active=True,
-        config={
-            "scanner": {
-                "type": "moving_average",
-                "symbols": ["SPY"],
-                "short_window": 5,
-                "long_window": 20,
-                "preview": {"enabled": True},
-                "submit": {"enabled": False},
-            }
-        },
+        config={"scanner": scanner},
         created_at=now,
         updated_at=now,
     )
@@ -273,6 +280,35 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(summaries[0]["scanner_type"], "moving_average")
         self.assertTrue(summaries[0]["preview_enabled"])
         self.assertFalse(summaries[0]["submit_enabled"])
+
+    def test_apply_entry_quality_batch_patches_targeted_scanner_keys(self) -> None:
+        strategy = build_strategy(
+            scanner_type="moving_average",
+            scanner_patch={"trigger": "trend_state"},
+        )
+        db = FakeTuningSession([strategy])
+
+        results = apply_entry_quality_batch_2026_05_29(db)
+
+        self.assertEqual(
+            ENTRY_QUALITY_BATCH_2026_05_29["moving_average"]["trigger"],
+            "crossover",
+        )
+        self.assertEqual(results[0]["status"], "updated")
+        self.assertEqual(
+            results[0]["changed"]["trigger"],
+            {"from": "trend_state", "to": "crossover"},
+        )
+        self.assertEqual(strategy.config["scanner"]["trigger"], "crossover")
+
+    def test_apply_entry_quality_batch_watches_unpatched_scanners(self) -> None:
+        strategy = build_strategy(scanner_type="mean_reversion")
+        db = FakeTuningSession([strategy])
+
+        results = apply_entry_quality_batch_2026_05_29(db)
+
+        self.assertEqual(results[0]["scanner_type"], "mean_reversion")
+        self.assertEqual(results[0]["status"], "watch")
 
 
 if __name__ == "__main__":

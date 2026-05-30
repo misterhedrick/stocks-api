@@ -136,6 +136,12 @@ def main() -> None:
     )
     batch_parser.add_argument("--dry-run", action="store_true")
 
+    quality_batch_parser = subparsers.add_parser(
+        "apply-2026-05-29-entry-quality-batch",
+        help="Apply the 2026-05-29 entry-selection tuning batch by scanner type.",
+    )
+    quality_batch_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -207,6 +213,19 @@ def main() -> None:
                 return
             db.commit()
             print(json.dumps(results, indent=2, sort_keys=True, default=str))
+            return
+
+        if args.command == "apply-2026-05-29-entry-quality-batch":
+            results = apply_entry_quality_batch_2026_05_29(
+                db,
+                dry_run=args.dry_run,
+            )
+            if args.dry_run:
+                print(json.dumps(results, indent=2, sort_keys=True, default=str))
+                return
+            db.commit()
+            print(json.dumps(results, indent=2, sort_keys=True, default=str))
+            return
 
 
 def list_strategy_summaries(
@@ -492,6 +511,22 @@ STRATEGY_TYPE_BATCH_2026_05_18: dict[str, dict[str, Any]] = {
 }
 
 
+ENTRY_QUALITY_BATCH_2026_05_29: dict[str, dict[str, Any]] = {
+    "moving_average": {
+        "trigger": "crossover",
+    },
+    "relative_strength": {
+        "min_edge_percent": "1.50",
+    },
+    "breakout_price_threshold": {
+        "breakout_buffer_percent": "0.15",
+    },
+    "momentum_rate_of_change": {
+        "timeframe": "5Min",
+    },
+}
+
+
 def apply_strategy_type_batch(
     db: Session,
     *,
@@ -514,6 +549,77 @@ def apply_strategy_type_batch(
         if not isinstance(scanner_type, str):
             continue
         patch = STRATEGY_TYPE_BATCH_2026_05_18.get(scanner_type)
+        if patch is None:
+            results.append(
+                {
+                    "name": strategy.name,
+                    "scanner_type": scanner_type,
+                    "status": "watch",
+                    "reason": "No scanner-config patch in this evidence batch.",
+                }
+            )
+            continue
+
+        before = deepcopy(scanner)
+        patched = patch_strategy_scanner(
+            db,
+            name=strategy.name,
+            scanner_patch=patch,
+            dry_run=dry_run,
+        )
+        after_config = (
+            patched.config.get("scanner")
+            if isinstance(patched.config, dict)
+            and isinstance(patched.config.get("scanner"), dict)
+            else {}
+        )
+        results.append(
+            {
+                "name": strategy.name,
+                "scanner_type": scanner_type,
+                "status": "would_update" if dry_run else "updated",
+                "patch": patch,
+                "changed": _changed_scanner_keys(before, after_config, patch),
+            }
+        )
+    return results
+
+
+def apply_entry_quality_batch_2026_05_29(
+    db: Session,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    return _apply_scanner_type_batch(
+        db,
+        batch=ENTRY_QUALITY_BATCH_2026_05_29,
+        dry_run=dry_run,
+    )
+
+
+def _apply_scanner_type_batch(
+    db: Session,
+    *,
+    batch: dict[str, dict[str, Any]],
+    dry_run: bool,
+) -> list[dict[str, Any]]:
+    strategies = list(
+        db.scalars(select(Strategy).where(Strategy.is_active == True))  # noqa: E712
+    )
+    results: list[dict[str, Any]] = []
+    for strategy in strategies:
+        scanner = (
+            strategy.config.get("scanner")
+            if isinstance(strategy.config, dict)
+            and isinstance(strategy.config.get("scanner"), dict)
+            else None
+        )
+        if scanner is None:
+            continue
+        scanner_type = scanner.get("type")
+        if not isinstance(scanner_type, str):
+            continue
+        patch = batch.get(scanner_type)
         if patch is None:
             results.append(
                 {
