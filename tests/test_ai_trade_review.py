@@ -20,9 +20,15 @@ from app.services.ai_trade_review import (
 
 
 class FakeAiReviewSession:
-    def __init__(self, *, snapshot: ReviewSnapshot, trade_case: TradeCase) -> None:
+    def __init__(
+        self,
+        *,
+        snapshot: ReviewSnapshot,
+        trade_case: TradeCase,
+        pending_suggestions: list[StrategyChangeSuggestion] | None = None,
+    ) -> None:
         self.scalar_results = [snapshot, None]
-        self.scalars_results = [[trade_case]]
+        self.scalars_results = [[trade_case], pending_suggestions or []]
         self.added: list[object] = []
         self.commit_count = 0
         self.flush_count = 0
@@ -85,6 +91,51 @@ class AiTradeReviewTests(unittest.TestCase):
         )
         job_runs = [item for item in db.added if isinstance(item, JobRun)]
         self.assertEqual(job_runs[0].status, "succeeded")
+
+    def test_writer_skips_existing_pending_suggestion_groups(self) -> None:
+        trade_case = _trade_case(realized_pl=Decimal("-42"), realized_pl_percent=Decimal("-21"))
+        snapshot = _snapshot()
+        review = AiTradeReview(
+            id=uuid.uuid4(),
+            trade_case_id=uuid.uuid4(),
+            review_model="local-test",
+            review_status="generated",
+            assessment={
+                "scanner_type": "moving_average",
+                "underlying_symbol": "SPY",
+            },
+            raw_response={},
+        )
+        pending = StrategyChangeSuggestion(
+            id=uuid.uuid4(),
+            ai_trade_review_id=review.id,
+            strategy_id=trade_case.strategy_id,
+            suggestion_type="review_strategy_risk_controls",
+            description="Existing pending duplicate",
+            proposed_config_patch={},
+            status="pending",
+        )
+        pending.ai_trade_review = review
+        db = FakeAiReviewSession(
+            snapshot=snapshot,
+            trade_case=trade_case,
+            pending_suggestions=[pending],
+        )
+
+        result = write_ai_trade_reviews(db, limit=10)
+
+        self.assertEqual(result.reviews_created, 1)
+        self.assertEqual(result.suggestions_created, 2)
+        suggestions = [
+            item for item in db.added if isinstance(item, StrategyChangeSuggestion)
+        ]
+        self.assertEqual(
+            [item.suggestion_type for item in suggestions],
+            [
+                "review_option_selection_filters",
+                "review_rejected_signal_outcomes",
+            ],
+        )
 
     def test_assessment_marks_recommendations_as_human_review_only(self) -> None:
         assessment = _assessment_for_trade_case(

@@ -34,6 +34,8 @@ def _assessment_for_trade_case(
     realized_pl_percent = Decimal(str(trade_case.realized_pl_percent or "0"))
 
     context = trade_case.context if isinstance(trade_case.context, dict) else {}
+    performance_excluded = context.get("performance_excluded") is True
+    settlement_status = context.get("settlement_status")
     entry_context = context.get("entry") if isinstance(context.get("entry"), dict) else {}
     exit_context = context.get("exit") if isinstance(context.get("exit"), dict) else {}
     holding_seconds = context.get("holding_seconds")
@@ -76,11 +78,23 @@ def _assessment_for_trade_case(
         symbol=str(symbol),
     )
 
-    outcome = "win" if realized_pl > 0 else "loss" if realized_pl < 0 else "flat"
+    outcome = (
+        "unresolved"
+        if performance_excluded
+        else "win"
+        if realized_pl > 0
+        else "loss"
+        if realized_pl < 0
+        else "flat"
+    )
     observations = [
         f"Closed trade outcome is {outcome}.",
         f"Realized P/L: {realized_pl}; return: {realized_pl_percent}%.",
     ]
+    if performance_excluded:
+        observations.append(
+            "Trade is excluded from performance totals because expiration settlement is unknown."
+        )
     if snapshot_context["diagnostic_reasons"]:
         observations.append(
             "Recent option-selection diagnostics exist for this scanner/symbol."
@@ -91,6 +105,8 @@ def _assessment_for_trade_case(
         )
 
     risk_notes: list[str] = []
+    if performance_excluded:
+        risk_notes.append("Expiration settlement is unknown; review broker settlement/exercise evidence before tuning.")
     if realized_pl < 0:
         risk_notes.append("Loss should be compared with entry signal quality and option selection filters.")
     if abs(realized_pl_percent) >= Decimal("25"):
@@ -107,9 +123,11 @@ def _assessment_for_trade_case(
         "underlying_symbol": trade_case.underlying_symbol,
         "scanner_type": scanner_type,
         "outcome": outcome,
-        "confidence": "medium",
+        "confidence": "low" if performance_excluded else "medium",
         "realized_pl": str(realized_pl),
         "realized_pl_percent": str(realized_pl_percent),
+        "performance_excluded": performance_excluded,
+        "settlement_status": settlement_status,
         "entry_notional": str(entry_notional) if entry_notional is not None else None,
         "exit_notional": str(exit_notional) if exit_notional is not None else None,
         "holding_period": _holding_period(holding_seconds),
@@ -313,6 +331,18 @@ def _suggestions_for_assessment(
                     f"Review {scanner_type} risk controls for {symbol}: this closed "
                     "trade lost money. Compare signal features, exit timing, spread, "
                     f"and notional sizing before changing config. {group_summary}"
+                ),
+                "proposed_config_patch": {},
+            }
+        )
+    elif outcome == "unresolved":
+        suggestions.append(
+            {
+                "suggestion_type": "review_exit_rules",
+                "description": (
+                    f"Review exit/settlement handling for {scanner_type} {symbol}: "
+                    "the option disappeared after expiration without a matched sell fill, "
+                    f"so the case is excluded from performance totals. {group_summary}"
                 ),
                 "proposed_config_patch": {},
             }

@@ -256,7 +256,7 @@ Current Render preview profile notional caps by strategy type:
 - pairs_relative_value=5000
 - options_spread_candidate=5000
 
-The options_spread_candidate scanner identifies spread-worthy directional setups, but current execution still previews one long option leg. True multi-leg spread orders require separate order plumbing.
+The market_regime_filter, pairs_relative_value, and options_spread_candidate scanners are signal-only. They can create review/context signals, but the market-cycle preview gate marks them signal_only and does not create option previews or order intents. Paired, spread, and other multi-leg orders require separate order plumbing before these signals can submit true strategy-specific trades.
 
 The 2026-05-18 tuning pass keeps SPY enabled and tunes scanner/profile behavior by strategy type. Do not pause the SPY entry cron unless a later human-approved review explicitly changes that decision.
 

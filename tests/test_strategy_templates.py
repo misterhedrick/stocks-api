@@ -7,8 +7,11 @@ import uuid
 from app.db.models import AuditLog, Strategy
 from app.services.strategy_templates import (
     build_macd_crossover_strategy_payload,
+    build_market_regime_filter_strategy_payload,
     build_moving_average_strategy_payload,
     build_momentum_rate_of_change_strategy_payload,
+    build_options_spread_candidate_strategy_payload,
+    build_pairs_relative_value_strategy_payload,
     build_preview_first_strategy_payloads,
 )
 from scripts.seed_strategies import seed_strategies
@@ -125,6 +128,26 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertTrue(scanner["require_price_confirmation"])
         self.assertTrue(scanner["require_histogram_confirmation"])
 
+    def test_signal_only_strategy_payloads_disable_preview_and_submit(self) -> None:
+        for payload in (
+            build_market_regime_filter_strategy_payload(
+                symbol="spy",
+                target_strike=Decimal("500"),
+            ),
+            build_pairs_relative_value_strategy_payload(
+                symbol="spy",
+                target_strike=Decimal("500"),
+            ),
+            build_options_spread_candidate_strategy_payload(
+                symbol="spy",
+                target_strike=Decimal("500"),
+            ),
+        ):
+            scanner = payload["config"]["scanner"]
+            self.assertFalse(scanner["preview"]["enabled"])
+            self.assertFalse(scanner["submit"]["enabled"])
+            self.assertIn("signal-only", scanner["preview"]["rationale"])
+
     def test_submit_trade_windows_are_10_00_to_16_00_et(self) -> None:
         payload = build_moving_average_strategy_payload(
             symbol="SPY",
@@ -168,6 +191,16 @@ class StrategyTemplateTests(unittest.TestCase):
             self.assertNotIn("underlying_symbol", preview)
             self.assertNotIn("option_type", preview)
             self.assertNotIn("target_strike", preview)
+            if scanner["type"] in {
+                "market_regime_filter",
+                "pairs_relative_value",
+                "options_spread_candidate",
+            }:
+                self.assertFalse(preview["enabled"])
+                self.assertFalse(scanner["submit"]["enabled"])
+            else:
+                self.assertTrue(preview["enabled"])
+                self.assertTrue(scanner["submit"]["enabled"])
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(

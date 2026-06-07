@@ -64,8 +64,8 @@ Strategy folders:
 | advanced evaluator module | `relative_strength` | Cross-sectional universe leader/laggard |
 | advanced evaluator module | `time_series_momentum` | Longer-horizon trend following |
 | advanced evaluator module | `market_regime_filter` | Broad-market regime alignment signal |
-| advanced evaluator module | `pairs_relative_value` | Peer benchmark relative-value signal |
-| advanced evaluator module | `options_spread_candidate` | Spread-worthy signal, single-leg execution for now |
+| advanced evaluator module | `pairs_relative_value` | Peer benchmark relative-value signal, signal-only until paired execution exists |
+| advanced evaluator module | `options_spread_candidate` | Spread-worthy signal, signal-only until multi-leg execution exists |
 | `shared/` | shared | Shared indicator engine and option selection notes |
 
 Use `tuning.md` when making human-reviewed or AI-assisted strategy adjustments. The tuning files are written to support small, evidence-driven changes and include AI adjustment contracts that can be reviewed before applying any config change.

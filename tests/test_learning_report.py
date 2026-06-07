@@ -37,7 +37,17 @@ class FakeLearningReportSession:
                         "scanner_type": "moving_average",
                         "underlying_symbol": "SPY",
                     },
-                )
+                ),
+                (
+                    SimpleNamespace(
+                        status="pending",
+                        suggestion_type="review_option_selection_filters",
+                    ),
+                    {
+                        "scanner_type": "moving_average",
+                        "underlying_symbol": "SPY",
+                    },
+                ),
             ],
         ]
         self.scalars_results = [
@@ -138,6 +148,7 @@ class LearningReportTests(unittest.TestCase):
         self.assertEqual(candidate["trade_cases"]["losses"], 1)
         self.assertEqual(candidate["trade_cases"]["total_realized_pl"], "-25")
         self.assertEqual(candidate["suggestions"]["pending"], 1)
+        self.assertEqual(candidate["suggestions"]["pending_raw"], 2)
         self.assertEqual(candidate["no_signal"]["reasons_seen"], 2)
         self.assertIn(
             "review_signal_thresholds",

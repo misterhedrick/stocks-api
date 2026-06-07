@@ -39,6 +39,7 @@ from app.services.strategy_templates import (
     build_vwap_reclaim_strategy_payload,
     build_volume_confirmed_breakout_strategy_payload,
 )
+from app.services.signal_policy import is_signal_only_scanner_type
 
 
 DEFAULT_UNIVERSE = (
@@ -336,6 +337,10 @@ def _strategy_payloads(
         scanner["preview"]["min_days_to_expiration"] = min_days_to_expiration
         scanner["preview"]["max_days_to_expiration"] = max_days_to_expiration
         scanner["submit"] = deepcopy(submit_config)
+        if is_signal_only_scanner_type(scanner_type):
+            scanner["preview"]["enabled"] = False
+            scanner["preview"]["rationale"] = f"{payload['name']}: signal-only scanner."
+            scanner["submit"]["enabled"] = False
     return payloads
 
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import OrderIntent, Signal, Strategy, TradeCase
+from app.services.signal_policy import is_signal_only_scanner_type
 
 
 FAST_CONFIRMATION_SCANNERS = frozenset(
@@ -94,8 +95,10 @@ def evaluate_entry_quality(
     score = _confidence_score(signal)
 
     disabled_scanners = _csv_set(settings.entry_quality_disabled_auto_submit_scanners)
-    if scanner_type in disabled_scanners:
-        reasons.append(f"{scanner_type} is signal-only for auto-submit")
+    if is_signal_only_scanner_type(scanner_type):
+        reasons.append(f"{scanner_type} is signal-only and cannot auto-submit standalone entries")
+    elif scanner_type in disabled_scanners:
+        reasons.append(f"{scanner_type} is disabled for auto-submit")
 
     if _recent_stop_loss_exists(db, signal=signal, strategy=strategy, now=now):
         reasons.append("recent same scanner/symbol stop-loss cooldown is active")
@@ -204,10 +207,6 @@ def _scanner_edge_score(
                 f"moving-average separation {separation} is below auto-submit minimum {required}"
             )
         return min(separation * Decimal("10"), Decimal("8"))
-
-    if scanner_type == "market_regime_filter":
-        reasons.append("market regime is a filter and cannot auto-submit standalone entries")
-        return score
 
     return score
 

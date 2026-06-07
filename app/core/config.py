@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     entry_quality_min_score: Decimal = Decimal("60")
     entry_quality_fast_confirmation_enabled: bool = True
     entry_quality_disabled_auto_submit_scanners: str = (
-        "market_regime_filter,options_spread_candidate"
+        "market_regime_filter,pairs_relative_value,options_spread_candidate"
     )
     entry_quality_min_relative_edge_percent: Decimal = Decimal("1.0")
     entry_quality_min_momentum_threshold_multiplier: Decimal = Decimal("1.8")

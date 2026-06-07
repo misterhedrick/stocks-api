@@ -316,6 +316,7 @@ def _refinement_group(
             "total_realized_pl": Decimal("0"),
             "total_return_percent": Decimal("0"),
             "pending_suggestions": 0,
+            "pending_suggestion_groups": set(),
             "suggestion_status_counts": Counter(),
             "suggestion_type_counts": Counter(),
             "no_signal_reasons_seen": 0,
@@ -433,10 +434,15 @@ def _merge_suggestion_refinement(
     )
     for suggestion, assessment in db.execute(statement):
         context = assessment if isinstance(assessment, dict) else {}
+        suggestion_symbol = (
+            context.get("underlying_symbol")
+            or context.get("symbol")
+            or "unknown"
+        )
         group = _refinement_group(
             groups,
             scanner_type=context.get("scanner_type"),
-            symbol=context.get("underlying_symbol") or context.get("symbol"),
+            symbol=suggestion_symbol,
         )
         status = str(suggestion.status or "unknown")
         suggestion_type = str(suggestion.suggestion_type or "unknown")
@@ -444,6 +450,9 @@ def _merge_suggestion_refinement(
         group["suggestion_type_counts"][suggestion_type] += 1
         if status == "pending":
             group["pending_suggestions"] += 1
+            group["pending_suggestion_groups"].add(
+                (suggestion_type, str(suggestion_symbol).upper())
+            )
 
 
 def _merge_no_signal_refinement(
@@ -504,12 +513,13 @@ def _finalize_refinement_group(group: dict[str, Any]) -> dict[str, Any]:
         if closed
         else Decimal("0")
     )
+    pending_suggestions = _pending_suggestions_count(group)
     focus = _refinement_focus(group)
     priority_score = (
         int(group["losses"]) * 5
         + int(group["preview_rejected"]) * 3
         + int(group["diagnostics_seen"]) * 2
-        + int(group["pending_suggestions"]) * 4
+        + pending_suggestions * 4
         + int(group["no_signal_reasons_seen"])
         + _rejected_preview_priority(group["rejected_preview_evidence"])
     )
@@ -547,7 +557,8 @@ def _finalize_refinement_group(group: dict[str, Any]) -> dict[str, Any]:
         },
         "rejected_preview_evidence": group["rejected_preview_evidence"][:10],
         "suggestions": {
-            "pending": group["pending_suggestions"],
+            "pending": pending_suggestions,
+            "pending_raw": group["pending_suggestions"],
             "by_status": _counter_dict_from_counter(group["suggestion_status_counts"]),
             "by_type": _counter_dict_from_counter(group["suggestion_type_counts"]),
         },
@@ -564,11 +575,18 @@ def _refinement_focus(group: dict[str, Any]) -> list[str]:
         focus.append("review_signal_thresholds")
     if _rejected_preview_priority(group["rejected_preview_evidence"]):
         focus.append("review_rejected_signal_outcomes")
-    if group["pending_suggestions"]:
+    if _pending_suggestions_count(group):
         focus.append("review_pending_suggestions")
     if not focus:
         focus.append("monitor_strategy")
     return focus
+
+
+def _pending_suggestions_count(group: dict[str, Any]) -> int:
+    pending_groups = group.get("pending_suggestion_groups")
+    if isinstance(pending_groups, set):
+        return len(pending_groups)
+    return int(group["pending_suggestions"])
 
 
 def _rejected_preview_priority(evidence: list[dict[str, Any]]) -> int:

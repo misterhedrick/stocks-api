@@ -47,7 +47,7 @@ def write_ai_trade_reviews(
         suggestions_created = 0
         errors: list[str] = []
         group_stats = _trade_case_group_stats(trade_cases)
-        suggested_groups: set[tuple[str, str, str]] = set()
+        suggested_groups = _pending_suggestion_groups(db)
 
         for trade_case in trade_cases:
             try:
@@ -89,14 +89,9 @@ def write_ai_trade_reviews(
                     trade_case,
                     assessment,
                 ):
-                    group_key = (
-                        str(suggestion_payload["suggestion_type"]),
-                        str(assessment.get("scanner_type") or "unknown"),
-                        str(
-                            assessment.get("underlying_symbol")
-                            or assessment.get("symbol")
-                            or "unknown"
-                        ).upper(),
+                    group_key = _suggestion_group_key(
+                        suggestion_payload["suggestion_type"],
+                        assessment,
                     )
                     if group_key in suggested_groups:
                         continue
@@ -127,7 +122,7 @@ def write_ai_trade_reviews(
             "suggestions_created": suggestions_created,
             "errors": errors,
             "review_model": review_model,
-            "suggestion_grouping": "suggestions are deduplicated by type, scanner, and symbol per run",
+            "suggestion_grouping": "pending suggestions are deduplicated by type, scanner, and symbol",
             "review_snapshot_id": str(latest_snapshot.id)
             if latest_snapshot is not None
             else None,
@@ -172,3 +167,33 @@ def write_ai_trade_reviews(
         db.commit()
         db.refresh(job_run)
         raise
+
+
+def _pending_suggestion_groups(db: Session) -> set[tuple[str, str, str]]:
+    groups: set[tuple[str, str, str]] = set()
+    suggestions = db.scalars(
+        select(StrategyChangeSuggestion)
+        .where(StrategyChangeSuggestion.status == "pending")
+    )
+    for suggestion in suggestions:
+        review = getattr(suggestion, "ai_trade_review", None)
+        assessment = getattr(review, "assessment", None)
+        if not isinstance(assessment, dict):
+            continue
+        groups.add(_suggestion_group_key(suggestion.suggestion_type, assessment))
+    return groups
+
+
+def _suggestion_group_key(
+    suggestion_type: object,
+    assessment: dict[str, object],
+) -> tuple[str, str, str]:
+    return (
+        str(suggestion_type),
+        str(assessment.get("scanner_type") or "unknown"),
+        str(
+            assessment.get("underlying_symbol")
+            or assessment.get("symbol")
+            or "unknown"
+        ).upper(),
+    )

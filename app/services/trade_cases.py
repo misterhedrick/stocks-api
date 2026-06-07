@@ -195,13 +195,18 @@ def _upsert_round_trips(
 
 
 def _build_context(rt: dict[str, Any]) -> dict[str, Any]:
-    return {
+    context = {
         "entry": rt.get("entry_context", {}),
         "exit": rt.get("exit_context", {}),
         "holding_seconds": rt.get("holding_seconds"),
         "entry_notional": rt.get("entry_notional"),
         "exit_notional": rt.get("exit_notional"),
     }
+    if rt.get("performance_excluded") is True:
+        context["performance_excluded"] = True
+    if rt.get("settlement_status") is not None:
+        context["settlement_status"] = rt.get("settlement_status")
+    return context
 
 
 def _underlying_symbol(symbol: str) -> str | None:

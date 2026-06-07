@@ -19,7 +19,7 @@ from app.integrations.alpaca import (
 from app.services.audit_logs import record_audit_log
 
 DEFAULT_DEDUPE_MINUTES = 240
-DEDUPE_STATUSES = ("new", "previewed", "submitted")
+DEDUPE_STATUSES = ("new", "previewed", "submitted", "signal_only", "preview_disabled")
 
 def _signal_specs_from_strategy(strategy: Strategy) -> list[dict[str, Any]]:
     signal_specs = strategy.config.get("scan_signals")

@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.integrations.alpaca import AlpacaMarketDataClient
 
+from app.services.order_intent_submission import cancel_order_intent
+
 from app.services.position_exit_lookup import (
     _exit_config_for_strategy,
     _has_active_exit_order,
@@ -36,6 +38,13 @@ from app.services.position_exit_rules import (
 from app.services.position_exit_types import ExitEvaluationResult, PositionManagementStatus
 
 logger = logging.getLogger("app.services.position_exits")
+
+PROTECTIVE_EXIT_TRIGGER_PREFIXES = (
+    "stop_loss_percent",
+    "trailing_profit_giveback_percent",
+)
+NON_REPLACEABLE_ACTIVE_EXIT_STATUSES = {"partially_filled"}
+
 
 def evaluate_position_exits(
     db: Session,
@@ -115,9 +124,9 @@ def evaluate_position_exits(
 
         active_exit_order = _latest_active_exit_order(db, position.symbol)
         if active_exit_order is not None:
-            exits_skipped += 1
             active_exit_id = active_exit_order.get("order_intent_id")
             if active_exit_order.get("status") == "previewed" and active_exit_id:
+                exits_skipped += 1
                 order_intent_ids.append(uuid.UUID(str(active_exit_id)))
                 reason = (
                     f"{position.symbol}: previewed exit order already exists and will be submitted"
@@ -130,6 +139,60 @@ def evaluate_position_exits(
                     }
                 )
                 continue
+            if _should_replace_active_exit_order(active_exit_order, trigger_reason):
+                try:
+                    canceled_order_intent, _ = cancel_order_intent(
+                        db,
+                        uuid.UUID(str(active_exit_id)),
+                    )
+                    order_intent = _create_exit_order_intent(
+                        db,
+                        position,
+                        strategy,
+                        exit_config,
+                        trigger_reason=trigger_reason,
+                        market_data_client=client,
+                        max_quantity=ownership.open_quantity,
+                    )
+                except Exception as exc:
+                    exits_skipped += 1
+                    error = f"{position.symbol}: {exc.__class__.__name__}: {exc}"
+                    errors.append(error)
+                    evaluation.update(
+                        {
+                            "action": "exit_replace_failed",
+                            "reason": error,
+                            "error_type": exc.__class__.__name__,
+                            "replaced_order_intent_id": str(active_exit_id)
+                            if active_exit_id
+                            else None,
+                        }
+                    )
+                    logger.warning(
+                        "Exit order replacement failed for %s: %s: %s",
+                        position.symbol,
+                        exc.__class__.__name__,
+                        exc,
+                    )
+                    continue
+
+                exits_created += 1
+                order_intent_ids.append(order_intent.id)
+                evaluation.update(
+                    {
+                        "action": "exit_replaced",
+                        "reason": trigger_reason,
+                        "replaced_order_intent_id": str(canceled_order_intent.id),
+                        "replaced_order_status": active_exit_order.get("status"),
+                        "order_intent_id": str(order_intent.id),
+                        "order_type": order_intent.order_type,
+                        "limit_price": str(order_intent.limit_price)
+                        if order_intent.limit_price is not None
+                        else None,
+                    }
+                )
+                continue
+            exits_skipped += 1
             reason = f"{position.symbol}: active exit order already exists"
             no_exit_reasons.append(reason)
             evaluation.update({"action": "exit_pending", "reason": reason})
@@ -334,6 +397,25 @@ def get_position_management_statuses(
             ).as_dict()
         )
     return statuses
+
+
+def _should_replace_active_exit_order(
+    active_exit_order: dict[str, Any],
+    trigger_reason: str | None,
+) -> bool:
+    if not isinstance(trigger_reason, str):
+        return False
+    if not any(
+        trigger_reason.startswith(prefix) for prefix in PROTECTIVE_EXIT_TRIGGER_PREFIXES
+    ):
+        return False
+
+    status = str(active_exit_order.get("status") or "").lower()
+    if status in {"previewed", *NON_REPLACEABLE_ACTIVE_EXIT_STATUSES}:
+        return False
+
+    active_exit_id = active_exit_order.get("order_intent_id")
+    return bool(active_exit_id)
 
 
 def _base_exit_evaluation(position: object) -> dict[str, Any]:

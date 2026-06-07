@@ -140,9 +140,10 @@ def test_pairs_relative_value_fades_outperformance_by_default() -> None:
     assert candidate is not None
     assert candidate.direction == "bearish"
     assert candidate.signal_type == "pair_relative_value_fade"
+    assert candidate.features["execution_note"] == "signal_only_until_pair_execution_supported"
 
 
-def test_options_spread_candidate_marks_single_leg_execution_note() -> None:
+def test_options_spread_candidate_marks_signal_only_execution_note() -> None:
     frame = _frame("SPY", [100 + index * 0.1 for index in range(25)])
     candidate = OptionsSpreadCandidateEvaluator().evaluate(
         symbol="SPY",
@@ -152,7 +153,7 @@ def test_options_spread_candidate_marks_single_leg_execution_note() -> None:
     )
     assert candidate is not None
     assert candidate.signal_type == "debit_call_spread_candidate"
-    assert candidate.features["execution_note"] == "single_leg_preview_until_multileg_orders_are_supported"
+    assert candidate.features["execution_note"] == "signal_only_until_multileg_orders_are_supported"
 
 
 def test_advanced_relative_strength_fetches_peers_but_emits_requested_symbol() -> None:

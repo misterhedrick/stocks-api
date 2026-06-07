@@ -581,7 +581,7 @@ Longer lookback:
 
 ### Dedupe
 
-`dedupe_minutes` suppresses repeated active signals by symbol, scanner, signal type, and direction while statuses are `new`, `previewed`, or `submitted`.
+`dedupe_minutes` suppresses repeated active signals by symbol, scanner, signal type, and direction while statuses are `new`, `previewed`, `submitted`, `signal_only`, or `preview_disabled`.
 
 Tune dedupe only when:
 
@@ -676,8 +676,8 @@ New strategy types added after the May 18 review:
 | `relative_strength` | Cross-sectional edge versus the active paper universe. |
 | `time_series_momentum` | Longer lookback trend return and trend-average filter. |
 | `market_regime_filter` | Benchmark alignment using SPY/QQQ regime returns. |
-| `pairs_relative_value` | Spread threshold versus configured peer benchmark. |
-| `options_spread_candidate` | Spread-worthy directional setup; still previews one long option leg until multi-leg order support exists. |
+| `pairs_relative_value` | Spread threshold versus configured peer benchmark; signal-only until paired execution support exists. |
+| `options_spread_candidate` | Spread-worthy directional setup; signal-only until multi-leg order support exists. |
 
 Apply the current strategy-type batch manually after recording the approved decisions:
 

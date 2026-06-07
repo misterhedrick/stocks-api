@@ -7,7 +7,10 @@ import uuid
 from unittest.mock import patch
 
 from app.services.performance_review import get_performance_review
-from app.services.performance_review_fills import _close_expired_missing_position_lots
+from app.services.performance_review_fills import (
+    _close_expired_missing_position_lots,
+    _totals,
+)
 
 
 class FakePerformanceSession:
@@ -157,7 +160,7 @@ def job_run_row(*, no_signal_reasons: list[str]) -> tuple:
 
 
 class PerformanceReviewTests(unittest.TestCase):
-    def test_closes_expired_missing_broker_positions_at_zero(self) -> None:
+    def test_excludes_expired_missing_broker_positions_from_performance(self) -> None:
         strategy_id = uuid.uuid4()
         entry_fill_id = uuid.uuid4()
         order_intent_id = uuid.uuid4()
@@ -191,9 +194,26 @@ class PerformanceReviewTests(unittest.TestCase):
             round_trips = _close_expired_missing_position_lots(object(), open_lots)
 
         self.assertEqual(len(round_trips), 1)
-        self.assertEqual(round_trips[0]["realized_pnl"], "-100")
-        self.assertEqual(round_trips[0]["return_percent"], "-100")
+        self.assertEqual(round_trips[0]["realized_pnl"], "0")
+        self.assertEqual(round_trips[0]["return_percent"], "0")
+        self.assertTrue(round_trips[0]["performance_excluded"])
+        self.assertEqual(round_trips[0]["settlement_status"], "unknown")
         self.assertIsNone(round_trips[0]["exit_fill_id"])
+        self.assertTrue(
+            round_trips[0]["exit_context"]["synthetic_close"]["performance_excluded"]
+        )
+        self.assertEqual(
+            round_trips[0]["exit_context"]["synthetic_close"][
+                "estimated_realized_pnl_if_worthless"
+            ],
+            "-100",
+        )
+        totals = _totals(round_trips)
+        self.assertEqual(totals["realized_pnl"], "0")
+        self.assertEqual(totals["total_entry_notional"], "0")
+        self.assertEqual(totals["performance_included_trades"], 0)
+        self.assertEqual(totals["performance_excluded_trades"], 1)
+        self.assertEqual(totals["performance_excluded_entry_notional"], "100")
         self.assertEqual(open_lots, {})
 
     def test_get_performance_review_matches_fifo_round_trips(self) -> None:

@@ -119,7 +119,7 @@ PREVIEW_PROFILE_OPTIONS_SPREAD_CANDIDATE_MAX_ESTIMATED_NOTIONAL=5000
 
 The May 18 tuning policy keeps SPY in the universe and treats SPY losses as evidence for scanner/profile tuning, not as an automatic reason to pause the SPY entry cron.
 
-`options_spread_candidate` currently marks a signal as suitable for a spread, but contract preview and submission still use the single-leg long option pipeline. Do not treat it as true multi-leg spread execution until order-intent, preview, submit, and reconciliation support multi-leg orders.
+`pairs_relative_value` and `options_spread_candidate` currently mark signals that need strategy-specific execution, but contract preview and submission skip them while they remain signal-only. Do not treat them as true paired or multi-leg spread execution until order-intent, preview, submit, and reconciliation support those order structures.
 
 ## Diagnosing Rejections
 

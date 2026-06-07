@@ -319,7 +319,7 @@ pairs_relative_value=5000
 options_spread_candidate=5000
 ```
 
-The options spread scanner currently creates spread-candidate signals but still uses the existing single-leg long call/put preview pipeline. Multi-leg option orders need separate execution plumbing before it can submit true spreads.
+The market-regime filter, pairs relative-value, and options-spread candidate scanners are signal-only. They can create review/context signals, but the market-cycle preview gate marks them `signal_only` and does not create option previews or order intents. Paired, spread, and other multi-leg orders need separate execution plumbing before these signals can submit true strategy-specific trades.
 
 ## Entry quality gate
 
@@ -329,7 +329,7 @@ Auto-submit now has a quality gate between preview and broker submission. Scanne
 ENTRY_QUALITY_GATE_ENABLED=true
 ENTRY_QUALITY_MIN_SCORE=60
 ENTRY_QUALITY_FAST_CONFIRMATION_ENABLED=true
-ENTRY_QUALITY_DISABLED_AUTO_SUBMIT_SCANNERS=market_regime_filter,options_spread_candidate
+ENTRY_QUALITY_DISABLED_AUTO_SUBMIT_SCANNERS=market_regime_filter,pairs_relative_value,options_spread_candidate
 ENTRY_QUALITY_MIN_RELATIVE_EDGE_PERCENT=1.0
 ENTRY_QUALITY_MIN_MOMENTUM_THRESHOLD_MULTIPLIER=1.8
 ENTRY_QUALITY_MIN_BREAKOUT_BUFFER_MULTIPLIER=1.5
@@ -340,7 +340,7 @@ ENTRY_QUALITY_MIN_OPEN_INTEREST=50
 ENTRY_QUALITY_STOP_LOSS_COOLDOWN_MINUTES=120
 ```
 
-Fast scanners (`momentum_rate_of_change`, `vwap_reclaim`, `opening_range_breakout`, and `moving_average`) wait one completed signal timeframe before previewing so the next cycle can confirm the setup. `market_regime_filter` is treated as a filter-only signal by default, and `options_spread_candidate` stays signal-only until multi-leg execution exists.
+Fast scanners (`momentum_rate_of_change`, `vwap_reclaim`, `opening_range_breakout`, and `moving_average`) wait one completed signal timeframe before previewing so the next cycle can confirm the setup. `market_regime_filter`, `pairs_relative_value`, and `options_spread_candidate` stay signal-only until their execution plumbing exists; all three are blocked before option contract selection so they do not create preview diagnostics, stale previews, or rejected order intents.
 
 The strongest loss sources are tuned at the strategy/profile level rather than pausing a single symbol cron. SPY remains in the paper universe unless a future review explicitly removes it.
 

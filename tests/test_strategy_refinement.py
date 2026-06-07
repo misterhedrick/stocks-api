@@ -116,6 +116,31 @@ class StrategyRefinementTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["readiness_status"], "not_enough_data")
         self.assertFalse(result["candidates"][0]["minimum_evidence_met"])
 
+    def test_summary_watches_signal_only_scanners_with_only_no_signal_evidence(self) -> None:
+        db = FakeStrategyRefinementSession(
+            snapshots=[
+                _snapshot(
+                    review_date=date(2026, 5, 12),
+                    scanner_type="options_spread_candidate",
+                    priority_score=24,
+                    recommended_focus=["review_signal_thresholds"],
+                    preview_rejected=0,
+                    diagnostics_seen=0,
+                    closed_trade_cases=0,
+                    no_signal_reasons=25,
+                )
+            ],
+            decisions=[],
+        )
+
+        result = build_strategy_refinement_summary(
+            db,
+            min_no_signal_reasons=20,
+        )
+
+        self.assertEqual(result["candidates"][0]["readiness_status"], "watch")
+        self.assertTrue(result["candidates"][0]["minimum_evidence_met"])
+
     def test_create_strategy_tuning_decision_records_human_review_only_decision(self) -> None:
         db = FakeStrategyRefinementSession()
 
@@ -151,11 +176,14 @@ class StrategyRefinementTests(unittest.TestCase):
 def _snapshot(
     *,
     review_date: date,
+    scanner_type: str = "moving_average",
     generated_at: datetime | None = None,
     priority_score: int,
+    recommended_focus: list[str] | None = None,
     preview_rejected: int,
     diagnostics_seen: int,
     closed_trade_cases: int,
+    no_signal_reasons: int = 0,
 ) -> ReviewSnapshot:
     generated = generated_at or datetime(2026, 5, 12, 21, 30, tzinfo=timezone.utc)
     return ReviewSnapshot(
@@ -168,10 +196,11 @@ def _snapshot(
             "learning_report": {
                 "refinement_candidates": [
                     {
-                        "scanner_type": "moving_average",
+                        "scanner_type": scanner_type,
                         "symbol": "SPY",
                         "priority_score": priority_score,
-                        "recommended_focus": ["review_option_selection_filters"],
+                        "recommended_focus": recommended_focus
+                        or ["review_option_selection_filters"],
                         "signals": {"preview_rejected": preview_rejected},
                         "option_selection": {"diagnostics_seen": diagnostics_seen},
                         "trade_cases": {
@@ -179,7 +208,7 @@ def _snapshot(
                             "losses": 1,
                             "total_realized_pl": "-10",
                         },
-                        "no_signal": {"reasons_seen": 0},
+                        "no_signal": {"reasons_seen": no_signal_reasons},
                         "suggestions": {"pending": 1},
                     }
                 ]

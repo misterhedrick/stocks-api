@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
 from app.db.models import Strategy
 from app.db.session import SessionLocal
 from app.services.audit_logs import record_audit_log
+from app.services.signal_policy import is_signal_only_scanner_type
 
 
 DEFAULT_STRATEGY_NAMES = (
@@ -112,13 +113,22 @@ def main() -> None:
                 "allowed_sides": ["buy"],
             }
 
+            scanner_type = scanner.get("type")
+            if is_signal_only_scanner_type(scanner_type):
+                submit_config["enabled"] = False
+                if isinstance(preview, dict):
+                    preview["enabled"] = False
+                    preview["rationale"] = (
+                        f"{strategy.name}: signal-only scanner."
+                    )
+
             scanner["submit"] = submit_config
             config["scanner"] = scanner
             prepared.append(
                 {
                     "id": str(strategy.id),
                     "name": strategy.name,
-                    "scanner_type": scanner.get("type"),
+                    "scanner_type": scanner_type,
                     "symbols": scanner.get("symbols", []),
                     "submit": submit_config,
                 }

@@ -4,6 +4,7 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 from app.db.models import AuditLog, JobRun, OrderIntent, PositionSnapshot, Strategy
 from app.integrations.alpaca import (
@@ -506,6 +507,48 @@ class PositionExitTests(unittest.TestCase):
         self.assertEqual(result.order_intent_ids, [exit_order.id])
         self.assertEqual(result.exit_evaluations[0]["action"], "exit_pending_submit")
         self.assertEqual(result.exit_evaluations[0]["order_intent_id"], str(exit_order.id))
+
+    def test_evaluate_position_exits_replaces_active_exit_for_protective_trigger(self) -> None:
+        strategy = build_strategy()
+        position = build_position(
+            symbol="SPY260619C00500000",
+            unrealized_pl=Decimal("-40"),
+            cost_basis=Decimal("100"),
+        )
+        entry_order_intent = build_entry_order_intent(strategy)
+        entry_order_intent.option_symbol = position.symbol
+        active_exit_order = build_exit_order_intent()
+        active_exit_order.option_symbol = position.symbol
+        active_exit_order.status = "submitted"
+        db = FakePositionExitSession(
+            positions=[position],
+            strategy=strategy,
+            entry_order_intent=entry_order_intent,
+            active_exit_order=active_exit_order,
+        )
+
+        with patch(
+            "app.services.position_exit_core.cancel_order_intent",
+            return_value=(active_exit_order, object()),
+        ) as cancel_order_intent_mock:
+            result = evaluate_position_exits(
+                db,
+                market_data_client=SuccessfulMarketDataClient(),
+            )
+
+        self.assertEqual(result.exits_created, 1)
+        self.assertEqual(result.exits_skipped, 0)
+        self.assertEqual(result.exit_evaluations[0]["action"], "exit_replaced")
+        self.assertEqual(
+            result.exit_evaluations[0]["replaced_order_intent_id"],
+            str(active_exit_order.id),
+        )
+        self.assertIn("stop_loss_percent", result.exit_evaluations[0]["reason"])
+        cancel_order_intent_mock.assert_called_once_with(db, active_exit_order.id)
+        order_intents = [item for item in db.added if isinstance(item, OrderIntent)]
+        self.assertEqual(order_intents[-1].side, "sell")
+        self.assertEqual(order_intents[-1].option_symbol, position.symbol)
+        self.assertIn("stop_loss_percent", order_intents[-1].preview["trigger_reason"])
 
     def test_evaluate_position_exits_ignores_stale_positions_before_latest_reconcile(self) -> None:
         strategy = build_strategy()

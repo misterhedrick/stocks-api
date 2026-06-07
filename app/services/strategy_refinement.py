@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import ReviewSnapshot, StrategyTuningDecision
 from app.services.audit_logs import record_audit_log
+from app.services.signal_policy import is_signal_only_scanner_type
 
 READY_FOR_REVIEW = "ready_for_review"
 WATCH = "watch"
@@ -299,6 +300,7 @@ def _finalize_candidate(
     previous_score = int(previous.get("priority_score") or 0)
     evidence = _evidence_totals(snapshots)
     readiness = _readiness_status(
+        scanner_type=str(group["scanner_type"]),
         latest=latest,
         evidence=evidence,
         min_closed_trade_cases=min_closed_trade_cases,
@@ -366,6 +368,7 @@ def _evidence_totals(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _readiness_status(
     *,
+    scanner_type: str,
     latest: dict[str, Any],
     evidence: dict[str, Any],
     min_closed_trade_cases: int,
@@ -378,6 +381,12 @@ def _readiness_status(
     has_no_signal_evidence = int(evidence["no_signal_reasons"]) >= min_no_signal_reasons
     if not (has_trade_evidence or has_rejection_evidence or has_no_signal_evidence):
         return NOT_ENOUGH_DATA
+    if (
+        is_signal_only_scanner_type(scanner_type)
+        and not has_trade_evidence
+        and not has_rejection_evidence
+    ):
+        return WATCH
     if "review_option_selection_filters" in focus:
         return NEEDS_OPTION_FILTER_REVIEW
     if "review_signal_thresholds" in focus:

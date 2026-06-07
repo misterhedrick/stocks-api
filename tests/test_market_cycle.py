@@ -415,6 +415,29 @@ class MarketCycleTests(unittest.TestCase):
         self.assertEqual(result["previews_skipped"], 1)
         self.assertEqual(result["skipped_reasons"], {"symbol_mismatch": 1})
 
+    def test_preview_created_signals_marks_signal_only_scanners_without_previewing(self) -> None:
+        strategy = build_strategy()
+        strategy.config["scanner"]["type"] = "market_regime_filter"
+        strategy.config["scanner"]["preview"]["enabled"] = True
+        strategy.config["scanner"]["submit"]["enabled"] = True
+        signal = build_signal(strategy)
+        db = FakeMarketCycleSession(signal=signal, strategy=strategy)
+
+        with patch("app.services.market_cycle_preview.preview_order_intent_from_signal") as preview:
+            result = _preview_created_signals(
+                db,
+                [signal.id],
+                cycle_started=0,
+                phase_timeout=0,
+            )
+
+        preview.assert_not_called()
+        self.assertEqual(result["previews_created"], 0)
+        self.assertEqual(result["previews_skipped"], 1)
+        self.assertEqual(result["skipped_reasons"], {"signal_only": 1})
+        self.assertEqual(signal.status, "signal_only")
+        self.assertIn("signal-only", signal.rejected_reason)
+
     def test_submit_previewed_order_intents_skips_other_symbols(self) -> None:
         strategy = build_strategy()
         signal = build_signal(strategy)

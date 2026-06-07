@@ -147,22 +147,25 @@ def build_market_regime_filter_strategy_payload(
     confidence: str = "0.6600",
     dedupe_minutes: int = 480,
 ) -> dict[str, Any]:
-    return _advanced_payload(
-        symbol=symbol,
-        target_strike=target_strike,
-        name=name or f"{symbol.strip().upper()} market regime filter {option_type} preview",
-        option_type=option_type,
-        scanner={
-            "type": "market_regime_filter",
-            "timeframe": timeframe,
-            "lookback_minutes": lookback_minutes,
-            "benchmark_symbols": ["SPY", "QQQ"],
-            "min_benchmark_percent": "0.35",
-            "min_symbol_alignment_percent": "0.15",
-            "confidence": confidence,
-            "dedupe_minutes": dedupe_minutes,
-        },
-        description="Market-regime alignment strategy using broad-market direction as a scanner-level gate.",
+    return _mark_signal_only_payload(
+        _advanced_payload(
+            symbol=symbol,
+            target_strike=target_strike,
+            name=name
+            or f"{symbol.strip().upper()} market regime filter {option_type} signal",
+            option_type=option_type,
+            scanner={
+                "type": "market_regime_filter",
+                "timeframe": timeframe,
+                "lookback_minutes": lookback_minutes,
+                "benchmark_symbols": ["SPY", "QQQ"],
+                "min_benchmark_percent": "0.35",
+                "min_symbol_alignment_percent": "0.15",
+                "confidence": confidence,
+                "dedupe_minutes": dedupe_minutes,
+            },
+            description="Market-regime alignment strategy using broad-market direction as a scanner-level gate.",
+        )
     )
 
 
@@ -177,23 +180,26 @@ def build_pairs_relative_value_strategy_payload(
     confidence: str = "0.6700",
     dedupe_minutes: int = 480,
 ) -> dict[str, Any]:
-    return _advanced_payload(
-        symbol=symbol,
-        target_strike=target_strike,
-        name=name or f"{symbol.strip().upper()} pairs relative value {option_type} preview",
-        option_type=option_type,
-        scanner={
-            "type": "pairs_relative_value",
-            "timeframe": timeframe,
-            "lookback_minutes": lookback_minutes,
-            "benchmark_symbol": "SPY",
-            "pair_benchmarks": {"SPY": "QQQ"},
-            "min_spread_percent": "0.75",
-            "mode": "mean_reversion",
-            "confidence": confidence,
-            "dedupe_minutes": dedupe_minutes,
-        },
-        description="Pairs/relative-value strategy comparing each symbol against a benchmark peer.",
+    return _mark_signal_only_payload(
+        _advanced_payload(
+            symbol=symbol,
+            target_strike=target_strike,
+            name=name
+            or f"{symbol.strip().upper()} pairs relative value {option_type} signal",
+            option_type=option_type,
+            scanner={
+                "type": "pairs_relative_value",
+                "timeframe": timeframe,
+                "lookback_minutes": lookback_minutes,
+                "benchmark_symbol": "SPY",
+                "pair_benchmarks": {"SPY": "QQQ"},
+                "min_spread_percent": "0.75",
+                "mode": "mean_reversion",
+                "confidence": confidence,
+                "dedupe_minutes": dedupe_minutes,
+            },
+            description="Pairs/relative-value strategy comparing each symbol against a benchmark peer while paired execution is unavailable.",
+        )
     )
 
 
@@ -208,23 +214,26 @@ def build_options_spread_candidate_strategy_payload(
     confidence: str = "0.6600",
     dedupe_minutes: int = 480,
 ) -> dict[str, Any]:
-    return _advanced_payload(
-        symbol=symbol,
-        target_strike=target_strike,
-        name=name or f"{symbol.strip().upper()} options spread candidate {option_type} preview",
-        option_type=option_type,
-        scanner={
-            "type": "options_spread_candidate",
-            "timeframe": timeframe,
-            "lookback_minutes": lookback_minutes,
-            "atr_period": 14,
-            "min_move_percent": "0.75",
-            "min_atr_percent": "0.50",
-            "execution_mode": "single_leg_preview_until_multileg_supported",
-            "confidence": confidence,
-            "dedupe_minutes": dedupe_minutes,
-        },
-        description="Options-spread candidate scanner. It flags spread-worthy setups while current execution still previews one long option leg.",
+    return _mark_signal_only_payload(
+        _advanced_payload(
+            symbol=symbol,
+            target_strike=target_strike,
+            name=name
+            or f"{symbol.strip().upper()} options spread candidate {option_type} signal",
+            option_type=option_type,
+            scanner={
+                "type": "options_spread_candidate",
+                "timeframe": timeframe,
+                "lookback_minutes": lookback_minutes,
+                "atr_period": 14,
+                "min_move_percent": "0.75",
+                "min_atr_percent": "0.50",
+                "execution_mode": "signal_only_until_multileg_supported",
+                "confidence": confidence,
+                "dedupe_minutes": dedupe_minutes,
+            },
+            description="Options-spread candidate scanner. It flags spread-worthy setups while multi-leg execution is unavailable.",
+        )
     )
 
 
@@ -260,3 +269,16 @@ def _advanced_payload(
         "is_active": True,
         "config": {"scanner": scanner},
     }
+
+
+def _mark_signal_only_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    scanner = payload["config"]["scanner"]
+    preview = scanner.get("preview")
+    if isinstance(preview, dict):
+        preview["enabled"] = False
+        preview["rationale"] = f"{payload['name']}: signal-only scanner."
+    submit = scanner.get("submit")
+    if isinstance(submit, dict):
+        submit["enabled"] = False
+    payload["description"] = f"{payload['description']} Signals are review-only and do not create entry previews."
+    return payload

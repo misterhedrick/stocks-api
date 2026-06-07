@@ -350,7 +350,7 @@ def _expired_missing_position_round_trip(
     multiplier = Decimal("100")
     entry_notional = entry_price * quantity * multiplier
     exit_notional = Decimal("0")
-    realized_pnl = -entry_notional
+    worthless_pnl = -entry_notional
     entry_at = lot["entry_at"]
     holding_seconds = int((closed_at - entry_at).total_seconds())
     entry_context = lot.get("entry_context", {})
@@ -370,8 +370,10 @@ def _expired_missing_position_round_trip(
         "exit_price": "0",
         "entry_notional": _decimal_string(entry_notional),
         "exit_notional": _decimal_string(exit_notional),
-        "realized_pnl": _decimal_string(realized_pnl),
-        "return_percent": "-100",
+        "realized_pnl": "0",
+        "return_percent": "0",
+        "performance_excluded": True,
+        "settlement_status": "unknown",
         "entry_at": entry_at.isoformat(),
         "exit_at": closed_at.isoformat(),
         "holding_seconds": holding_seconds,
@@ -394,6 +396,10 @@ def _expired_missing_position_round_trip(
                 "reason": "expired_missing_from_broker_positions",
                 "expiration_date": expiration_date,
                 "broker_position_missing": True,
+                "settlement_status": "unknown",
+                "performance_excluded": True,
+                "estimated_realized_pnl_if_worthless": _decimal_string(worthless_pnl),
+                "estimated_return_percent_if_worthless": "-100",
             },
         },
     }
@@ -511,22 +517,28 @@ def _open_position_summaries(
 
 
 def _totals(round_trips: list[dict[str, Any]]) -> dict[str, Any]:
+    included_round_trips = _performance_included_round_trips(round_trips)
+    excluded_round_trips = _performance_excluded_round_trips(round_trips)
     wins = [
         Decimal(str(item["realized_pnl"]))
-        for item in round_trips
+        for item in included_round_trips
         if Decimal(str(item["realized_pnl"])) > 0
     ]
     losses = [
         Decimal(str(item["realized_pnl"]))
-        for item in round_trips
+        for item in included_round_trips
         if Decimal(str(item["realized_pnl"])) < 0
     ]
     realized_pnl = sum(
-        (Decimal(str(item["realized_pnl"])) for item in round_trips),
+        (Decimal(str(item["realized_pnl"])) for item in included_round_trips),
         Decimal("0"),
     )
     total_entry_notional = sum(
-        (Decimal(str(item["entry_notional"])) for item in round_trips),
+        (Decimal(str(item["entry_notional"])) for item in included_round_trips),
+        Decimal("0"),
+    )
+    excluded_entry_notional = sum(
+        (Decimal(str(item["entry_notional"])) for item in excluded_round_trips),
         Decimal("0"),
     )
     return {
@@ -539,10 +551,13 @@ def _totals(round_trips: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "winning_trades": len(wins),
         "losing_trades": len(losses),
-        "flat_trades": len(round_trips) - len(wins) - len(losses),
+        "flat_trades": len(included_round_trips) - len(wins) - len(losses),
+        "performance_included_trades": len(included_round_trips),
+        "performance_excluded_trades": len(excluded_round_trips),
+        "performance_excluded_entry_notional": _decimal_string(excluded_entry_notional),
         "win_rate_percent": _decimal_string(
-            Decimal(len(wins)) / Decimal(len(round_trips)) * Decimal("100")
-            if round_trips
+            Decimal(len(wins)) / Decimal(len(included_round_trips)) * Decimal("100")
+            if included_round_trips
             else Decimal("0")
         ),
         "average_win": _decimal_string(sum(wins, Decimal("0")) / Decimal(len(wins)))
@@ -557,6 +572,7 @@ def _totals(round_trips: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _strategy_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    round_trips = _performance_included_round_trips(round_trips)
     grouped: dict[tuple[str | None, str | None], list[dict[str, Any]]] = {}
     for item in round_trips:
         key = (item.get("strategy_id"), item.get("strategy_name"))
@@ -581,6 +597,7 @@ def _strategy_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def _symbol_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    round_trips = _performance_included_round_trips(round_trips)
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in round_trips:
         grouped.setdefault(str(item.get("symbol")), []).append(item)
@@ -607,6 +624,31 @@ def _symbol_summaries(round_trips: list[dict[str, Any]]) -> list[dict[str, Any]]
         summaries,
         key=lambda item: Decimal(str(item["realized_pnl"])),
         reverse=True,
+    )
+
+
+def _performance_included_round_trips(
+    round_trips: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [item for item in round_trips if not _is_performance_excluded(item)]
+
+
+def _performance_excluded_round_trips(
+    round_trips: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [item for item in round_trips if _is_performance_excluded(item)]
+
+
+def _is_performance_excluded(round_trip: dict[str, Any]) -> bool:
+    if round_trip.get("performance_excluded") is True:
+        return True
+    exit_context = round_trip.get("exit_context")
+    if not isinstance(exit_context, dict):
+        return False
+    synthetic_close = exit_context.get("synthetic_close")
+    return (
+        isinstance(synthetic_close, dict)
+        and synthetic_close.get("performance_excluded") is True
     )
 
 

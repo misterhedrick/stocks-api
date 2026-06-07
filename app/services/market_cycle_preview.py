@@ -21,6 +21,11 @@ from app.services.market_cycle_submit_config import (
     _validate_trade_windows,
 )
 from app.services.order_intents import preview_order_intent_from_signal
+from app.services.signal_policy import (
+    is_signal_only_strategy,
+    scanner_config_for_strategy,
+    scanner_type_for_strategy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +88,15 @@ def _preview_created_signals(
             previews_skipped += 1
             skipped_reasons["missing_strategy"] += 1
             errors.append(f"Signal '{signal_id}' has no strategy")
+            continue
+
+        non_retryable_skip = _non_retryable_preview_skip_reason(strategy)
+        if non_retryable_skip is not None:
+            reason_key, reason = non_retryable_skip
+            previews_skipped += 1
+            skipped_reasons[reason_key] += 1
+            errors.append(f"Signal '{signal_id}': {reason}")
+            _mark_signal_preview_skipped(db, signal, reason_key=reason_key, reason=reason)
             continue
 
         delay_reason = _entry_preview_delay_reason(strategy)
@@ -175,6 +189,39 @@ def _mark_signal_preview_rejected(db: Session, signal: Signal) -> None:
             )
         db.add(signal)
         db.commit()
+
+
+def _mark_signal_preview_skipped(
+    db: Session,
+    signal: Signal,
+    *,
+    reason_key: str,
+    reason: str,
+) -> None:
+    target_status = "signal_only" if reason_key == "signal_only" else "preview_disabled"
+    if signal.status != target_status:
+        signal.status = target_status
+        signal.rejected_reason = reason
+        signal.last_previewed_at = datetime.now(timezone.utc)
+        db.add(signal)
+        db.commit()
+
+
+def _non_retryable_preview_skip_reason(strategy: Strategy) -> tuple[str, str] | None:
+    scanner_type = scanner_type_for_strategy(strategy)
+    if is_signal_only_strategy(strategy):
+        return (
+            "signal_only",
+            f"{scanner_type} is signal-only and does not create order previews",
+        )
+
+    scanner_config = scanner_config_for_strategy(strategy)
+    preview_config = scanner_config.get("preview")
+    if not isinstance(preview_config, dict):
+        return ("preview_disabled", "scanner.preview config is required")
+    if preview_config.get("enabled") is not True:
+        return ("preview_disabled", "scanner.preview.enabled must be true")
+    return None
 
 
 def _signal_preview_attempts_exhausted(signal: Signal) -> bool:
