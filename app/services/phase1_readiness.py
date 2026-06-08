@@ -12,8 +12,8 @@ from app.db.models import JobRun, ReviewSnapshot, Strategy, TradeCase
 REQUIRED_RECENT_JOB_NAMES = (
     "market_entry_cycle",
     "market_cycle",
-    "market_cycle_exits",
-    "market_maintenance",
+    "pre_market_maintenance",
+    "post_market_maintenance",
 )
 
 

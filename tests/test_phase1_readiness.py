@@ -20,7 +20,7 @@ class FakeScalarResult:
 class FakePhase1Session:
     """Sequences calls in the order build_phase1_readiness makes them:
     scalars() #1 -> strategy IDs
-    scalar()  #1-4 -> job runs (market_entry_cycle, market_cycle, market_cycle_exits, market_maintenance)
+    scalar()  #1-4 -> job runs (market_entry_cycle, market_cycle, pre_market_maintenance, post_market_maintenance)
     scalar()  #5   -> latest ReviewSnapshot
     scalars() #2   -> trade case IDs
     """
@@ -109,8 +109,8 @@ def _recent_jobs() -> list:
     return [
         _build_job_run("market_entry_cycle"),
         _build_job_run("market_cycle"),
-        _build_job_run("market_cycle_exits"),
-        _build_job_run("market_maintenance"),
+        _build_job_run("pre_market_maintenance"),
+        _build_job_run("post_market_maintenance"),
     ]
 
 
@@ -194,8 +194,8 @@ class Phase1ReadinessTests(unittest.TestCase):
         warning_text = " ".join(result["warnings"])
         self.assertIn("no recent market_entry_cycle job found", result["warnings"])
         self.assertIn("no recent market_cycle job found", result["warnings"])
-        self.assertIn("no recent market_cycle_exits job found", result["warnings"])
-        self.assertIn("no recent market_maintenance job found", result["warnings"])
+        self.assertIn("no recent pre_market_maintenance job found", result["warnings"])
+        self.assertIn("no recent post_market_maintenance job found", result["warnings"])
         self.assertIn("no recent", warning_text)
 
     def test_build_phase1_readiness_warns_for_stale_job(self) -> None:
@@ -203,8 +203,8 @@ class Phase1ReadinessTests(unittest.TestCase):
         jobs = [
             _build_job_run("market_entry_cycle", started_at=stale_time),
             _build_job_run("market_cycle"),
-            _build_job_run("market_cycle_exits"),
-            _build_job_run("market_maintenance"),
+            _build_job_run("pre_market_maintenance"),
+            _build_job_run("post_market_maintenance"),
         ]
         db = FakePhase1Session(strategy_ids=[uuid.uuid4()], job_runs=jobs)
 
@@ -219,8 +219,8 @@ class Phase1ReadinessTests(unittest.TestCase):
         jobs = [
             _build_job_run("market_entry_cycle", status="failed"),
             _build_job_run("market_cycle"),
-            _build_job_run("market_cycle_exits"),
-            _build_job_run("market_maintenance"),
+            _build_job_run("pre_market_maintenance"),
+            _build_job_run("post_market_maintenance"),
         ]
         db = FakePhase1Session(strategy_ids=[uuid.uuid4()], job_runs=jobs)
 
@@ -296,8 +296,8 @@ class Phase1ReadinessTests(unittest.TestCase):
         jobs = result["latest_jobs"]
         self.assertIn("market_entry_cycle", jobs)
         self.assertIn("market_cycle", jobs)
-        self.assertIn("market_cycle_exits", jobs)
-        self.assertIn("market_maintenance", jobs)
+        self.assertIn("pre_market_maintenance", jobs)
+        self.assertIn("post_market_maintenance", jobs)
         self.assertEqual(jobs["market_entry_cycle"]["job_name"], "market_entry_cycle")
         self.assertEqual(jobs["market_entry_cycle"]["status"], "succeeded")
 
