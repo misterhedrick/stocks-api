@@ -353,7 +353,21 @@ Apply the 2026-05-18 strategy-type tuning batch with:
 
 The batch patches scanner config for `support_resistance`, `momentum_rate_of_change`, `moving_average`, `mean_reversion`, `rsi_reversal`, and `volume_confirmed_breakout`. It leaves `macd_crossover`, `breakout_price_threshold`, and `volatility_squeeze` in watch mode because the current evidence is not strong enough to tighten them.
 
-Momentum rate-of-change and mean reversion use a controlled wider-stop test in that batch:
+Apply the 2026-06-11 fresh-paper tuning batch with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-11-fresh-paper-tuning-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-11-fresh-paper-tuning-batch
+```
+
+That batch uses the 2026-06-09 through 2026-06-10 paper evidence to tighten only the highest-confidence scanner knobs before a clean paper-account restart:
+
+- `mean_reversion`: stricter Bollinger setup and tighter distance-to-middle.
+- `momentum_rate_of_change`: stronger ROC threshold and lower max extension.
+- `support_resistance`: closer entries to the active level.
+- `time_series_momentum`: stronger minimum trend threshold.
+
+Momentum rate-of-change and mean reversion use a controlled wider-stop test in the 2026-05-18 batch:
 
 ```text
 PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50

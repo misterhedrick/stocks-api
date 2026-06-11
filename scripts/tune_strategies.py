@@ -142,6 +142,12 @@ def main() -> None:
     )
     quality_batch_parser.add_argument("--dry-run", action="store_true")
 
+    fresh_paper_batch_parser = subparsers.add_parser(
+        "apply-2026-06-11-fresh-paper-tuning-batch",
+        help="Apply the 2026-06-11 fresh-paper evidence tuning batch by scanner type.",
+    )
+    fresh_paper_batch_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -217,6 +223,18 @@ def main() -> None:
 
         if args.command == "apply-2026-05-29-entry-quality-batch":
             results = apply_entry_quality_batch_2026_05_29(
+                db,
+                dry_run=args.dry_run,
+            )
+            if args.dry_run:
+                print(json.dumps(results, indent=2, sort_keys=True, default=str))
+                return
+            db.commit()
+            print(json.dumps(results, indent=2, sort_keys=True, default=str))
+            return
+
+        if args.command == "apply-2026-06-11-fresh-paper-tuning-batch":
+            results = apply_fresh_paper_tuning_batch_2026_06_11(
                 db,
                 dry_run=args.dry_run,
             )
@@ -527,6 +545,25 @@ ENTRY_QUALITY_BATCH_2026_05_29: dict[str, dict[str, Any]] = {
 }
 
 
+FRESH_PAPER_TUNING_BATCH_2026_06_11: dict[str, dict[str, Any]] = {
+    "mean_reversion": {
+        "bollinger_stddev": "2.50",
+        "max_distance_to_middle_percent": "0.75",
+    },
+    "momentum_rate_of_change": {
+        "change_above_percent": "0.75",
+        "change_below_percent": "-0.75",
+        "max_extension_percent": "1.00",
+    },
+    "support_resistance": {
+        "max_distance_percent": "0.35",
+    },
+    "time_series_momentum": {
+        "min_trend_percent": "2.00",
+    },
+}
+
+
 def apply_strategy_type_batch(
     db: Session,
     *,
@@ -593,6 +630,18 @@ def apply_entry_quality_batch_2026_05_29(
     return _apply_scanner_type_batch(
         db,
         batch=ENTRY_QUALITY_BATCH_2026_05_29,
+        dry_run=dry_run,
+    )
+
+
+def apply_fresh_paper_tuning_batch_2026_06_11(
+    db: Session,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    return _apply_scanner_type_batch(
+        db,
+        batch=FRESH_PAPER_TUNING_BATCH_2026_06_11,
         dry_run=dry_run,
     )
 
