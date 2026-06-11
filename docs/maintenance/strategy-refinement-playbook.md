@@ -700,6 +700,22 @@ Batch scope:
 | `breakout_price_threshold` | Watch only for now. |
 | `volatility_squeeze` | Watch only for now. |
 
+Apply the 2026-06-11 fresh-paper tuning batch manually after recording the approved decisions:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-11-fresh-paper-tuning-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-11-fresh-paper-tuning-batch
+```
+
+Batch scope:
+
+| Scanner | Patch intent |
+|---|---|
+| `mean_reversion` | Require a cleaner Bollinger setup and a closer return toward the middle band. |
+| `momentum_rate_of_change` | Require stronger ROC evidence and reject more extended moves. |
+| `support_resistance` | Require entries closer to the active level. |
+| `time_series_momentum` | Require a stronger longer-horizon trend. |
+
 Common diagnostic reasons:
 
 | Reason | Meaning | First tuning check |
