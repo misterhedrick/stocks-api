@@ -9,7 +9,9 @@ import uuid
 from app.db.models import AuditLog, Strategy
 from scripts.tune_strategies import (
     ENTRY_QUALITY_BATCH_2026_05_29,
+    FRESH_PAPER_TUNING_BATCH_2026_06_11,
     apply_entry_quality_batch_2026_05_29,
+    apply_fresh_paper_tuning_batch_2026_06_11,
     list_strategy_summaries,
     momentum_rate_of_change_payload_from_args,
     moving_average_payload_from_args,
@@ -308,6 +310,93 @@ class StrategyTuningScriptTests(unittest.TestCase):
         results = apply_entry_quality_batch_2026_05_29(db)
 
         self.assertEqual(results[0]["scanner_type"], "mean_reversion")
+        self.assertEqual(results[0]["status"], "watch")
+
+    def test_apply_fresh_paper_batch_patches_targeted_scanner_keys(self) -> None:
+        self.assertEqual(
+            FRESH_PAPER_TUNING_BATCH_2026_06_11["mean_reversion"],
+            {
+                "bollinger_stddev": "2.50",
+                "max_distance_to_middle_percent": "0.75",
+            },
+        )
+
+        mean_reversion = build_strategy(
+            scanner_type="mean_reversion",
+            scanner_patch={
+                "bollinger_stddev": "2.25",
+                "max_distance_to_middle_percent": "1.50",
+            },
+        )
+        results = apply_fresh_paper_tuning_batch_2026_06_11(
+            FakeTuningSession([mean_reversion])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {
+                "bollinger_stddev": {"from": "2.25", "to": "2.50"},
+                "max_distance_to_middle_percent": {"from": "1.50", "to": "0.75"},
+            },
+        )
+        self.assertEqual(mean_reversion.config["scanner"]["bollinger_stddev"], "2.50")
+
+        momentum = build_strategy(
+            scanner_type="momentum_rate_of_change",
+            scanner_patch={
+                "change_above_percent": "0.50",
+                "change_below_percent": "-0.50",
+                "max_extension_percent": "1.25",
+            },
+        )
+        results = apply_fresh_paper_tuning_batch_2026_06_11(
+            FakeTuningSession([momentum])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {
+                "change_above_percent": {"from": "0.50", "to": "0.75"},
+                "change_below_percent": {"from": "-0.50", "to": "-0.75"},
+                "max_extension_percent": {"from": "1.25", "to": "1.00"},
+            },
+        )
+        self.assertEqual(momentum.config["scanner"]["change_above_percent"], "0.75")
+
+        support_resistance = build_strategy(
+            scanner_type="support_resistance",
+            scanner_patch={"max_distance_percent": "0.75"},
+        )
+        results = apply_fresh_paper_tuning_batch_2026_06_11(
+            FakeTuningSession([support_resistance])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {"max_distance_percent": {"from": "0.75", "to": "0.35"}},
+        )
+        self.assertEqual(
+            support_resistance.config["scanner"]["max_distance_percent"],
+            "0.35",
+        )
+
+        time_series = build_strategy(
+            scanner_type="time_series_momentum",
+            scanner_patch={"min_trend_percent": "1.50"},
+        )
+        results = apply_fresh_paper_tuning_batch_2026_06_11(
+            FakeTuningSession([time_series])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {"min_trend_percent": {"from": "1.50", "to": "2.00"}},
+        )
+        self.assertEqual(time_series.config["scanner"]["min_trend_percent"], "2.00")
+
+    def test_apply_fresh_paper_batch_watches_unpatched_scanners(self) -> None:
+        strategy = build_strategy(scanner_type="moving_average")
+        db = FakeTuningSession([strategy])
+
+        results = apply_fresh_paper_tuning_batch_2026_06_11(db)
+
+        self.assertEqual(results[0]["scanner_type"], "moving_average")
         self.assertEqual(results[0]["status"], "watch")
 
 
