@@ -284,6 +284,13 @@ The batch patches:
 - support_resistance: max_distance_percent=0.35.
 - time_series_momentum: min_trend_percent=2.00.
 
+The 2026-06-16 support-resistance winner-bias decision keeps support_resistance active but restricts seeded support_resistance to breakout/breakdown entries after the 2026-06-15 paper snapshot showed 0 wins and 5 losses for support_resistance:
+- mode=breakout
+- breakout_buffer_percent=0.20
+- max_distance_percent=0.35
+
+Judge the support_resistance winner-bias outcome after 3 post-market snapshots before restoring bounce/rejection mode.
+
 Current momentum rate-of-change Render preview override:
 - PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
 - PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000
