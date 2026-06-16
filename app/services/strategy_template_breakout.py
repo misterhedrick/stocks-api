@@ -199,13 +199,13 @@ def build_support_resistance_strategy_payload(
     direction: str = "bullish",
     timeframe: str = "5Min",
     lookback_minutes: int = 720,
-    mode: str = "both",
+    mode: str = "breakout",
     swing_window: int = 3,
     lookback_candles: int = 60,
     min_touches: int = 3,
     level_tolerance_percent: str = "0.15",
-    breakout_buffer_percent: str = "0.10",
-    max_distance_percent: str = "0.75",
+    breakout_buffer_percent: str = "0.20",
+    max_distance_percent: str = "0.35",
     confidence: str = "0.6800",
     dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
@@ -217,7 +217,7 @@ def build_support_resistance_strategy_payload(
         "name": name,
         "description": (
             f"{clean_symbol} {option_type} strategy that detects swing-based "
-            "support and resistance levels and auto-submits orders on bounces or breakouts."
+            "support and resistance levels and auto-submits orders on breakouts."
         ),
         "is_active": True,
         "config": {
