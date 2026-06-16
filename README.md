@@ -367,6 +367,16 @@ That batch uses the 2026-06-09 through 2026-06-10 paper evidence to tighten only
 - `support_resistance`: closer entries to the active level.
 - `time_series_momentum`: stronger minimum trend threshold.
 
+The 2026-06-16 support-resistance winner-bias decision keeps the scanner active but restricts seeded `support_resistance` to breakout/breakdown entries:
+
+```text
+scanner.mode=breakout
+scanner.breakout_buffer_percent=0.20
+scanner.max_distance_percent=0.35
+```
+
+The decision was based on the 2026-06-15 paper snapshot where `support_resistance` closed 0 wins and 5 losses. Judge the outcome after 3 post-market snapshots before restoring bounce/rejection mode.
+
 Momentum rate-of-change and mean reversion use a controlled wider-stop test in the 2026-05-18 batch:
 
 ```text

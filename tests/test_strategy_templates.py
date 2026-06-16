@@ -202,6 +202,16 @@ class StrategyTemplateTests(unittest.TestCase):
                 self.assertTrue(preview["enabled"])
                 self.assertTrue(scanner["submit"]["enabled"])
 
+        support_resistance = next(
+            payload
+            for payload in payloads
+            if payload["name"] == "support_resistance"
+        )
+        support_scanner = support_resistance["config"]["scanner"]
+        self.assertEqual(support_scanner["mode"], "breakout")
+        self.assertEqual(support_scanner["breakout_buffer_percent"], "0.20")
+        self.assertEqual(support_scanner["max_distance_percent"], "0.35")
+
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(
             prices={"SPY": Decimal("500.20"), "QQQ": Decimal("430.40")}
