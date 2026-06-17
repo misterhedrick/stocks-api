@@ -104,9 +104,9 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(payload["name"], "SPY momentum rate-of-change call preview")
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["lookback_minutes"], 45)
-        self.assertEqual(scanner["change_above_percent"], "0.50")
-        self.assertEqual(scanner["change_below_percent"], "-0.50")
-        self.assertEqual(scanner["max_extension_percent"], "1.25")
+        self.assertEqual(scanner["change_above_percent"], "0.75")
+        self.assertEqual(scanner["change_below_percent"], "-0.75")
+        self.assertEqual(scanner["max_extension_percent"], "1.00")
         self.assertTrue(scanner["require_latest_candle_confirmation"])
         self.assertEqual(scanner["preview"]["max_estimated_notional"], "5000")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
@@ -211,6 +211,35 @@ class StrategyTemplateTests(unittest.TestCase):
         self.assertEqual(support_scanner["mode"], "breakout")
         self.assertEqual(support_scanner["breakout_buffer_percent"], "0.20")
         self.assertEqual(support_scanner["max_distance_percent"], "0.35")
+
+        mean_reversion = next(
+            payload
+            for payload in payloads
+            if payload["name"] == "mean_reversion"
+        )
+        mean_scanner = mean_reversion["config"]["scanner"]
+        self.assertEqual(mean_scanner["bollinger_stddev"], "2.50")
+        self.assertEqual(mean_scanner["max_distance_to_middle_percent"], "0.75")
+        self.assertEqual(mean_scanner["exit"]["stop_loss_percent"], "8")
+        self.assertEqual(mean_scanner["exit"]["max_hold_hours"], 4)
+
+        volatility_squeeze = next(
+            payload
+            for payload in payloads
+            if payload["name"] == "volatility_squeeze"
+        )
+        squeeze_scanner = volatility_squeeze["config"]["scanner"]
+        self.assertEqual(squeeze_scanner["breakout_buffer_percent"], "0.20")
+        self.assertEqual(squeeze_scanner["max_breakout_distance_percent"], "1.50")
+
+        breakout = next(
+            payload
+            for payload in payloads
+            if payload["name"] == "breakout_price_threshold"
+        )
+        breakout_scanner = breakout["config"]["scanner"]
+        self.assertEqual(breakout_scanner["breakout_buffer_percent"], "0.20")
+        self.assertEqual(breakout_scanner["max_breakout_distance_percent"], "1.25")
 
     def test_seed_strategies_creates_new_strategy_and_audit_log(self) -> None:
         payloads = build_preview_first_strategy_payloads(

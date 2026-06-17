@@ -112,7 +112,7 @@ def build_time_series_momentum_strategy_payload(
     timeframe: str = "15Min",
     lookback_minutes: int = 1440,
     lookback_bars: int = 26,
-    min_trend_percent: str = "1.5",
+    min_trend_percent: str = "2.00",
     trend_average_window: int = 20,
     confidence: str = "0.7000",
     dedupe_minutes: int = 480,

@@ -83,11 +83,11 @@ def build_momentum_rate_of_change_strategy_payload(
     direction: str = "bullish",
     timeframe: str = "1Min",
     lookback_minutes: int = 45,
-    change_above_percent: str = "0.50",
-    change_below_percent: str = "-0.50",
+    change_above_percent: str = "0.75",
+    change_below_percent: str = "-0.75",
     short_average_type: str = "ema",
     short_average_window: int = 9,
-    max_extension_percent: str | None = None,
+    max_extension_percent: str | None = "1.00",
     confidence: str = "0.7000",
     dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
@@ -260,9 +260,9 @@ def build_mean_reversion_strategy_payload(
     timeframe: str = "5Min",
     lookback_minutes: int = 720,
     bollinger_period: int = 20,
-    bollinger_stddev: str = "2.25",
+    bollinger_stddev: str = "2.50",
     confidence: str = "0.6800",
-    max_distance_to_middle_percent: str = "1.50",
+    max_distance_to_middle_percent: str = "0.75",
     dedupe_minutes: int = 120,
 ) -> dict[str, Any]:
     clean_symbol = symbol.strip().upper()
@@ -299,7 +299,10 @@ def build_mean_reversion_strategy_payload(
                     target_strike=target_strike,
                     rationale=f"{name}: auto-submit enabled.",
                 ),
-                "exit": _exit_config(),
+                "exit": _exit_config(
+                    stop_loss_percent="8",
+                    max_hold_hours=4,
+                ),
                 "submit": _submit_config(),
             }
         },

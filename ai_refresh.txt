@@ -291,6 +291,18 @@ The 2026-06-16 support-resistance winner-bias decision keeps support_resistance 
 
 Judge the support_resistance winner-bias outcome after 3 post-market snapshots before restoring bounce/rejection mode.
 
+The 2026-06-17 exit-risk and breakout-quality batch uses the 2026-06-15 through 2026-06-17 paper evidence to tighten loss-heavy scanners:
+- mean_reversion: scanner.exit.stop_loss_percent=8 and scanner.exit.max_hold_hours=4.
+- volatility_squeeze: breakout_buffer_percent=0.20 and max_breakout_distance_percent=1.50.
+- breakout_price_threshold: breakout_buffer_percent=0.20 and max_breakout_distance_percent=1.25.
+
+Apply it with:
+
+    python scripts/tune_strategies.py apply-2026-06-17-risk-breakout-quality-batch --dry-run
+    python scripts/tune_strategies.py apply-2026-06-17-risk-breakout-quality-batch
+
+Judge this batch after 3 post-market snapshots using the related strategy_tuning_decisions.
+
 Current momentum rate-of-change Render preview override:
 - PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MIN_OPEN_INTEREST=50
 - PREVIEW_PROFILE_MOMENTUM_RATE_OF_CHANGE_MAX_ESTIMATED_NOTIONAL=5000

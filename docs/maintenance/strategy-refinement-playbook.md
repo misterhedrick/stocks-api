@@ -716,6 +716,21 @@ Batch scope:
 | `support_resistance` | Require entries closer to the active level. |
 | `time_series_momentum` | Require a stronger longer-horizon trend. |
 
+Apply the 2026-06-17 exit-risk and breakout-quality batch manually after recording the approved decisions:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-17-risk-breakout-quality-batch --dry-run
+.\.venv\Scripts\python.exe scripts\tune_strategies.py apply-2026-06-17-risk-breakout-quality-batch
+```
+
+Batch scope:
+
+| Scanner | Patch intent |
+|---|---|
+| `mean_reversion` | Tighten stop-loss handling and add a bounded max-hold test for stale mean-reversion entries. |
+| `volatility_squeeze` | Require stronger squeeze breakouts and reject more extended entries. |
+| `breakout_price_threshold` | Require stronger price-threshold breaks and reject more extended entries. |
+
 Common diagnostic reasons:
 
 | Reason | Meaning | First tuning check |

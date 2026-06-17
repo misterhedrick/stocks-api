@@ -148,6 +148,12 @@ def main() -> None:
     )
     fresh_paper_batch_parser.add_argument("--dry-run", action="store_true")
 
+    risk_breakout_batch_parser = subparsers.add_parser(
+        "apply-2026-06-17-risk-breakout-quality-batch",
+        help="Apply the 2026-06-17 exit-risk and breakout-quality tuning batch.",
+    )
+    risk_breakout_batch_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     with SessionLocal() as db:
@@ -235,6 +241,18 @@ def main() -> None:
 
         if args.command == "apply-2026-06-11-fresh-paper-tuning-batch":
             results = apply_fresh_paper_tuning_batch_2026_06_11(
+                db,
+                dry_run=args.dry_run,
+            )
+            if args.dry_run:
+                print(json.dumps(results, indent=2, sort_keys=True, default=str))
+                return
+            db.commit()
+            print(json.dumps(results, indent=2, sort_keys=True, default=str))
+            return
+
+        if args.command == "apply-2026-06-17-risk-breakout-quality-batch":
+            results = apply_risk_breakout_quality_batch_2026_06_17(
                 db,
                 dry_run=args.dry_run,
             )
@@ -343,7 +361,7 @@ def momentum_rate_of_change_payload_from_args(args: argparse.Namespace) -> dict[
         change_below_percent=args.change_below_percent,
         short_average_type=args.short_average_type,
         short_average_window=args.short_average_window,
-        max_extension_percent=getattr(args, "max_extension_percent", None),
+        max_extension_percent=getattr(args, "max_extension_percent", None) or "1.00",
         confidence=args.confidence,
     )
 
@@ -564,6 +582,24 @@ FRESH_PAPER_TUNING_BATCH_2026_06_11: dict[str, dict[str, Any]] = {
 }
 
 
+RISK_BREAKOUT_QUALITY_BATCH_2026_06_17: dict[str, dict[str, Any]] = {
+    "mean_reversion": {
+        "exit": {
+            "stop_loss_percent": "8",
+            "max_hold_hours": 4,
+        },
+    },
+    "volatility_squeeze": {
+        "breakout_buffer_percent": "0.20",
+        "max_breakout_distance_percent": "1.50",
+    },
+    "breakout_price_threshold": {
+        "breakout_buffer_percent": "0.20",
+        "max_breakout_distance_percent": "1.25",
+    },
+}
+
+
 def apply_strategy_type_batch(
     db: Session,
     *,
@@ -642,6 +678,18 @@ def apply_fresh_paper_tuning_batch_2026_06_11(
     return _apply_scanner_type_batch(
         db,
         batch=FRESH_PAPER_TUNING_BATCH_2026_06_11,
+        dry_run=dry_run,
+    )
+
+
+def apply_risk_breakout_quality_batch_2026_06_17(
+    db: Session,
+    *,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    return _apply_scanner_type_batch(
+        db,
+        batch=RISK_BREAKOUT_QUALITY_BATCH_2026_06_17,
         dry_run=dry_run,
     )
 
