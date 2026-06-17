@@ -87,9 +87,10 @@ def _exit_config(
     *,
     profit_target_percent: str | None = None,
     stop_loss_percent: str | None = None,
+    max_hold_hours: int | None = None,
     max_spread: str = "0.25",
 ) -> dict[str, Any]:
-    return {
+    config = {
         "enabled": True,
         "profit_target_percent": profit_target_percent
         or _decimal_string(settings.strategy_profit_target_percent),
@@ -127,6 +128,9 @@ def _exit_config(
             "allowed_sides": ["sell"],
         },
     }
+    if max_hold_hours is not None:
+        config["max_hold_hours"] = max_hold_hours
+    return config
 
 def _market_regime_config(direction: str) -> dict[str, Any]:
     return {

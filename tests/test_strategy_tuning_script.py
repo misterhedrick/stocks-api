@@ -10,8 +10,10 @@ from app.db.models import AuditLog, Strategy
 from scripts.tune_strategies import (
     ENTRY_QUALITY_BATCH_2026_05_29,
     FRESH_PAPER_TUNING_BATCH_2026_06_11,
+    RISK_BREAKOUT_QUALITY_BATCH_2026_06_17,
     apply_entry_quality_batch_2026_05_29,
     apply_fresh_paper_tuning_batch_2026_06_11,
+    apply_risk_breakout_quality_batch_2026_06_17,
     list_strategy_summaries,
     momentum_rate_of_change_payload_from_args,
     moving_average_payload_from_args,
@@ -140,7 +142,7 @@ class StrategyTuningScriptTests(unittest.TestCase):
         self.assertEqual(scanner["type"], "momentum_rate_of_change")
         self.assertEqual(scanner["change_above_percent"], "0.20")
         self.assertEqual(scanner["change_below_percent"], "-0.20")
-        self.assertEqual(scanner["max_extension_percent"], "1.25")
+        self.assertEqual(scanner["max_extension_percent"], "1.00")
         self.assertEqual(scanner["preview"]["max_spread"], "0.35")
         self.assertTrue(scanner["submit"]["enabled"])
 
@@ -395,6 +397,85 @@ class StrategyTuningScriptTests(unittest.TestCase):
         db = FakeTuningSession([strategy])
 
         results = apply_fresh_paper_tuning_batch_2026_06_11(db)
+
+        self.assertEqual(results[0]["scanner_type"], "moving_average")
+        self.assertEqual(results[0]["status"], "watch")
+
+    def test_apply_risk_breakout_quality_batch_patches_targeted_keys(self) -> None:
+        self.assertEqual(
+            RISK_BREAKOUT_QUALITY_BATCH_2026_06_17["mean_reversion"],
+            {
+                "exit": {
+                    "stop_loss_percent": "8",
+                    "max_hold_hours": 4,
+                },
+            },
+        )
+
+        mean_reversion = build_strategy(
+            scanner_type="mean_reversion",
+            scanner_patch={"exit": {"stop_loss_percent": "10"}},
+        )
+        results = apply_risk_breakout_quality_batch_2026_06_17(
+            FakeTuningSession([mean_reversion])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {
+                "exit.stop_loss_percent": {"from": "10", "to": "8"},
+                "exit.max_hold_hours": {"from": None, "to": 4},
+            },
+        )
+        self.assertEqual(
+            mean_reversion.config["scanner"]["exit"]["stop_loss_percent"],
+            "8",
+        )
+        self.assertEqual(
+            mean_reversion.config["scanner"]["exit"]["max_hold_hours"],
+            4,
+        )
+
+        volatility_squeeze = build_strategy(
+            scanner_type="volatility_squeeze",
+            scanner_patch={
+                "breakout_buffer_percent": "0.10",
+                "max_breakout_distance_percent": "2.5",
+            },
+        )
+        results = apply_risk_breakout_quality_batch_2026_06_17(
+            FakeTuningSession([volatility_squeeze])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {
+                "breakout_buffer_percent": {"from": "0.10", "to": "0.20"},
+                "max_breakout_distance_percent": {"from": "2.5", "to": "1.50"},
+            },
+        )
+
+        breakout = build_strategy(
+            scanner_type="breakout_price_threshold",
+            scanner_patch={
+                "breakout_buffer_percent": "0.15",
+                "max_breakout_distance_percent": "2.0",
+            },
+        )
+        results = apply_risk_breakout_quality_batch_2026_06_17(
+            FakeTuningSession([breakout])
+        )
+        self.assertEqual(
+            results[0]["changed"],
+            {
+                "breakout_buffer_percent": {"from": "0.15", "to": "0.20"},
+                "max_breakout_distance_percent": {"from": "2.0", "to": "1.25"},
+            },
+        )
+
+    def test_apply_risk_breakout_quality_batch_watches_unpatched_scanners(self) -> None:
+        strategy = build_strategy(scanner_type="moving_average")
+        db = FakeTuningSession([strategy])
+
+        results = apply_risk_breakout_quality_batch_2026_06_17(db)
 
         self.assertEqual(results[0]["scanner_type"], "moving_average")
         self.assertEqual(results[0]["status"], "watch")
