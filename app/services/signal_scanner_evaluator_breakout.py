@@ -22,7 +22,7 @@ from app.services.audit_logs import record_audit_log
 from app.services.signals.candles import Candle, CandleFrame
 from app.services.signals.evaluators.base import SignalCandidate
 from app.services.signals.evaluators.registry import get_evaluator
-from app.services.signals.indicators import IndicatorFrame
+from app.services.signals.indicators import IndicatorFrame, percent_change
 
 DEFAULT_DEDUPE_MINUTES = 240
 
@@ -66,6 +66,7 @@ def _mean_reversion_signal_specs(
         feed=feed,
         limit=max(lookback_minutes + 10, 20),
     )
+    market_regime = _market_regime_from_stock_bars(bars_by_symbol)
 
     signal_specs: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -88,6 +89,7 @@ def _mean_reversion_signal_specs(
             config=scanner_config,
             candles=candle_frame,
             indicators=indicator_frame,
+            market_regime=market_regime,
         )
         if candidate is None:
             no_signal_reasons.append(
@@ -139,6 +141,7 @@ def _breakout_price_threshold_signal_specs(
         feed=feed,
         limit=max(lookback_minutes + 10, 20),
     )
+    market_regime = _market_regime_from_stock_bars(bars_by_symbol)
 
     signal_specs: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -161,6 +164,7 @@ def _breakout_price_threshold_signal_specs(
             config=scanner_config,
             candles=candle_frame,
             indicators=indicator_frame,
+            market_regime=market_regime,
         )
         if candidate is None:
             no_signal_reasons.append(
@@ -212,6 +216,7 @@ def _volume_confirmed_breakout_signal_specs(
         feed=feed,
         limit=max(lookback_minutes + 10, 20),
     )
+    market_regime = _market_regime_from_stock_bars(bars_by_symbol)
 
     signal_specs: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -234,6 +239,7 @@ def _volume_confirmed_breakout_signal_specs(
             config=scanner_config,
             candles=candle_frame,
             indicators=indicator_frame,
+            market_regime=market_regime,
         )
         if candidate is None:
             no_signal_reasons.append(
@@ -285,6 +291,7 @@ def _volatility_squeeze_signal_specs(
         feed=feed,
         limit=max(lookback_minutes + 10, 20),
     )
+    market_regime = _market_regime_from_stock_bars(bars_by_symbol)
 
     signal_specs: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -307,6 +314,7 @@ def _volatility_squeeze_signal_specs(
             config=scanner_config,
             candles=candle_frame,
             indicators=indicator_frame,
+            market_regime=market_regime,
         )
         if candidate is None:
             no_signal_reasons.append(
@@ -358,6 +366,7 @@ def _support_resistance_signal_specs(
         feed=feed,
         limit=max(lookback_minutes + 10, 20),
     )
+    market_regime = _market_regime_from_stock_bars(bars_by_symbol)
 
     signal_specs: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -380,6 +389,7 @@ def _support_resistance_signal_specs(
             config=scanner_config,
             candles=candle_frame,
             indicators=indicator_frame,
+            market_regime=market_regime,
         )
         if candidate is None:
             no_signal_reasons.append(
@@ -431,6 +441,23 @@ def _signal_spec_from_candidate(
         },
         "dedupe_minutes": dedupe_minutes,
     }
+
+
+def _market_regime_from_stock_bars(
+    bars_by_symbol: dict[str, AlpacaStockBars],
+) -> dict[str, dict[str, float]] | None:
+    peer_returns: dict[str, float] = {}
+    for symbol, stock_bars in bars_by_symbol.items():
+        if stock_bars is None or len(stock_bars.bars) < 2:
+            continue
+        first_close = float(stock_bars.bars[0].close)
+        latest_close = float(stock_bars.bars[-1].close)
+        pct = percent_change(latest_close, first_close)
+        if pct is not None:
+            peer_returns[symbol.upper()] = pct
+    if not peer_returns:
+        return None
+    return {"peer_returns": peer_returns}
 
 
 def _positive_int(config: dict[str, Any], key: str, *, default: int) -> int:

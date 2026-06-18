@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame
 
@@ -21,10 +25,12 @@ class MeanReversionEvaluator:
         lookback_minutes = int(config.get("lookback_minutes") or 480)
         bollinger_period = int(config.get("bollinger_period") or 20)
         bollinger_stddev = float(config.get("bollinger_stddev") or 2.0)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=timeframe,
             lookback_minutes=lookback_minutes,
             bollinger_periods=frozenset({(bollinger_period, bollinger_stddev)}),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -45,6 +51,7 @@ class MeanReversionEvaluator:
         lookback_minutes = int(config.get("lookback_minutes") or 480)
         bollinger_period = int(config.get("bollinger_period") or 20)
         bollinger_stddev = float(config.get("bollinger_stddev") or 2.0)
+        atr_period = int(config.get("atr_period") or 14)
 
         bands = indicators.bollinger(bollinger_period, bollinger_stddev)
         middle = bands.middle[-1] if bands.middle else None
@@ -86,6 +93,14 @@ class MeanReversionEvaluator:
         distance_to_middle_percent = None
         if middle > 0:
             distance_to_middle_percent = abs(latest_close - middle) / middle * 100
+        band_excursion_percent = None
+        band_reentry_percent = None
+        if direction == "bullish" and lower > 0:
+            band_excursion_percent = abs(latest_low - lower) / lower * 100
+            band_reentry_percent = abs(latest_close - lower) / lower * 100
+        elif direction == "bearish" and upper > 0:
+            band_excursion_percent = abs(latest_high - upper) / upper * 100
+            band_reentry_percent = abs(latest_close - upper) / upper * 100
         max_distance_to_middle_percent = _float_or_none(config.get("max_distance_to_middle_percent"))
         if max_distance_to_middle_percent is not None and distance_to_middle_percent is not None:
             if distance_to_middle_percent > max_distance_to_middle_percent:
@@ -100,6 +115,23 @@ class MeanReversionEvaluator:
             score += Decimal("0.03")
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                reference_price=middle,
+                reference_label="middle_band",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["distance_to_middle_atr"] = validation.get("middle_band_distance_atr")
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -125,7 +157,10 @@ class MeanReversionEvaluator:
                 "band_touch": band_touch,
                 "candle_confirmed": candle_confirmed,
                 "distance_to_middle_percent": feature_decimal(distance_to_middle_percent),
+                "band_excursion_percent": feature_decimal(band_excursion_percent),
+                "band_reentry_percent": feature_decimal(band_reentry_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

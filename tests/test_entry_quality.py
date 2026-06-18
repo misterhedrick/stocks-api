@@ -63,7 +63,21 @@ def build_signal(
     )
 
 
-def build_order_intent(signal: Signal, *, spread_percent: str = "8") -> OrderIntent:
+def build_order_intent(
+    signal: Signal,
+    *,
+    spread_percent: str = "8",
+    delta: str | None = None,
+    estimated_notional: str | None = None,
+) -> OrderIntent:
+    selected_contract: dict[str, object] = {
+        "open_interest": 500,
+        "dte": 7,
+    }
+    if delta is not None:
+        selected_contract["delta"] = delta
+    if estimated_notional is not None:
+        selected_contract["estimated_notional"] = estimated_notional
     return OrderIntent(
         id=uuid.uuid4(),
         strategy_id=signal.strategy_id,
@@ -83,10 +97,7 @@ def build_order_intent(signal: Signal, *, spread_percent: str = "8") -> OrderInt
                 "spread_percent": spread_percent,
             },
             "selection": {
-                "selected_contract": {
-                    "open_interest": 500,
-                    "dte": 7,
-                }
+                "selected_contract": selected_contract
             },
         },
     )
@@ -198,6 +209,82 @@ class EntryQualityTests(unittest.TestCase):
         self.assertTrue(
             any("spread percent" in reason for reason in decision.reasons)
         )
+
+    def test_blocks_weak_breakout_validation(self) -> None:
+        strategy = build_strategy("breakout_price_threshold")
+        signal = build_signal(
+            strategy,
+            confidence="0.9000",
+            direction="bullish",
+            market_context={
+                "directional_close_position": "0.40",
+                "breakout_distance_atr": "0.05",
+                "market_regime_alignment": "aligned",
+            },
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+
+        decision = evaluate_entry_quality(
+            FakeEntryQualitySession(),
+            order_intent=build_order_intent(signal, delta="0.45"),
+            strategy=strategy,
+            signal=signal,
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertTrue(
+            any("directional close position" in reason for reason in decision.reasons)
+        )
+        self.assertTrue(
+            any("too close to the level" in reason for reason in decision.reasons)
+        )
+
+    def test_allows_strong_breakout_validation(self) -> None:
+        strategy = build_strategy("breakout_price_threshold")
+        signal = build_signal(
+            strategy,
+            confidence="0.7000",
+            direction="bullish",
+            market_context={
+                "directional_close_position": "0.82",
+                "breakout_distance_atr": "0.45",
+                "market_regime_alignment": "aligned",
+            },
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+
+        decision = evaluate_entry_quality(
+            FakeEntryQualitySession(),
+            order_intent=build_order_intent(signal, delta="0.45"),
+            strategy=strategy,
+            signal=signal,
+        )
+
+        self.assertTrue(decision.allowed, decision.reasons)
+
+    def test_blocks_option_delta_outside_scanner_range_when_available(self) -> None:
+        strategy = build_strategy("breakout_price_threshold")
+        signal = build_signal(
+            strategy,
+            confidence="0.9000",
+            direction="bullish",
+            market_context={
+                "directional_close_position": "0.82",
+                "breakout_distance_atr": "0.45",
+                "market_regime_alignment": "aligned",
+            },
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        )
+
+        decision = evaluate_entry_quality(
+            FakeEntryQualitySession(),
+            order_intent=build_order_intent(signal, delta="0.10"),
+            strategy=strategy,
+            signal=signal,
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertTrue(any("option delta" in reason for reason in decision.reasons))
 
     def test_blocks_recent_intraday_stop_loss_before_trade_cases_exist(self) -> None:
         strategy = build_strategy("momentum_rate_of_change")

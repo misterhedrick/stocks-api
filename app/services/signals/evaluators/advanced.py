@@ -8,8 +8,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame, percent_change
 
@@ -18,9 +22,11 @@ class VwapReclaimEvaluator:
     strategy_type = "vwap_reclaim"
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "5Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 390),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -45,6 +51,7 @@ class VwapReclaimEvaluator:
         latest_close = float(latest.close)
         previous_close = float(previous.close)
         latest_open = float(latest.open)
+        atr_period = int(config.get("atr_period") or 14)
         min_reclaim_percent = float(config.get("min_reclaim_percent") or 0.03)
         max_distance_percent = float(config.get("max_distance_percent") or 1.25)
         distance_percent = abs(latest_close - latest_vwap) / latest_vwap * 100
@@ -75,6 +82,27 @@ class VwapReclaimEvaluator:
         if distance_percent <= max_distance_percent * 0.5:
             score += Decimal("0.05")
         dedupe_minutes = int(config.get("dedupe_minutes") or 120)
+        vwap_slope_percent = (
+            ((latest_vwap - previous_vwap) / previous_vwap) * 100
+            if previous_vwap
+            else None
+        )
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                reference_price=latest_vwap,
+                reference_label="vwap",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -89,8 +117,10 @@ class VwapReclaimEvaluator:
                 "previous_close": str(previous.close),
                 "latest_vwap": feature_decimal(latest_vwap),
                 "previous_vwap": feature_decimal(previous_vwap),
+                "vwap_slope_percent": feature_decimal(vwap_slope_percent),
                 "distance_percent": feature_decimal(distance_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
@@ -100,9 +130,11 @@ class OpeningRangeBreakoutEvaluator:
     strategy_type = "opening_range_breakout"
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "5Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 390),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -128,6 +160,7 @@ class OpeningRangeBreakoutEvaluator:
         latest_close = float(latest.close)
         previous_close = float(previous.close)
         latest_open = float(latest.open)
+        atr_period = int(config.get("atr_period") or 14)
 
         direction: str | None = None
         signal_type: str | None = None
@@ -152,6 +185,22 @@ class OpeningRangeBreakoutEvaluator:
             return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                reference_price=breakout_level,
+                reference_label="breakout",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -168,6 +217,7 @@ class OpeningRangeBreakoutEvaluator:
                 "breakout_buffer_percent": feature_decimal(breakout_buffer_percent),
                 "distance_percent": feature_decimal(distance_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
@@ -177,9 +227,11 @@ class RelativeStrengthEvaluator:
     strategy_type = "relative_strength"
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "5Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 240),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -208,6 +260,17 @@ class RelativeStrengthEvaluator:
             return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
+        atr_period = int(config.get("atr_period") or 14)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(indicators, candles, period=atr_period),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -222,6 +285,7 @@ class RelativeStrengthEvaluator:
                 "peer_median_return_percent": feature_decimal(peer_median),
                 "relative_edge_percent": feature_decimal(edge),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
@@ -232,10 +296,12 @@ class TimeSeriesMomentumEvaluator:
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
         average_window = int(config.get("trend_average_window") or 20)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "15Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 1440),
             ema_periods=frozenset({average_window}),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -257,6 +323,7 @@ class TimeSeriesMomentumEvaluator:
             return None
         min_trend_percent = float(config.get("min_trend_percent") or 1.0)
         average_window = int(config.get("trend_average_window") or 20)
+        atr_period = int(config.get("atr_period") or 14)
         averages = indicators.ema(average_window)
         latest_average = averages[-1] if averages else None
         if latest_average is None:
@@ -273,6 +340,22 @@ class TimeSeriesMomentumEvaluator:
             return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 360)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                average_price=latest_average,
+                average_label="trend_average",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -287,6 +370,7 @@ class TimeSeriesMomentumEvaluator:
                 "trend_average_window": average_window,
                 "trend_average": feature_decimal(latest_average),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
@@ -296,9 +380,11 @@ class MarketRegimeFilterEvaluator:
     strategy_type = "market_regime_filter"
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "5Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 240),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -330,6 +416,12 @@ class MarketRegimeFilterEvaluator:
             return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 360)
+        atr_period = int(config.get("atr_period") or 14)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(indicators, candles, period=atr_period),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -343,6 +435,7 @@ class MarketRegimeFilterEvaluator:
                 "benchmark_return_percent": feature_decimal(benchmark_return),
                 "symbol_return_percent": feature_decimal(symbol_return),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
@@ -352,9 +445,11 @@ class PairsRelativeValueEvaluator:
     strategy_type = "pairs_relative_value"
 
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=str(config.get("timeframe") or "5Min"),
             lookback_minutes=int(config.get("lookback_minutes") or 240),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -397,6 +492,17 @@ class PairsRelativeValueEvaluator:
                 return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 360)
+        atr_period = int(config.get("atr_period") or 14)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(indicators, candles, period=atr_period),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol_name,
             strategy_type=self.strategy_type,
@@ -413,6 +519,7 @@ class PairsRelativeValueEvaluator:
                 "mode": mode,
                 "execution_note": "signal_only_until_pair_execution_supported",
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol_name}:{self.strategy_type}:{signal_type}:{direction}:{benchmark}",
         )
@@ -464,6 +571,16 @@ class OptionsSpreadCandidateEvaluator:
             return None
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 360)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(indicators, candles, period=atr_period),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -478,6 +595,7 @@ class OptionsSpreadCandidateEvaluator:
                 "atr_percent": feature_decimal(atr_percent),
                 "execution_note": "signal_only_until_multileg_orders_are_supported",
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

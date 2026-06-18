@@ -22,6 +22,32 @@ FAST_CONFIRMATION_SCANNERS = frozenset(
     }
 )
 
+BREAKOUT_QUALITY_SCANNERS = frozenset(
+    {
+        "breakout_price_threshold",
+        "volume_confirmed_breakout",
+        "volatility_squeeze",
+        "support_resistance",
+        "opening_range_breakout",
+    }
+)
+
+TREND_ALIGNMENT_SCANNERS = frozenset(
+    {
+        "breakout_price_threshold",
+        "volume_confirmed_breakout",
+        "volatility_squeeze",
+        "opening_range_breakout",
+        "momentum_rate_of_change",
+        "moving_average",
+        "macd_crossover",
+        "time_series_momentum",
+        "relative_strength",
+    }
+)
+
+REVERSAL_SCANNERS = frozenset({"mean_reversion", "rsi_reversal", "vwap_reclaim"})
+
 
 @dataclass(slots=True)
 class EntryQualityDecision:
@@ -110,6 +136,7 @@ def evaluate_entry_quality(
         reasons=reasons,
     )
     score += _option_quality_score(
+        scanner_type=scanner_type,
         quote=quote,
         selection=selection,
         reasons=reasons,
@@ -141,6 +168,8 @@ def evaluate_entry_quality(
         "selection": {
             "open_interest": _selection_open_interest(selection),
             "dte": _selection_dte(selection),
+            "delta": _string_or_none(_selection_delta(selection)),
+            "estimated_notional": _string_or_none(_selection_estimated_notional(selection)),
         },
         "reasons": reasons,
     }
@@ -160,7 +189,11 @@ def _scanner_edge_score(
     reasons: list[str],
 ) -> Decimal:
     direction = (signal.direction or "").lower()
-    score = Decimal("0")
+    score = _regime_alignment_score(
+        scanner_type=scanner_type,
+        features=features,
+        reasons=reasons,
+    )
 
     if scanner_type == "relative_strength":
         edge = abs(_decimal(features.get("relative_edge_percent")) or Decimal("0"))
@@ -174,7 +207,7 @@ def _scanner_edge_score(
             reasons.append("bearish relative-strength signal lacks negative absolute return")
         if direction == "bullish" and (symbol_return is None or symbol_return <= 0):
             reasons.append("bullish relative-strength signal lacks positive absolute return")
-        return min(edge * Decimal("8"), Decimal("12"))
+        return score + min(edge * Decimal("8"), Decimal("12"))
 
     if scanner_type == "momentum_rate_of_change":
         pct = abs(_decimal(features.get("percent_change")) or Decimal("0"))
@@ -182,7 +215,8 @@ def _scanner_edge_score(
         required = threshold * Decimal(settings.entry_quality_min_momentum_threshold_multiplier)
         if pct < required:
             reasons.append(f"momentum move {pct} is too close to threshold {threshold}")
-        return min(pct * Decimal("10"), Decimal("10"))
+        score += _extension_score(features, reasons=reasons)
+        return score + min(pct * Decimal("10"), Decimal("10"))
 
     if scanner_type == "opening_range_breakout":
         distance = _decimal(features.get("distance_percent")) or Decimal("0")
@@ -190,14 +224,15 @@ def _scanner_edge_score(
         required = buffer * Decimal(settings.entry_quality_min_breakout_buffer_multiplier)
         if distance < required:
             reasons.append(f"opening range distance {distance} is too close to buffer {buffer}")
-        return min(distance * Decimal("12"), Decimal("10"))
+        return score + _breakout_quality_score(features, reasons=reasons) + min(distance * Decimal("12"), Decimal("10"))
 
     if scanner_type == "vwap_reclaim":
         distance = _decimal(features.get("distance_percent")) or Decimal("0")
         required = Decimal(settings.entry_quality_min_vwap_distance_percent)
         if distance < required:
             reasons.append(f"VWAP distance {distance} is below auto-submit minimum {required}")
-        return min(distance * Decimal("8"), Decimal("8"))
+        score += _reversal_quality_score(scanner_type, features, reasons=reasons)
+        return score + min(distance * Decimal("8"), Decimal("8"))
 
     if scanner_type == "moving_average":
         separation = _decimal(features.get("average_separation_percent")) or Decimal("0")
@@ -206,13 +241,24 @@ def _scanner_edge_score(
             reasons.append(
                 f"moving-average separation {separation} is below auto-submit minimum {required}"
             )
-        return min(separation * Decimal("10"), Decimal("8"))
+        score += _extension_score(features, reasons=reasons)
+        return score + min(separation * Decimal("10"), Decimal("8"))
+
+    if scanner_type in BREAKOUT_QUALITY_SCANNERS:
+        return score + _breakout_quality_score(features, reasons=reasons)
+
+    if scanner_type in REVERSAL_SCANNERS:
+        return score + _reversal_quality_score(scanner_type, features, reasons=reasons)
+
+    if scanner_type in {"macd_crossover", "time_series_momentum"}:
+        return score + _extension_score(features, reasons=reasons)
 
     return score
 
 
 def _option_quality_score(
     *,
+    scanner_type: str,
     quote: dict[str, Any],
     selection: dict[str, Any],
     reasons: list[str],
@@ -220,14 +266,13 @@ def _option_quality_score(
     score = Decimal("0")
     spread_percent = _quote_spread_percent(quote)
     max_spread_percent = Decimal(settings.entry_quality_max_option_spread_percent)
-    if spread_percent is None:
-        return score
-    if spread_percent > max_spread_percent:
-        reasons.append(
-            f"option spread percent {spread_percent} exceeds quality maximum {max_spread_percent}"
-        )
-    else:
-        score += max(Decimal("0"), Decimal("6") - (spread_percent / Decimal("10")))
+    if spread_percent is not None:
+        if spread_percent > max_spread_percent:
+            reasons.append(
+                f"option spread percent {spread_percent} exceeds quality maximum {max_spread_percent}"
+            )
+        else:
+            score += max(Decimal("0"), Decimal("6") - (spread_percent / Decimal("10")))
 
     open_interest = _selection_open_interest(selection)
     min_open_interest = int(settings.entry_quality_min_open_interest)
@@ -238,7 +283,142 @@ def _option_quality_score(
     elif open_interest is not None:
         score += Decimal("4")
 
+    estimated_notional = _selection_estimated_notional(selection)
+    if estimated_notional is not None:
+        max_notional = Decimal(settings.strategy_max_estimated_notional)
+        if estimated_notional > max_notional:
+            reasons.append(
+                f"estimated option notional {estimated_notional} exceeds maximum {max_notional}"
+            )
+        else:
+            score += Decimal("2")
+
+    delta = _selection_delta(selection)
+    if delta is not None:
+        min_delta, max_delta = _delta_bounds(scanner_type)
+        abs_delta = abs(delta)
+        if abs_delta < min_delta or abs_delta > max_delta:
+            reasons.append(
+                f"option delta {delta} is outside preferred range {min_delta}-{max_delta}"
+            )
+        else:
+            score += Decimal("3")
+
     return score
+
+
+def _regime_alignment_score(
+    *,
+    scanner_type: str,
+    features: dict[str, Any],
+    reasons: list[str],
+) -> Decimal:
+    alignment = str(features.get("market_regime_alignment") or "unknown").lower()
+    if alignment == "aligned":
+        return Decimal("4")
+    if alignment == "mixed":
+        return Decimal("0")
+    if alignment != "conflict":
+        return Decimal("0")
+
+    benchmark_return = abs(
+        _decimal(features.get("market_regime_benchmark_return_percent"))
+        or Decimal("0")
+    )
+    if scanner_type in TREND_ALIGNMENT_SCANNERS:
+        reasons.append("market regime conflicts with directional signal")
+        return Decimal("-8")
+    if scanner_type in REVERSAL_SCANNERS and benchmark_return >= Decimal("0.35"):
+        reasons.append("reversal signal conflicts with a strong broad-market move")
+        return Decimal("-6")
+    return Decimal("-2")
+
+
+def _breakout_quality_score(
+    features: dict[str, Any],
+    *,
+    reasons: list[str],
+) -> Decimal:
+    score = Decimal("0")
+    close_position = _decimal(features.get("directional_close_position"))
+    if close_position is not None:
+        if close_position < Decimal("0.58"):
+            reasons.append(
+                f"directional close position {close_position} is too weak for breakout auto-submit"
+            )
+        score += min(close_position * Decimal("8"), Decimal("8"))
+
+    distance_atr = _decimal(
+        features.get("breakout_distance_atr") or features.get("level_distance_atr")
+    )
+    if distance_atr is not None:
+        if distance_atr < Decimal("0.10"):
+            reasons.append(f"breakout distance {distance_atr} ATR is too close to the level")
+        if distance_atr > Decimal("2.75"):
+            reasons.append(f"breakout distance {distance_atr} ATR is too extended")
+        score += min(distance_atr * Decimal("3"), Decimal("8"))
+
+    width_expanding = features.get("width_expanding")
+    if width_expanding is False:
+        reasons.append("squeeze breakout lacks Bollinger width expansion")
+    elif width_expanding is True:
+        score += Decimal("3")
+
+    relative_volume = _decimal(features.get("relative_volume"))
+    if relative_volume is not None:
+        if relative_volume < Decimal("1.20"):
+            reasons.append(f"relative volume {relative_volume} is too low for breakout auto-submit")
+        score += min(relative_volume * Decimal("2"), Decimal("6"))
+
+    return score
+
+
+def _reversal_quality_score(
+    scanner_type: str,
+    features: dict[str, Any],
+    *,
+    reasons: list[str],
+) -> Decimal:
+    score = Decimal("0")
+    wick = _decimal(features.get("directional_wick_percent"))
+    if scanner_type in {"mean_reversion", "rsi_reversal"} and wick is not None:
+        if wick < Decimal("8"):
+            reasons.append(f"reversal wick {wick}% is too small for auto-submit")
+        score += min(wick / Decimal("2"), Decimal("6"))
+
+    distance_to_middle_atr = _decimal(features.get("distance_to_middle_atr"))
+    if distance_to_middle_atr is not None:
+        if distance_to_middle_atr > Decimal("1.50"):
+            reasons.append(
+                f"mean-reversion entry remains {distance_to_middle_atr} ATR from the middle band"
+            )
+        score += max(Decimal("0"), Decimal("6") - distance_to_middle_atr * Decimal("2"))
+
+    vwap_distance_atr = _decimal(features.get("vwap_distance_atr"))
+    if scanner_type == "vwap_reclaim" and vwap_distance_atr is not None:
+        if vwap_distance_atr < Decimal("0.15"):
+            reasons.append(f"VWAP reclaim distance {vwap_distance_atr} ATR is too small")
+        if vwap_distance_atr > Decimal("1.75"):
+            reasons.append(f"VWAP reclaim distance {vwap_distance_atr} ATR is too extended")
+        score += min(vwap_distance_atr * Decimal("4"), Decimal("6"))
+
+    return score
+
+
+def _extension_score(
+    features: dict[str, Any],
+    *,
+    reasons: list[str],
+) -> Decimal:
+    extension = (
+        _decimal(features.get("short_average_extension_atr"))
+        or _decimal(features.get("trend_average_extension_atr"))
+    )
+    if extension is None:
+        return Decimal("0")
+    if extension > Decimal("2.00"):
+        reasons.append(f"entry is extended {extension} ATR from its confirmation average")
+    return max(Decimal("0"), Decimal("5") - extension * Decimal("1.5"))
 
 
 def _recent_stop_loss_exists(
@@ -404,6 +584,40 @@ def _selection_dte(selection: dict[str, Any]) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _selection_delta(selection: dict[str, Any]) -> Decimal | None:
+    return _decimal(
+        _nested_value(
+            selection,
+            ("selected_contract", "delta"),
+            ("selected_contract", "greeks", "delta"),
+            ("contract", "delta"),
+            ("contract", "greeks", "delta"),
+            ("delta",),
+            ("greeks", "delta"),
+        )
+    )
+
+
+def _selection_estimated_notional(selection: dict[str, Any]) -> Decimal | None:
+    return _decimal(
+        _nested_value(
+            selection,
+            ("estimated_notional",),
+            ("selected_contract", "estimated_notional"),
+            ("contract", "estimated_notional"),
+            ("quote", "estimated_notional"),
+        )
+    )
+
+
+def _delta_bounds(scanner_type: str) -> tuple[Decimal, Decimal]:
+    if scanner_type in {"mean_reversion", "rsi_reversal", "vwap_reclaim"}:
+        return Decimal("0.20"), Decimal("0.60")
+    if scanner_type in {"relative_strength", "support_resistance"}:
+        return Decimal("0.25"), Decimal("0.65")
+    return Decimal("0.30"), Decimal("0.65")
 
 
 def _decimal_from_mapping(mapping: dict[str, Any], *keys: str) -> Decimal | None:

@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame, percent_change
 
@@ -21,6 +25,7 @@ class MomentumRateOfChangeEvaluator:
         lookback_minutes = int(config.get("lookback_minutes") or 45)
         short_average_window = int(config.get("short_average_window") or 9)
         average_type = str(config.get("short_average_type") or "ema").lower()
+        atr_period = int(config.get("atr_period") or 14)
         ema_periods = frozenset({short_average_window}) if average_type == "ema" else frozenset()
         sma_periods = frozenset({short_average_window}) if average_type == "sma" else frozenset()
         return RequiredFeatures(
@@ -28,6 +33,7 @@ class MomentumRateOfChangeEvaluator:
             lookback_minutes=lookback_minutes,
             ema_periods=ema_periods,
             sma_periods=sma_periods,
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -41,6 +47,7 @@ class MomentumRateOfChangeEvaluator:
     ) -> SignalCandidate | None:
         timeframe = str(config.get("timeframe") or candles.timeframe)
         lookback_minutes = int(config.get("lookback_minutes") or 45)
+        atr_period = int(config.get("atr_period") or 14)
         offset = _candles_for_minutes(lookback_minutes, timeframe)
         if len(candles.candles) <= offset or len(candles.candles) < 2:
             return None
@@ -95,6 +102,22 @@ class MomentumRateOfChangeEvaluator:
             score -= Decimal("0.05")
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 120)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                average_price=latest_average,
+                average_label="short_average",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -116,6 +139,7 @@ class MomentumRateOfChangeEvaluator:
                 "short_average": feature_decimal(latest_average),
                 "extension_percent": feature_decimal(extension_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

@@ -49,9 +49,11 @@ def test_bullish_lower_band_recovery_signal() -> None:
             "timeframe": "5Min",
             "bollinger_period": 5,
             "bollinger_stddev": 2.0,
+            "atr_period": 3,
         },
         candles=frame,
         indicators=_indicators(frame),
+        market_regime={"peer_returns": {"SPY": -0.6, "QQQ": -0.4}},
     )
 
     assert signal is not None
@@ -60,6 +62,9 @@ def test_bullish_lower_band_recovery_signal() -> None:
     assert signal.signal_type == "mean_reversion_lower_band_recovery"
     assert signal.features["lower_band"] is not None
     assert signal.features["band_touch"] is True
+    assert signal.features["band_excursion_percent"] is not None
+    assert signal.features["distance_to_middle_atr"] is not None
+    assert signal.features["market_regime_alignment"] == "conflict"
 
 
 def test_bearish_upper_band_rejection_signal() -> None:

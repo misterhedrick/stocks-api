@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame
 
@@ -22,10 +26,12 @@ class MacdCrossoverEvaluator:
         fast_period = int(config.get("fast_period") or 12)
         slow_period = int(config.get("slow_period") or 26)
         signal_period = int(config.get("signal_period") or 9)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=timeframe,
             lookback_minutes=lookback_minutes,
             macd_periods=frozenset({(fast_period, slow_period, signal_period)}),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -47,6 +53,7 @@ class MacdCrossoverEvaluator:
         fast_period = int(config.get("fast_period") or 12)
         slow_period = int(config.get("slow_period") or 26)
         signal_period = int(config.get("signal_period") or 9)
+        atr_period = int(config.get("atr_period") or 14)
 
         macd = indicators.macd(fast_period, slow_period, signal_period)
         current_macd = macd.line[-1] if macd.line else None
@@ -111,6 +118,16 @@ class MacdCrossoverEvaluator:
             score += Decimal("0.03")
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(indicators, candles, period=atr_period),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -137,6 +154,7 @@ class MacdCrossoverEvaluator:
                 "latest_close": str(latest.close),
                 "previous_close": str(previous.close),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
