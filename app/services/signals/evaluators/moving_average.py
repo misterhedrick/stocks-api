@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame, percent_change
 
@@ -22,6 +26,7 @@ class MovingAverageTrendEvaluator:
         short_window = int(config.get("short_window") or 5)
         long_window = int(config.get("long_window") or 20)
         average_type = str(config.get("average_type") or "ema").lower()
+        atr_period = int(config.get("atr_period") or 14)
         ema_periods = frozenset({short_window, long_window}) if average_type == "ema" else frozenset()
         sma_periods = frozenset({short_window, long_window}) if average_type == "sma" else frozenset()
         return RequiredFeatures(
@@ -29,6 +34,7 @@ class MovingAverageTrendEvaluator:
             lookback_minutes=lookback_minutes,
             ema_periods=ema_periods,
             sma_periods=sma_periods,
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -50,6 +56,7 @@ class MovingAverageTrendEvaluator:
         short_window = int(config.get("short_window") or 5)
         long_window = int(config.get("long_window") or 20)
         average_type = str(config.get("average_type") or "ema").lower()
+        atr_period = int(config.get("atr_period") or 14)
         trigger = str(config.get("trigger") or "trend_state").lower()
 
         short_average = _average(indicators, average_type, short_window)
@@ -130,6 +137,22 @@ class MovingAverageTrendEvaluator:
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
         signal_type = str(config.get("signal_type") or "moving_average_setup")
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                average_price=latest_short,
+                average_label="short_average",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -158,6 +181,7 @@ class MovingAverageTrendEvaluator:
                 "average_separation_percent": feature_decimal(separation_percent),
                 "price_distance_percent": feature_decimal(price_distance_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

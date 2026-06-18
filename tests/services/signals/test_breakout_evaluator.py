@@ -64,9 +64,11 @@ def test_bullish_configured_price_breakout_signal() -> None:
             "timeframe": "5Min",
             "price_above": "100",
             "breakout_buffer_percent": "0.10",
+            "atr_period": 2,
         },
         candles=frame,
         indicators=_indicators(frame),
+        market_regime={"peer_returns": {"SPY": 1.1, "QQQ": 0.4}},
     )
 
     assert signal is not None
@@ -75,6 +77,10 @@ def test_bullish_configured_price_breakout_signal() -> None:
     assert signal.signal_type == "price_breakout"
     assert signal.features["level_source"] == "configured_threshold"
     assert signal.features["threshold_crossed"] is True
+    assert signal.features["breakout_distance_atr"] is not None
+    assert signal.features["directional_close_position"] is not None
+    assert signal.features["market_regime_alignment"] == "aligned"
+    assert "market_regime_aligned" in signal.features["validation_flags"]
 
 
 def test_bearish_configured_price_breakdown_signal() -> None:

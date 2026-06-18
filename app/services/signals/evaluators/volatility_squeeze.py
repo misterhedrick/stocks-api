@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame
 
@@ -21,10 +25,12 @@ class VolatilitySqueezeEvaluator:
         lookback_minutes = int(config.get("lookback_minutes") or 720)
         bollinger_period = int(config.get("bollinger_period") or 20)
         bollinger_stddev = float(config.get("bollinger_stddev") or 2.0)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=timeframe,
             lookback_minutes=lookback_minutes,
             bollinger_periods=frozenset({(bollinger_period, bollinger_stddev)}),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -45,6 +51,7 @@ class VolatilitySqueezeEvaluator:
         lookback_minutes = int(config.get("lookback_minutes") or 720)
         bollinger_period = int(config.get("bollinger_period") or 20)
         bollinger_stddev = float(config.get("bollinger_stddev") or 2.0)
+        atr_period = int(config.get("atr_period") or 14)
         squeeze_lookback_candles = int(config.get("squeeze_lookback_candles") or 20)
         range_lookback_candles = int(config.get("range_lookback_candles") or squeeze_lookback_candles)
         breakout_buffer_percent = float(config.get("breakout_buffer_percent") or 0)
@@ -152,6 +159,23 @@ class VolatilitySqueezeEvaluator:
         if isinstance(configured_signal_type, str) and configured_signal_type:
             signal_type = configured_signal_type
 
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                reference_price=breakout_level,
+                reference_label="breakout",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
+
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -186,6 +210,7 @@ class VolatilitySqueezeEvaluator:
                 "candle_confirmed": candle_confirmed,
                 "distance_percent": feature_decimal(distance_percent),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

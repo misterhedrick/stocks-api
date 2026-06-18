@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame
 
@@ -19,9 +23,11 @@ class VolumeConfirmedBreakoutEvaluator:
     def required_features(self, config: dict[str, Any]) -> RequiredFeatures:
         timeframe = str(config.get("timeframe") or "5Min")
         lookback_minutes = int(config.get("lookback_minutes") or 480)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=timeframe,
             lookback_minutes=lookback_minutes,
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -40,6 +46,7 @@ class VolumeConfirmedBreakoutEvaluator:
         previous = candles.candles[-2]
         timeframe = str(config.get("timeframe") or candles.timeframe)
         lookback_minutes = int(config.get("lookback_minutes") or 480)
+        atr_period = int(config.get("atr_period") or 14)
         breakout_buffer_percent = float(config.get("breakout_buffer_percent") or 0)
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
 
@@ -146,6 +153,23 @@ class VolumeConfirmedBreakoutEvaluator:
         if isinstance(configured_signal_type, str) and configured_signal_type:
             signal_type = configured_signal_type
 
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                reference_price=breakout_level,
+                reference_label="breakout",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
+
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -176,6 +200,7 @@ class VolumeConfirmedBreakoutEvaluator:
                 "relative_volume": feature_decimal(relative_volume),
                 "close_position_in_range": feature_decimal(close_position),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )

@@ -7,8 +7,12 @@ from app.services.signals.candles import CandleFrame
 from app.services.signals.evaluators.base import (
     RequiredFeatures,
     SignalCandidate,
+    atr_features,
     confidence,
     feature_decimal,
+    price_action_features,
+    regime_alignment_features,
+    validation_flags,
 )
 from app.services.signals.indicators import IndicatorFrame
 
@@ -20,10 +24,12 @@ class RsiReversalEvaluator:
         timeframe = str(config.get("timeframe") or "5Min")
         lookback_minutes = int(config.get("lookback_minutes") or 240)
         rsi_period = int(config.get("rsi_period") or 14)
+        atr_period = int(config.get("atr_period") or 14)
         return RequiredFeatures(
             timeframe=timeframe,
             lookback_minutes=lookback_minutes,
             rsi_periods=frozenset({rsi_period}),
+            atr_periods=frozenset({atr_period}),
         )
 
     def evaluate(
@@ -43,6 +49,7 @@ class RsiReversalEvaluator:
         timeframe = str(config.get("timeframe") or candles.timeframe)
         lookback_minutes = int(config.get("lookback_minutes") or 240)
         rsi_period = int(config.get("rsi_period") or 14)
+        atr_period = int(config.get("atr_period") or 14)
         oversold_level = float(config.get("oversold_level") or 30)
         overbought_level = float(config.get("overbought_level") or 70)
         confirmation_mode = str(config.get("confirmation_mode") or "cross_back_inside").lower()
@@ -115,6 +122,22 @@ class RsiReversalEvaluator:
 
         dedupe_minutes = int(config.get("dedupe_minutes") or 240)
         threshold = oversold_level if direction == "bullish" else overbought_level
+        validation = {
+            **price_action_features(candles, direction=direction),
+            **atr_features(
+                indicators,
+                candles,
+                period=atr_period,
+                average_price=trend_average,
+                average_label="trend_average",
+            ),
+            **regime_alignment_features(
+                symbol=symbol,
+                direction=direction,
+                market_regime=market_regime,
+            ),
+        }
+        validation["validation_flags"] = validation_flags(validation)
         return SignalCandidate(
             symbol=symbol.upper(),
             strategy_type=self.strategy_type,
@@ -140,6 +163,7 @@ class RsiReversalEvaluator:
                 "previous_close": str(previous.close),
                 "trend_average": feature_decimal(trend_average),
                 "dedupe_minutes": dedupe_minutes,
+                **validation,
             },
             dedupe_key=f"{symbol.upper()}:{self.strategy_type}:{signal_type}:{direction}",
         )
